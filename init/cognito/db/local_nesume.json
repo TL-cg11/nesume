@@ -1,0 +1,21 @@
+{
+  "Users": {},
+  "Options": {
+    "Id": "local_nesume",
+    "Name": "nesume-local",
+    "UsernameAttributes": ["email"],
+    "AutoVerifiedAttributes": ["email"],
+    "MfaConfiguration": "OFF",
+    "Policies": {
+      "PasswordPolicy": {
+        "MinimumLength": 10,
+        "RequireUppercase": true,
+        "RequireLowercase": true,
+        "RequireNumbers": true,
+        "RequireSymbols": true
+      }
+    },
+    "CreationDate": "2026-10-06T00:00:00.000Z",
+    "LastModifiedDate": "2026-10-06T00:00:00.000Z"
+  }
+}

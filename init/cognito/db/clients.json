@@ -1,0 +1,18 @@
+{
+  "Clients": {
+    "nesumelocalclient00000001": {
+      "ClientId": "nesumelocalclient00000001",
+      "ClientName": "nesume-web",
+      "UserPoolId": "local_nesume",
+      "ExplicitAuthFlows": ["ALLOW_USER_PASSWORD_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"],
+      "PreventUserExistenceErrors": "ENABLED",
+      "TokenValidityUnits": {
+        "AccessToken": "hours",
+        "IdToken": "minutes",
+        "RefreshToken": "days"
+      },
+      "CreationDate": "2026-10-06T00:00:00.000Z",
+      "LastModifiedDate": "2026-10-06T00:00:00.000Z"
+    }
+  }
+}

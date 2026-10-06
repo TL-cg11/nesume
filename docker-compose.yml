@@ -1,0 +1,137 @@
+name: nesume
+
+# 모든 연결 정보는 .env에서 주입한다. 필수 값이 비어 있으면 compose가 즉시 실패한다(${VAR:?}).
+# 각 컨테이너에는 필요한 환경변수만 전달한다(최소 권한).
+
+services:
+  db:
+    image: pgvector/pgvector:0.8.7-pg16-bookworm
+    environment:
+      POSTGRES_DB: ${DB_NAME:?DB_NAME is required}
+      POSTGRES_USER: ${DB_USER:?DB_USER is required}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./init/db:/docker-entrypoint-initdb.d:ro
+    # 외부 포트 노출 금지: ports 미정의. 내부 네트워크에서만 접근 가능.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  localstack:
+    image: localstack/localstack:2026.09.0
+    environment:
+      LOCALSTACK_AUTH_TOKEN: ${LOCALSTACK_AUTH_TOKEN:?LOCALSTACK_AUTH_TOKEN is required}
+      SERVICES: s3,kms,secretsmanager
+      AWS_DEFAULT_REGION: ${AWS_REGION:?AWS_REGION is required}
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME:?S3_BUCKET_NAME is required}
+      KMS_KEY_ALIAS: ${KMS_KEY_ALIAS:?KMS_KEY_ALIAS is required}
+      APP_SECRET_NAME: ${APP_SECRET_NAME:?APP_SECRET_NAME is required}
+    ports:
+      - "${HOST_BIND_IP:?HOST_BIND_IP is required}:${LOCALSTACK_PORT:?LOCALSTACK_PORT is required}:4566"
+    volumes:
+      - ./init/localstack:/etc/localstack/init/ready.d:ro
+    healthcheck:
+      # ready.d 스크립트까지 완료되어야 healthy
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:4566/_localstack/init/ready | grep -q '\"completed\": true'"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  cognito:
+    image: jagregory/cognito-local:5.3.0
+    environment:
+      COGNITO_ISSUER_DOMAIN: ${COGNITO_ISSUER_DOMAIN:?COGNITO_ISSUER_DOMAIN is required}
+    # 최초 기동 시에만 고정 ID의 user pool/client 시드를 볼륨에 복사한다.
+    # config.json은 issuer를 환경변수로 맞추기 위해 매 기동 시 재생성한다.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        mkdir -p /app/.cognito/db
+        [ -f /app/.cognito/db/clients.json ] || cp /seed/db/*.json /app/.cognito/db/
+        printf '{"TokenConfig":{"IssuerDomain":"%s"}}' "$$COGNITO_ISSUER_DOMAIN" > /app/.cognito/config.json
+        exec node /app/start.js
+    ports:
+      - "${HOST_BIND_IP}:${COGNITO_PORT:?COGNITO_PORT is required}:9229"
+    volumes:
+      - cognito-data:/app/.cognito
+      - ./init/cognito:/seed:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9229/health >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  # 마이그레이션은 앱과 분리된 일회성 작업으로 실행한다(앱 복제본마다 중복 실행 방지).
+  migrate:
+    build: ./app
+    image: nesume-app:local
+    command: ["alembic", "upgrade", "head"]
+    environment: &app-db-env
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  app:
+    build: ./app
+    image: nesume-app:local
+    environment:
+      <<: *app-db-env
+      APP_ENV: ${APP_ENV:?APP_ENV is required}
+      AWS_REGION: ${AWS_REGION}
+      AWS_ENDPOINT_URL: http://localstack:4566
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:?AWS_ACCESS_KEY_ID is required}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:?AWS_SECRET_ACCESS_KEY is required}
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME}
+      KMS_KEY_ALIAS: ${KMS_KEY_ALIAS}
+      APP_SECRET_NAME: ${APP_SECRET_NAME}
+      COGNITO_USER_POOL_ID: ${COGNITO_USER_POOL_ID:?COGNITO_USER_POOL_ID is required}
+      COGNITO_CLIENT_ID: ${COGNITO_CLIENT_ID:?COGNITO_CLIENT_ID is required}
+      # iss 검증 값(브라우저가 보는 주소)과 JWKS 조회 주소(컨테이너 내부 주소)를 분리
+      COGNITO_ISSUER: ${COGNITO_ISSUER_DOMAIN}/${COGNITO_USER_POOL_ID}
+      COGNITO_JWKS_URL: http://cognito:9229/${COGNITO_USER_POOL_ID}/.well-known/jwks.json
+    ports:
+      - "${HOST_BIND_IP}:${APP_PORT:?APP_PORT is required}:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      localstack:
+        condition: service_healthy
+      cognito:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health').status==200 else 1)"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  web:
+    build: ./web
+    image: nesume-web:local
+    environment:
+      # nginx 템플릿에서 /api/ 요청을 프록시할 대상
+      APP_UPSTREAM: app:8000
+    ports:
+      - "${HOST_BIND_IP}:${WEB_PORT:?WEB_PORT is required}:8080"
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  db-data:
+  cognito-data:
