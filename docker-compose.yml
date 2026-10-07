@@ -134,6 +134,8 @@ services:
     environment:
       <<: *app-env
       APP_ENV: test
+      # 테스트에서 cognito-local에 사용자 생성·로그인할 때 사용
+      COGNITO_LOCAL_ENDPOINT: http://cognito:9229
     volumes:
       - ./app:/srv:ro
     depends_on:
