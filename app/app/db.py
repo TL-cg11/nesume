@@ -21,3 +21,16 @@ class Base(DeclarativeBase):
     """ORM 모델 공통 베이스. Alembic autogenerate 대상 메타데이터."""
 
     metadata = MetaData(naming_convention=NAMING_CONVENTION)
+
+
+def get_db():
+    """요청 단위 DB 세션 의존성. 정상 종료 시 commit, 예외 시 rollback."""
+    session = SessionLocal()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()

@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 
 from app.config import get_settings
+from app.features.resumes.router import router as resumes_router
 from app.routers import health
 
 settings = get_settings()
@@ -14,3 +15,4 @@ app = FastAPI(
 )
 
 app.include_router(health.router)
+app.include_router(resumes_router)
