@@ -6,15 +6,12 @@ from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
-from app.models._common import CreatedAt, DeletedAt, Grade, grade_check, grade_column, one_of, owner_fk, UpdatedAt, UuidPk
-
-EXPERIENCE_TYPES = ("project", "activity", "award", "career", "education", "other")
+from app.models._common import CreatedAt, DeletedAt, Grade, grade_check, grade_column, owner_fk, UpdatedAt, UuidPk
 
 
 class Experience(Base):
     __tablename__ = "experiences"
     __table_args__ = (
-        one_of("type", EXPERIENCE_TYPES, "type"),
         grade_check(),
         Index("ix_experiences_tags", "tags", postgresql_using="gin"),
     )
@@ -22,6 +19,7 @@ class Experience(Base):
     id: Mapped[UuidPk]
     owner_id: Mapped[str] = owner_fk()
     title: Mapped[str] = mapped_column(String(200))
+    # 유형 값 목록은 문서에 예시(프로젝트·활동·수상 등)만 있어 제약 없이 둔다(팀 확정 후 CHECK 추가)
     type: Mapped[str] = mapped_column(String(20))
     period_start: Mapped[date | None] = mapped_column(Date)
     period_end: Mapped[date | None] = mapped_column(Date)

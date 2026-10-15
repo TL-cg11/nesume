@@ -1,7 +1,7 @@
 """b1 core models v0
 
-B1: users, resumes, questions, versions, resume_snapshots, snapshot_items,
-experiences, templates, shares, applications, audit_logs 기본 테이블.
+B1: users, resumes, questions, versions, experiences, templates, shares, applications,
+audit_logs 기본 테이블(tasks.md B1 목록).
 등급 컬럼(B2), 감사 로그 권한(B3), 암호화 컬럼(B7)은 후속 마이그레이션에서 추가한다.
 
 Revision ID: 0002
@@ -87,7 +87,6 @@ def upgrade() -> None:
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
-    sa.CheckConstraint("type IN ('project', 'activity', 'award', 'career', 'education', 'other')", name=op.f('ck_experiences_type')),
     sa.ForeignKeyConstraint(['owner_id'], ['users.id'], name=op.f('fk_experiences_owner_id_users'), ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id', name=op.f('pk_experiences'))
     )
@@ -98,11 +97,10 @@ def upgrade() -> None:
     sa.Column('owner_id', sa.String(length=128), nullable=False),
     sa.Column('title', sa.String(length=200), nullable=False),
     sa.Column('job_posting_id', sa.Uuid(), nullable=True),
-    sa.Column('status', sa.String(length=20), server_default='draft', nullable=False),
+    sa.Column('status', sa.String(length=20), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
-    sa.CheckConstraint("status IN ('draft', 'final')", name=op.f('ck_resumes_status')),
     sa.ForeignKeyConstraint(['owner_id'], ['users.id'], name=op.f('fk_resumes_owner_id_users'), ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id', name=op.f('pk_resumes'))
     )
@@ -121,17 +119,6 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_questions_owner_id'), 'questions', ['owner_id'], unique=False)
     op.create_index(op.f('ix_questions_resume_id'), 'questions', ['resume_id'], unique=False)
-    op.create_table('resume_snapshots',
-    sa.Column('id', sa.Uuid(), server_default=sa.text('gen_random_uuid()'), nullable=False),
-    sa.Column('resume_id', sa.Uuid(), nullable=False),
-    sa.Column('owner_id', sa.String(length=128), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.ForeignKeyConstraint(['owner_id'], ['users.id'], name=op.f('fk_resume_snapshots_owner_id_users'), ondelete='CASCADE'),
-    sa.ForeignKeyConstraint(['resume_id'], ['resumes.id'], name=op.f('fk_resume_snapshots_resume_id_resumes'), ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id', name=op.f('pk_resume_snapshots'))
-    )
-    op.create_index(op.f('ix_resume_snapshots_owner_id'), 'resume_snapshots', ['owner_id'], unique=False)
-    op.create_index(op.f('ix_resume_snapshots_resume_id'), 'resume_snapshots', ['resume_id'], unique=False)
     op.create_table('shares',
     sa.Column('id', sa.Uuid(), server_default=sa.text('gen_random_uuid()'), nullable=False),
     sa.Column('resume_id', sa.Uuid(), nullable=False),
@@ -155,16 +142,15 @@ def upgrade() -> None:
     sa.Column('owner_id', sa.String(length=128), nullable=False),
     sa.Column('job_posting_id', sa.Uuid(), nullable=True),
     sa.Column('resume_id', sa.Uuid(), nullable=True),
-    sa.Column('snapshot_id', sa.Uuid(), nullable=True),
+    sa.Column('version_ids', postgresql.ARRAY(sa.Uuid()), server_default='{}', nullable=False),
     sa.Column('applied_at', sa.Date(), nullable=True),
-    sa.Column('status', sa.String(length=20), server_default='applied', nullable=False),
+    sa.Column('status', sa.String(length=20), nullable=False),
     sa.Column('memo', sa.Text(), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.CheckConstraint("status IN ('applied', 'document_passed', 'interview', 'final', 'rejected')", name=op.f('ck_applications_status')),
     sa.ForeignKeyConstraint(['owner_id'], ['users.id'], name=op.f('fk_applications_owner_id_users'), ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['resume_id'], ['resumes.id'], name=op.f('fk_applications_resume_id_resumes'), ondelete='SET NULL'),
-    sa.ForeignKeyConstraint(['snapshot_id'], ['resume_snapshots.id'], name=op.f('fk_applications_snapshot_id_resume_snapshots'), ondelete='SET NULL'),
     sa.PrimaryKeyConstraint('id', name=op.f('pk_applications'))
     )
     op.create_index(op.f('ix_applications_job_posting_id'), 'applications', ['job_posting_id'], unique=False)
@@ -187,16 +173,6 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_versions_owner_id'), 'versions', ['owner_id'], unique=False)
     op.create_index(op.f('ix_versions_question_id'), 'versions', ['question_id'], unique=False)
-    op.create_table('snapshot_items',
-    sa.Column('snapshot_id', sa.Uuid(), nullable=False),
-    sa.Column('question_id', sa.Uuid(), nullable=False),
-    sa.Column('version_id', sa.Uuid(), nullable=False),
-    sa.ForeignKeyConstraint(['question_id'], ['questions.id'], name=op.f('fk_snapshot_items_question_id_questions'), ondelete='CASCADE'),
-    sa.ForeignKeyConstraint(['snapshot_id'], ['resume_snapshots.id'], name=op.f('fk_snapshot_items_snapshot_id_resume_snapshots'), ondelete='CASCADE'),
-    sa.ForeignKeyConstraint(['version_id'], ['versions.id'], name=op.f('fk_snapshot_items_version_id_versions')),
-    sa.PrimaryKeyConstraint('snapshot_id', 'question_id', name=op.f('pk_snapshot_items'))
-    )
-    op.create_index(op.f('ix_snapshot_items_version_id'), 'snapshot_items', ['version_id'], unique=False)
     # ### end Alembic commands ###
 
     # 버전은 INSERT 전용(spec 3.1 "덮어쓰지 않음"). 압축은 DELETE + 요약 INSERT로 처리한다.
@@ -217,8 +193,6 @@ def downgrade() -> None:
     op.execute("DROP TRIGGER IF EXISTS versions_immutable ON versions")
     op.execute("DROP FUNCTION IF EXISTS versions_reject_update()")
     # ### commands auto generated by Alembic - please adjust! ###
-    op.drop_index(op.f('ix_snapshot_items_version_id'), table_name='snapshot_items')
-    op.drop_table('snapshot_items')
     op.drop_index(op.f('ix_versions_question_id'), table_name='versions')
     op.drop_index(op.f('ix_versions_owner_id'), table_name='versions')
     op.drop_table('versions')
@@ -229,9 +203,6 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_shares_resume_id'), table_name='shares')
     op.drop_index(op.f('ix_shares_owner_id'), table_name='shares')
     op.drop_table('shares')
-    op.drop_index(op.f('ix_resume_snapshots_resume_id'), table_name='resume_snapshots')
-    op.drop_index(op.f('ix_resume_snapshots_owner_id'), table_name='resume_snapshots')
-    op.drop_table('resume_snapshots')
     op.drop_index(op.f('ix_questions_resume_id'), table_name='questions')
     op.drop_index(op.f('ix_questions_owner_id'), table_name='questions')
     op.drop_table('questions')

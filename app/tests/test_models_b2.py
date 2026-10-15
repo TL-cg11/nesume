@@ -53,7 +53,7 @@ def _seed(session):
         "versions": Version(question_id=q.id, owner_id=u.id, version_no=1, body="b",
                             char_count=1, source="manual"),
         "experiences": Experience(owner_id=u.id, title="e", type="project"),
-        "applications": Application(owner_id=u.id),
+        "applications": Application(owner_id=u.id, status="applied"),
         "templates": PromptTemplate(name=f"t-{uuid.uuid4().hex[:6]}", purpose="rewrite", body="b",
                                     version=1, created_by="op"),
         "audit_logs": AuditLog(request_id=uuid.uuid4(), session_id="s", user_id=u.id, role="user",
@@ -151,3 +151,31 @@ def test_downgrade_to_b1_removes_grade_then_upgrade():
     finally:
         command.upgrade(ALEMBIC, "head")
     assert "grade" in {c["name"] for c in inspect(engine).get_columns("resumes")}
+
+
+def test_resume_shared_with_defaults_to_empty_array(db_session):
+    rows = _seed(db_session)
+    db_session.refresh(rows["resumes"])
+    assert rows["resumes"].shared_with == []
+
+
+def test_resume_shared_with_holds_per_mentor_expiry(db_session):
+    rows = _seed(db_session)
+    r = rows["resumes"]
+    entries = [
+        {"user_id": "mentor-a", "expires_at": "2026-10-22T00:00:00+00:00"},
+        {"user_id": "mentor-b", "expires_at": "2026-11-14T00:00:00+00:00"},
+    ]
+    r.shared_with = entries
+    db_session.flush()
+    db_session.refresh(r)
+    assert r.shared_with == entries
+
+
+def test_resume_shared_with_must_be_array(db_session):
+    rows = _seed(db_session)
+    with pytest.raises(IntegrityError):
+        db_session.execute(
+            text("""UPDATE resumes SET shared_with = '{"user_id": "x"}'::jsonb WHERE id = :id"""),
+            {"id": rows["resumes"].id},
+        )

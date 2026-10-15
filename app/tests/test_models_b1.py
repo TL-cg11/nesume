@@ -16,16 +16,15 @@ from app.models import (
     PromptTemplate,
     Question,
     Resume,
-    ResumeSnapshot,
     Share,
-    SnapshotItem,
     User,
     Version,
 )
 
 ALEMBIC = Config("/srv/alembic.ini")
+# tasks.md B1 목록
 B1_TABLES = {
-    "users", "resumes", "questions", "versions", "resume_snapshots", "snapshot_items",
+    "users", "resumes", "questions", "versions",
     "experiences", "templates", "shares", "applications", "audit_logs",
 }
 
@@ -91,42 +90,40 @@ def test_version_number_unique_per_question(db_session):
         db_session.flush()
 
 
-def test_snapshot_referenced_version_cannot_be_deleted_alone(db_session):
-    # part2_guide 4.2: 지원 기록·PDF가 참조하는 버전은 압축(단독 삭제) 불가
+def test_application_pins_question_versions(db_session):
+    # spec 4.5: 지원 시점의 버전을 고정 참조(문항별 버전 ID 배열)
     u = _user(db_session)
-    r, q, (v1, v2) = _resume_with_versions(db_session, u)
-    snap = ResumeSnapshot(resume_id=r.id, owner_id=u.id)
-    db_session.add(snap)
+    r, _, (v1, v2) = _resume_with_versions(db_session, u)
+    a = Application(owner_id=u.id, resume_id=r.id, version_ids=[v1.id], status="applied")
+    db_session.add(a)
     db_session.flush()
-    db_session.add(SnapshotItem(snapshot_id=snap.id, question_id=q.id, version_id=v1.id))
-    db_session.flush()
-
-    db_session.execute(delete(Version).where(Version.id == v2.id))  # 미참조 버전은 삭제 가능
-    db_session.flush()
-    with pytest.raises(IntegrityError):
-        db_session.execute(delete(Version).where(Version.id == v1.id))
-        db_session.flush()
+    db_session.refresh(a)
+    assert a.version_ids == [v1.id]
 
 
-def test_deleting_resume_cascades_including_referenced_versions(db_session):
+def test_deleting_resume_keeps_application(db_session):
     u = _user(db_session)
-    r, q, (v1, _) = _resume_with_versions(db_session, u)
-    snap = ResumeSnapshot(resume_id=r.id, owner_id=u.id)
-    db_session.add(snap)
-    db_session.flush()
-    db_session.add(SnapshotItem(snapshot_id=snap.id, question_id=q.id, version_id=v1.id))
-    app_ = Application(owner_id=u.id, resume_id=r.id, snapshot_id=snap.id)
+    r, _, (v1, _) = _resume_with_versions(db_session, u)
+    pinned = v1.id
+    app_ = Application(owner_id=u.id, resume_id=r.id, version_ids=[pinned], status="applied")
     db_session.add(app_)
     db_session.flush()
-    question_id = q.id
 
     db_session.execute(delete(Resume).where(Resume.id == r.id))
     db_session.flush()
     db_session.expire_all()
-    assert db_session.scalar(select(Version).where(Version.question_id == question_id)) is None
-    # 지원 기록은 남고 참조만 해제된다
     remaining = db_session.get(Application, app_.id)
-    assert remaining.resume_id is None and remaining.snapshot_id is None
+    assert remaining.resume_id is None
+    # 배열은 FK가 없어 값이 남는다. 참조 버전 보호·정리는 B4·B20 서비스 로직
+    assert remaining.version_ids == [pinned]
+
+
+def test_status_and_type_are_unconstrained_until_team_decides(db_session):
+    # 문서에 값 목록이 없는 컬럼은 CHECK 제약 없이 둔다
+    u = _user(db_session)
+    db_session.add(Resume(owner_id=u.id, title="t", status="anything"))
+    db_session.add(Experience(owner_id=u.id, title="t", type="hobby"))
+    db_session.flush()
 
 
 # --- 사용자 삭제 연쇄 (B20 물리 삭제 기반) ---------------------------------
@@ -161,8 +158,6 @@ def test_audit_logs_survive_user_deletion(db_session):
 @pytest.mark.parametrize(
     "factory",
     [
-        pytest.param(lambda uid: Resume(owner_id=uid, title="t", status="published"), id="resume-status"),
-        pytest.param(lambda uid: Experience(owner_id=uid, title="t", type="hobby"), id="experience-type"),
         pytest.param(lambda uid: Application(owner_id=uid, status="pending"), id="application-status"),
         pytest.param(lambda uid: AuditLog(request_id=uuid.uuid4(), session_id="s", user_id=uid,
                                           role="admin", feature="x", decision="allow"), id="audit-role"),

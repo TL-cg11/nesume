@@ -3,6 +3,7 @@ import uuid
 from datetime import date
 
 from sqlalchemy import Date, ForeignKey, String, Text, Uuid
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -20,12 +21,11 @@ class Application(Base):
     # 공고 내부 고유 ID(C4). FK는 공고 테이블 생성 시 C가 추가한다.
     job_posting_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, index=True)
     resume_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("resumes.id", ondelete="SET NULL"))
-    # 지원 시점의 자소서 버전 고정 참조(part2_guide 4.10)
-    snapshot_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("resume_snapshots.id", ondelete="SET NULL")
-    )
+    # 지원 시점의 문항별 버전 ID 고정 참조(spec 4.5 "자소서 ID·버전"). FK 없음 → 압축 제외는 B4 서비스 로직
+    version_ids: Mapped[list[uuid.UUID]] = mapped_column(ARRAY(Uuid), default=list, server_default="{}")
     applied_at: Mapped[date | None] = mapped_column(Date)
-    status: Mapped[str] = mapped_column(String(20), default="applied", server_default="applied")
+    # 값 목록은 spec 4.5. 기본값은 문서에 없어 두지 않는다(생성 시 지정)
+    status: Mapped[str] = mapped_column(String(20))
     memo: Mapped[str | None] = mapped_column(Text)
     grade: Mapped[str] = grade_column(Grade.PERSONAL)
     created_at: Mapped[CreatedAt]

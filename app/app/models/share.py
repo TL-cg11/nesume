@@ -1,7 +1,6 @@
-"""멘토 공유 (spec 3.7). shared_with·expires_at(B2)의 원본.
+"""멘토 공유 (spec 3.7). 공유 이력의 원본.
 
-벡터 DB가 같은 PostgreSQL(pgvector)이므로 검색 필터(C6)는 이 테이블을 직접 조인하는 것을 권장한다.
-벡터 메타데이터로 복제하면 취소·만료가 즉시 반영되지 않을 수 있다(spec 3.7 "즉시 접근 불가").
+resumes.shared_with(B2)와 벡터 메타데이터(C3)는 B10 공유 API에서 이 테이블과 동기화한다.
 """
 import uuid
 from datetime import datetime
@@ -18,7 +17,7 @@ class Share(Base):
     __table_args__ = (
         CheckConstraint("expires_at > created_at", name="expires_after_created"),
         CheckConstraint("shared_with <> owner_id", name="not_self"),
-        # 검색 필터(C6)·권한 판정이 "공유 대상 + 미취소 + 만료 전"을 조인으로 확인할 때 사용
+        # 멘토별 유효 공유 조회(공유 대상 + 미취소 + 만료 전)용 부분 인덱스
         Index(
             "ix_shares_active_lookup", "shared_with", "resume_id", "expires_at",
             postgresql_where=text("revoked_at IS NULL"),
