@@ -1,6 +1,6 @@
 # 데이터 모델 (B1, B2)
 
-마이그레이션: `0002` B1 핵심 테이블, `0003` B2 문서 등급·공유 컬럼
+마이그레이션: `0002` B1 핵심 테이블, `0003` B2 문서 등급·공유 컬럼, `0004` B4 복원 출처
 소유: B (모델 추가는 B가 취합, tasks.md 디렉터리 소유). **C·D 리뷰 요청 대상.**
 
 ## ERD
@@ -47,6 +47,7 @@ erDiagram
         int char_count
         string source "manual | ai"
         bool compressed
+        uuid restored_from "복원 원본 버전(B4), FK 없음"
         string grade "personal"
     }
     experiences {
@@ -128,6 +129,7 @@ ORM을 거치지 않는 INSERT에도 DB 기본값으로 같은 등급이 붙는�
 | `questions.position` | 문항 표시 순서 | spec 3.1 |
 | `versions.version_no`, `char_count` | 버전 번호, 글자 수 제한 비교 | spec 3.1 |
 | `versions.compressed` | 50개 초과 시 압축된 보관 요약 행 표시 | spec 3.1 |
+| `versions.restored_from` | 이전 버전 복원 시 원본 버전 ID. UPDATE 금지 트리거와 FK 연쇄(SET NULL)가 충돌해 FK 없음 | spec 3.1 (B4) |
 | `templates.created_by` | 템플릿 수정 이력(작성 운영자) | spec 3.6 |
 | `shares` 부분 인덱스 `ix_shares_active_lookup` | 멘토별 유효 공유 조회 | spec 3.7 |
 
