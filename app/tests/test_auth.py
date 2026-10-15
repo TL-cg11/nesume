@@ -13,13 +13,14 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.config import get_settings
-from app.security.auth import (
+from app.auth.cognito import (
     AuthenticatedUser,
     JwksKeyResolver,
+    Role,
     TokenVerifier,
     get_token_verifier,
 )
+from app.config import get_settings
 
 ISSUER = "https://issuer.test/pool"
 CLIENT_ID = "test-client"
@@ -30,7 +31,7 @@ def _make_app() -> FastAPI:
 
     @app.get("/whoami")
     def whoami(user: AuthenticatedUser) -> dict:
-        return {"sub": user.sub}
+        return {"sub": user.sub, "role": user.role}
 
     return app
 
@@ -79,7 +80,40 @@ def test_valid_token_returns_sub(unit_client, rsa_key):
     claims = _claims()
     r = _get(unit_client, _sign(rsa_key, claims))
     assert r.status_code == 200
-    assert r.json() == {"sub": claims["sub"]}
+    assert r.json() == {"sub": claims["sub"], "role": "user"}
+
+
+@pytest.mark.parametrize(
+    "groups,expected",
+    [
+        pytest.param(None, Role.USER, id="no-groups"),
+        pytest.param([], Role.USER, id="empty-groups"),
+        pytest.param(["mentor"], Role.MENTOR, id="mentor"),
+        pytest.param(["operator"], Role.OPERATOR, id="operator"),
+        pytest.param(["beta-testers", "mentor"], Role.MENTOR, id="ignores-non-role-groups"),
+    ],
+)
+def test_role_from_cognito_groups(unit_client, rsa_key, groups, expected):
+    r = _get(unit_client, _sign(rsa_key, _claims(**{"cognito:groups": groups})))
+    assert r.status_code == 200
+    assert r.json()["role"] == expected
+
+
+@pytest.mark.parametrize(
+    "groups",
+    [
+        pytest.param(["mentor", "operator"], id="multiple-roles"),
+        pytest.param("operator", id="not-a-list"),
+    ],
+)
+def test_ambiguous_role_rejected(unit_client, rsa_key, groups):
+    assert _get(unit_client, _sign(rsa_key, _claims(**{"cognito:groups": groups}))).status_code == 401
+
+
+def test_role_claim_in_body_is_ignored(unit_client, rsa_key):
+    # 역할은 cognito:groups에서만 읽는다. 임의 role 클레임으로 상향 불가
+    r = _get(unit_client, _sign(rsa_key, _claims(role="operator", **{"custom:role": "operator"})))
+    assert r.json()["role"] == "user"
 
 
 @pytest.mark.parametrize(
@@ -182,7 +216,14 @@ def cognito_user():
         AuthFlow="USER_PASSWORD_AUTH",
         AuthParameters={"USERNAME": email, "PASSWORD": password},
     )["AuthenticationResult"]
-    yield {"sub": signup["UserSub"], "access": auth["AccessToken"], "id": auth["IdToken"]}
+    yield {
+        "sub": signup["UserSub"],
+        "access": auth["AccessToken"],
+        "id": auth["IdToken"],
+        "email": email,
+        "password": password,
+        "idp": idp,
+    }
     idp.admin_delete_user(UserPoolId=s.cognito_user_pool_id, Username=email)
 
 
@@ -195,8 +236,28 @@ def real_client():
 def test_cognito_local_access_token_accepted(real_client, cognito_user):
     r = _get(real_client, cognito_user["access"])
     assert r.status_code == 200
-    assert r.json() == {"sub": cognito_user["sub"]}
+    assert r.json() == {"sub": cognito_user["sub"], "role": "user"}
 
 
 def test_cognito_local_id_token_rejected(real_client, cognito_user):
     assert _get(real_client, cognito_user["id"]).status_code == 401
+
+
+def test_cognito_local_group_maps_to_role(real_client, cognito_user):
+    s = get_settings()
+    idp = cognito_user["idp"]
+    try:
+        idp.create_group(GroupName="mentor", UserPoolId=s.cognito_user_pool_id)
+    except idp.exceptions.GroupExistsException:
+        pass
+    idp.admin_add_user_to_group(
+        UserPoolId=s.cognito_user_pool_id, Username=cognito_user["email"], GroupName="mentor"
+    )
+    access = idp.initiate_auth(
+        ClientId=s.cognito_client_id,
+        AuthFlow="USER_PASSWORD_AUTH",
+        AuthParameters={"USERNAME": cognito_user["email"], "PASSWORD": cognito_user["password"]},
+    )["AuthenticationResult"]["AccessToken"]
+    r = _get(real_client, access)
+    assert r.status_code == 200
+    assert r.json()["role"] == "mentor"

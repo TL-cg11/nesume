@@ -1,15 +1,22 @@
 """Cognito Access Token 검증 및 FastAPI 인증 의존성.
 
-임시 구현: 파트 4(인프라·인증)의 공통 인증 모듈로 대체될 예정이다.
-대체 시에도 `CurrentUser`, `get_current_user` 인터페이스는 유지한다.
+소유: D팀(tasks.md D7). B팀이 B 기능 개발을 위해 선행 작성한 초안이며 D7 리뷰·확장 대상이다.
+D7에서 확장할 항목: require_role(), 운영자 MFA 세션 확인, 시스템 토큰, role 변경 시 토큰 무효화.
+`CurrentUser`, `get_current_user` 인터페이스는 유지한다.
 
 검증 항목
 - 서명: RS256만 허용(alg 혼동 공격 방지). 공개키는 COGNITO_JWKS_URL에서 조회·캐시.
 - 클레임: iss == COGNITO_ISSUER, token_use == "access", client_id == COGNITO_CLIENT_ID,
   exp/iat/sub 필수.
 - Access Token에는 aud가 없으므로 client_id로 발급 대상을 확인한다.
+
+역할(spec 5.2, 6.1)
+- `cognito:groups` 클레임에서 읽는다. custom 속성은 Access Token에 포함되지 않으므로 사용하지 않는다.
+- 역할 그룹이 없으면 일반 사용자, 2개 이상이면 설정 오류로 보고 거부한다(fail closed).
+- 역할은 매 요청 토큰에서만 읽는다(spec 7.4 멀티턴 방어).
 """
 from dataclasses import dataclass
+from enum import StrEnum
 from functools import lru_cache
 from typing import Annotated, Any, Protocol
 
@@ -25,9 +32,18 @@ JWKS_TIMEOUT_SECONDS = 3
 JWKS_CACHE_SECONDS = 300
 
 
+class Role(StrEnum):
+    # 그룹 이름 = 값. 최종 명칭은 D1(역할 정의) 확정 시 맞춘다.
+    USER = "user"
+    MENTOR = "mentor"
+    OPERATOR = "operator"
+    SYSTEM = "system"
+
+
 @dataclass(frozen=True)
 class CurrentUser:
     sub: str
+    role: Role = Role.USER
     username: str | None = None
 
 
@@ -91,7 +107,19 @@ class TokenVerifier:
         sub = claims["sub"]
         if not isinstance(sub, str) or not sub:
             raise TokenInvalid()
-        return CurrentUser(sub=sub, username=claims.get("username"))
+        return CurrentUser(sub=sub, role=_role_from_groups(claims), username=claims.get("username"))
+
+
+def _role_from_groups(claims: dict) -> Role:
+    groups = claims.get("cognito:groups") or []
+    if not isinstance(groups, list):
+        raise TokenInvalid()
+    roles = {Role(g) for g in groups if g in Role._value2member_map_}
+    if not roles:
+        return Role.USER
+    if len(roles) > 1:
+        raise TokenInvalid()
+    return roles.pop()
 
 
 @lru_cache
