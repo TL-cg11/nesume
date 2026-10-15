@@ -84,6 +84,9 @@ class Version(Base):
     source: Mapped[str] = mapped_column(String(10))
     # 50개 초과 시 압축된 보관 요약 행 여부(spec 3.1)
     compressed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # 이전 버전 복원으로 만들어진 경우 원본 버전 ID(B4). versions는 UPDATE 금지 트리거가 있어
+    # ON DELETE SET NULL 같은 FK 연쇄 수정이 불가하므로 FK 없이 둔다.
+    restored_from: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     grade: Mapped[str] = grade_column(Grade.PERSONAL)
     created_at: Mapped[CreatedAt]
 
