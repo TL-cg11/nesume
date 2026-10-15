@@ -10,7 +10,7 @@ from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, UniqueConstra
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
-from app.models._common import CreatedAt, DeletedAt, UpdatedAt, UuidPk, one_of, owner_fk
+from app.models._common import CreatedAt, DeletedAt, Grade, grade_check, grade_column, one_of, owner_fk, UpdatedAt, UuidPk
 
 RESUME_STATUSES = ("draft", "final")
 VERSION_SOURCES = ("manual", "ai")
@@ -18,7 +18,7 @@ VERSION_SOURCES = ("manual", "ai")
 
 class Resume(Base):
     __tablename__ = "resumes"
-    __table_args__ = (one_of("status", RESUME_STATUSES, "status"),)
+    __table_args__ = (one_of("status", RESUME_STATUSES, "status"), grade_check())
 
     id: Mapped[UuidPk]
     owner_id: Mapped[str] = owner_fk()
@@ -26,6 +26,7 @@ class Resume(Base):
     # 공고 내부 고유 ID(C4). 공고 테이블은 C 소유라 FK는 C4 마이그레이션에서 추가한다.
     job_posting_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     status: Mapped[str] = mapped_column(String(20), default="draft", server_default="draft")
+    grade: Mapped[str] = grade_column(Grade.PERSONAL)
     created_at: Mapped[CreatedAt]
     updated_at: Mapped[UpdatedAt]
     deleted_at: Mapped[DeletedAt]
@@ -38,6 +39,7 @@ class Resume(Base):
 
 class Question(Base):
     __tablename__ = "questions"
+    __table_args__ = (grade_check(),)
 
     id: Mapped[UuidPk]
     resume_id: Mapped[uuid.UUID] = mapped_column(
@@ -47,6 +49,7 @@ class Question(Base):
     title: Mapped[str] = mapped_column(Text)
     char_limit: Mapped[int | None] = mapped_column(Integer)
     position: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    grade: Mapped[str] = grade_column(Grade.PERSONAL)
     deleted_at: Mapped[DeletedAt]
 
     resume: Mapped[Resume] = relationship(back_populates="questions")
@@ -60,6 +63,7 @@ class Version(Base):
     __table_args__ = (
         UniqueConstraint("question_id", "version_no"),
         one_of("source", VERSION_SOURCES, "source"),
+        grade_check(),
     )
 
     id: Mapped[UuidPk]
@@ -74,6 +78,7 @@ class Version(Base):
     source: Mapped[str] = mapped_column(String(10))
     # 50개 초과 시 압축된 보관 요약 행 여부(spec 3.1)
     compressed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    grade: Mapped[str] = grade_column(Grade.PERSONAL)
     created_at: Mapped[CreatedAt]
 
     question: Mapped[Question] = relationship(back_populates="versions")

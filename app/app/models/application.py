@@ -6,14 +6,14 @@ from sqlalchemy import Date, ForeignKey, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
-from app.models._common import CreatedAt, UpdatedAt, UuidPk, one_of, owner_fk
+from app.models._common import CreatedAt, Grade, grade_check, grade_column, one_of, owner_fk, UpdatedAt, UuidPk
 
 APPLICATION_STATUSES = ("applied", "document_passed", "interview", "final", "rejected")
 
 
 class Application(Base):
     __tablename__ = "applications"
-    __table_args__ = (one_of("status", APPLICATION_STATUSES, "status"),)
+    __table_args__ = (one_of("status", APPLICATION_STATUSES, "status"), grade_check())
 
     id: Mapped[UuidPk]
     owner_id: Mapped[str] = owner_fk()
@@ -27,5 +27,6 @@ class Application(Base):
     applied_at: Mapped[date | None] = mapped_column(Date)
     status: Mapped[str] = mapped_column(String(20), default="applied", server_default="applied")
     memo: Mapped[str | None] = mapped_column(Text)
+    grade: Mapped[str] = grade_column(Grade.PERSONAL)
     created_at: Mapped[CreatedAt]
     updated_at: Mapped[UpdatedAt]

@@ -10,7 +10,7 @@ from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
-from app.models._common import one_of
+from app.models._common import Grade, grade_check, grade_column, one_of
 
 ROLES = ("user", "mentor", "operator", "system")
 QUERY_TYPES = ("normal", "out_of_scope", "sensitive", "exfiltration")
@@ -25,6 +25,7 @@ class AuditLog(Base):
         one_of("query_type", QUERY_TYPES, "query_type"),
         one_of("decision", DECISIONS, "decision"),
         one_of("decision_stage", DECISION_STAGES, "decision_stage"),
+        grade_check(),
         Index("ix_audit_logs_user_ts", "user_id", "timestamp"),
         Index("ix_audit_logs_ts", "timestamp"),
     )
@@ -47,3 +48,5 @@ class AuditLog(Base):
     canary_hit: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     is_test: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     latency_ms: Mapped[int | None] = mapped_column(Integer)
+    # 감사 로그 자체의 등급(spec 10.2: 민감)
+    grade: Mapped[str] = grade_column(Grade.SENSITIVE)

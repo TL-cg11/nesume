@@ -1,6 +1,6 @@
 # 데이터 모델 v0 (B1)
 
-마이그레이션: `0002` (`app/migrations/versions/20261015_0002_b1_core_models_v0.py`)
+마이그레이션: `0002` B1 핵심 테이블, `0003` B2 문서 등급
 소유: B (모델 추가는 B가 취합, tasks.md 디렉터리 소유). **C·D 리뷰 요청 대상.**
 
 ## ERD
@@ -31,6 +31,7 @@ erDiagram
         string title
         uuid job_posting_id "C4 공고 내부 ID, FK는 C가 추가"
         string status "draft | final"
+        string grade "personal (B2)"
         timestamptz deleted_at "소프트 삭제"
     }
     questions {
@@ -112,12 +113,23 @@ erDiagram
 | 값 목록은 PG ENUM 대신 CHECK 제약 | `_common.one_of()` | 값 추가 시 마이그레이션 단순 |
 | 이름별 활성 템플릿 1개 | 부분 유일 인덱스 `uq_templates_active_name` | spec 3.6 |
 | 제약 이름 규칙 고정 | `app.db.NAMING_CONVENTION` | 후속 마이그레이션에서 이름으로 수정 |
+| 문서 등급 `grade` (public/internal/personal/sensitive/confidential) | `_common.Grade`, 테이블별 기본값 + CHECK | spec 6.2, 6.4 (B2) |
+| 공유 정보(shared_with·expires_at)의 원본은 `shares` | 검색 필터는 조인 권장, 부분 인덱스 `ix_shares_active_lookup` | spec 3.7 즉시 접근 불가 |
+
+### 테이블별 기본 등급 (spec 6.4)
+
+| 등급 | 테이블 |
+|---|---|
+| personal | resumes, questions, versions, experiences, applications |
+| internal | templates |
+| sensitive | audit_logs |
+
+ORM을 거치지 않는 INSERT에도 DB 기본값으로 같은 등급이 붙는다. 클라이언트 입력으로 등급을 바꾸지 못하게 하는 것은 B8(서비스 계층).
 
 ## 후속 마이그레이션 예정
 
 | 태스크 | 변경 |
 |---|---|
-| B2 | `grade` 컬럼(public/internal/personal/sensitive/confidential), 등급별 기본값 |
 | B3 | 감사 로그 테이블 권한(앱 계정 INSERT·SELECT만), 보관 기간 정리 |
 | B7 | `user_keys`, `pii_token_map`, 본문·경험 컬럼 암호화 전환 |
 | B12·B13 | `documents`, `interview_questions`, `practice_answers` |

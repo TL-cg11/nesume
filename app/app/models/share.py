@@ -1,8 +1,12 @@
-"""멘토 공유 (spec 3.7). 공유 정보의 원본이며 벡터 메타데이터에는 C3가 반영한다."""
+"""멘토 공유 (spec 3.7). shared_with·expires_at(B2)의 원본.
+
+벡터 DB가 같은 PostgreSQL(pgvector)이므로 검색 필터(C6)는 이 테이블을 직접 조인하는 것을 권장한다.
+벡터 메타데이터로 복제하면 취소·만료가 즉시 반영되지 않을 수 있다(spec 3.7 "즉시 접근 불가").
+"""
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -14,6 +18,11 @@ class Share(Base):
     __table_args__ = (
         CheckConstraint("expires_at > created_at", name="expires_after_created"),
         CheckConstraint("shared_with <> owner_id", name="not_self"),
+        # 검색 필터(C6)·권한 판정이 "공유 대상 + 미취소 + 만료 전"을 조인으로 확인할 때 사용
+        Index(
+            "ix_shares_active_lookup", "shared_with", "resume_id", "expires_at",
+            postgresql_where=text("revoked_at IS NULL"),
+        ),
     )
 
     id: Mapped[UuidPk]
