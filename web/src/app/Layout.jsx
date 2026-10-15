@@ -1,4 +1,5 @@
 import { NavLink, Outlet } from 'react-router'
+import DevTokenPanel from './dev/DevTokenPanel.jsx'
 import './layout.css'
 
 export default function Layout({ navItems }) {
@@ -15,6 +16,7 @@ export default function Layout({ navItems }) {
             </NavLink>
           ))}
         </nav>
+        {import.meta.env.DEV && <DevTokenPanel />}
       </header>
       <main className="app-main">
         <Outlet />

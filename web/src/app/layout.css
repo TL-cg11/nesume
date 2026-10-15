@@ -37,3 +37,19 @@ body { margin: 0; background: var(--bg); }
 .app-nav a.active { color: var(--accent); font-weight: 600; }
 
 .app-main { max-width: 1080px; margin: 0 auto; padding: 24px 16px; }
+
+.dev-token { margin-left: auto; display: flex; gap: 6px; align-items: center; font-size: 13px; }
+.dev-token-label { font-weight: 700; color: #bf3989; }
+.dev-token input { width: 220px; }
+.dev-token-state { color: var(--muted); }
+
+button, input, textarea, select { font: inherit; color: inherit; }
+button {
+  background: var(--accent); color: #fff; border: 0; border-radius: 6px; padding: 6px 12px; cursor: pointer;
+}
+button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--border); }
+button:disabled { opacity: 0.5; cursor: default; }
+input, textarea, select {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px;
+}
+.error { color: #cf222e; }

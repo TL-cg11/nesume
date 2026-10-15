@@ -98,6 +98,29 @@ init/
   cognito/db/        cognito-local user pool/client 시드 (고정 ID)
 ```
 
+## 프론트엔드 개발 서버 (화면 수정 시)
+
+```bash
+cd web
+npm ci
+API_PROXY_TARGET=http://localhost:8080 npm run dev   # http://localhost:5173, /api는 nginx로 프록시
+```
+
+- `docker compose up -d`로 백엔드가 떠 있어야 한다.
+- 로그인 화면(D7) 추합 전까지 상단 **DEV 토큰** 입력란에 cognito-local Access Token을 넣어 API를 호출한다. 이 입력란은 개발 서버에서만 보이며 운영 빌드(`npm run build`, Docker 이미지)에는 포함되지 않는다.
+- 토큰 발급 예시(cognito-local):
+
+```bash
+H='Content-Type: application/x-amz-json-1.1'; C=nesumelocalclient00000001; E=dev@example.com; P='Dev!Passw0rd1'
+curl -s -X POST localhost:9229/ -H "$H" -H 'X-Amz-Target: AWSCognitoIdentityProviderService.SignUp' \
+  -d "{\"ClientId\":\"$C\",\"Username\":\"$E\",\"Password\":\"$P\",\"UserAttributes\":[{\"Name\":\"email\",\"Value\":\"$E\"}]}"
+curl -s -X POST localhost:9229/ -H "$H" -H 'X-Amz-Target: AWSCognitoIdentityProviderService.AdminConfirmSignUp' \
+  -d "{\"UserPoolId\":\"local_nesume\",\"Username\":\"$E\"}"
+curl -s -X POST localhost:9229/ -H "$H" -H 'X-Amz-Target: AWSCognitoIdentityProviderService.InitiateAuth' \
+  -d "{\"ClientId\":\"$C\",\"AuthFlow\":\"USER_PASSWORD_AUTH\",\"AuthParameters\":{\"USERNAME\":\"$E\",\"PASSWORD\":\"$P\"}}" \
+  | python3 -c 'import sys,json; print(json.load(sys.stdin)["AuthenticationResult"]["AccessToken"])'
+```
+
 ## 테스트
 
 ```bash
