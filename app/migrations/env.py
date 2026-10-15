@@ -7,7 +7,7 @@ from app.config import get_settings
 from app.db import Base
 
 # 모델 모듈은 여기서 import해야 autogenerate가 인식한다.
-# import app.models  # noqa: F401
+import app.models  # noqa: E402,F401
 
 config = context.config
 if config.config_file_name is not None:

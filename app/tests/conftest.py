@@ -44,6 +44,24 @@ def test_database():
 
 
 @pytest.fixture
+def db_session():
+    """테스트마다 트랜잭션을 열고 끝나면 롤백한다. 테스트 안의 commit은 SAVEPOINT로 처리된다."""
+    from sqlalchemy.orm import Session
+
+    from app.db import engine
+
+    conn = engine.connect()
+    outer = conn.begin()
+    session = Session(bind=conn, join_transaction_mode="create_savepoint")
+    try:
+        yield session
+    finally:
+        session.close()
+        outer.rollback()
+        conn.close()
+
+
+@pytest.fixture
 def client():
     from app.main import app
 
