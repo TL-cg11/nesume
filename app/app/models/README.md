@@ -1,6 +1,6 @@
 # 데이터 모델 (B1, B2)
 
-마이그레이션: `0002` B1 핵심 테이블, `0003` B2 문서 등급·공유 컬럼, `0004` B4 복원 출처
+마이그레이션: `0002` B1 핵심 테이블, `0003` B2 문서 등급·공유 컬럼, `0004` B4 복원 출처, `0005` B5 문항↔경험 연결
 소유: B (모델 추가는 B가 취합, tasks.md 디렉터리 소유). **C·D 리뷰 요청 대상.**
 
 ## ERD
@@ -15,6 +15,8 @@ erDiagram
     questions ||--o{ versions : has
     resumes ||--o{ shares : shared
     resumes |o--o{ applications : "SET NULL"
+    questions ||--o{ question_experiences : pulls
+    experiences ||--o{ question_experiences : "pulled into"
 
     users {
         string id PK "Cognito sub"
@@ -43,7 +45,7 @@ erDiagram
         uuid id PK
         uuid question_id FK
         int version_no "문항별 유일"
-        text body "B7에서 암호화 전환"
+        text body "PII 토큰화 상태"
         int char_count
         string source "manual | ai"
         bool compressed
@@ -56,9 +58,14 @@ erDiagram
         string type "값 미정(제약 없음)"
         string[] tech_stack
         string[] tags "GIN"
-        text outcome "B7에서 암호화 전환"
-        text detail "B7에서 암호화 전환"
+        text outcome "PII 토큰화 상태"
+        text detail "PII 토큰화 상태"
         string grade "personal"
+    }
+    question_experiences {
+        uuid question_id PK
+        uuid experience_id PK
+        string owner_id FK
     }
     shares {
         uuid id PK
@@ -108,6 +115,7 @@ erDiagram
 | 지원 기록은 자소서 삭제 후에도 유지 | `applications.resume_id` SET NULL | spec 4.5 |
 | 이름별 활성 템플릿 1개 | 부분 유일 인덱스 `uq_templates_active_name` | spec 3.6 |
 | 문서 등급 5종, 테이블별 기본값 | `_common.Grade`, CHECK 제약 | spec 6.2, 6.4 (B2) |
+| 문항에 끌어온 경험 기록 | `question_experiences` (문항·경험 삭제 시 CASCADE) | B5 "자소서 문항에 끌어오기" |
 | 공유 대상·멘토별 만료 | `resumes.shared_with` JSONB 배열, 원본은 `shares` (B10에서 동기화) | tasks B2, spec 3.7 |
 | 값 목록이 문서에 정의된 컬럼만 CHECK 제약 | `_common.one_of()` | versions.source, applications.status, audit_logs 등 |
 
@@ -139,7 +147,7 @@ ORM을 거치지 않는 INSERT에도 DB 기본값으로 같은 등급이 붙는�
 |---|---|
 | B4 | 버전 압축 시 `applications.version_ids`가 참조하는 버전 제외(배열은 FK 보호 불가) |
 | B3 | 감사 로그 테이블 권한(앱 계정 INSERT·SELECT만), 보관 기간 정리 |
-| B7 | `user_keys`, `pii_token_map`, 본문·경험 컬럼 암호화 전환 |
+| B7 | `user_keys`, `pii_token_map`(PII 원문 암호화). 본문·경험은 토큰화 상태로 저장(A1 연결 시) |
 | B10 | `shares` ↔ `resumes.shared_with` ↔ 벡터 메타데이터 동기화 |
 | B12·B13 | PDF·면접 연습 테이블 |
 | B20 | 삭제 작업 테이블 |
