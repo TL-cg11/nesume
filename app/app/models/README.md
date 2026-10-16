@@ -1,6 +1,6 @@
 # 데이터 모델 (B1, B2)
 
-마이그레이션: `0002` B1 핵심 테이블, `0003` B2 문서 등급·공유 컬럼, `0004` B4 복원 출처, `0005` B5 문항↔경험 연결
+마이그레이션: `0002` B1 핵심 테이블, `0003` B2 문서 등급·공유 컬럼, `0004` B4 복원 출처, `0005` B5 문항↔경험 연결, `0006` B6 다운로드 토큰
 소유: B (모델 추가는 B가 취합, tasks.md 디렉터리 소유). **C·D 리뷰 요청 대상.**
 
 ## ERD
@@ -11,6 +11,7 @@ erDiagram
     users ||--o{ experiences : owns
     users ||--o{ applications : owns
     users ||--o{ shares : "owner / shared_with"
+    users ||--o{ download_tokens : issues
     resumes ||--o{ questions : has
     questions ||--o{ versions : has
     resumes ||--o{ shares : shared
@@ -67,6 +68,15 @@ erDiagram
         uuid experience_id PK
         string owner_id FK
     }
+    download_tokens {
+        uuid id PK
+        string token_hash UK "SHA-256, 원문 미저장"
+        string owner_id FK
+        text object_key "users/{user_id}/..."
+        timestamptz expires_at "발급 후 10분"
+        timestamptz used_at "1회용"
+        timestamptz revoked_at "재발급 시 폐기"
+    }
     shares {
         uuid id PK
         uuid resume_id FK
@@ -116,6 +126,7 @@ erDiagram
 | 이름별 활성 템플릿 1개 | 부분 유일 인덱스 `uq_templates_active_name` | spec 3.6 |
 | 문서 등급 5종, 테이블별 기본값 | `_common.Grade`, CHECK 제약 | spec 6.2, 6.4 (B2) |
 | 문항에 끌어온 경험 기록 | `question_experiences` (문항·경험 삭제 시 CASCADE) | B5 "자소서 문항에 끌어오기" |
+| 다운로드 토큰은 해시만 저장, 10분·1회용, 만료 24시간 후 정리 | `download_tokens`, `core/storage/tokens.py` | spec 3.2, part2_guide 4.1, 4.23 (B6) |
 | 공유 대상·멘토별 만료 | `resumes.shared_with` JSONB 배열, 원본은 `shares` (B10에서 동기화) | tasks B2, spec 3.7 |
 | 값 목록이 문서에 정의된 컬럼만 CHECK 제약 | `_common.one_of()` | versions.source, applications.status, audit_logs 등 |
 
