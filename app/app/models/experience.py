@@ -1,7 +1,8 @@
 """경험 데이터 (spec 3.5)."""
+import uuid
 from datetime import date
 
-from sqlalchemy import Date, Index, String, Text
+from sqlalchemy import Date, ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -25,7 +26,7 @@ class Experience(Base):
     period_end: Mapped[date | None] = mapped_column(Date)
     role: Mapped[str | None] = mapped_column(String(200))
     tech_stack: Mapped[list[str]] = mapped_column(ARRAY(String(50)), default=list, server_default="{}")
-    # v0는 평문. B7에서 암호화 컬럼으로 전환한다.
+    # 문자열 필드는 PII 토큰화 상태로 저장한다(part2_guide 4.6, 4.8). 원문 PII는 B7 매핑 테이블에만.
     outcome: Mapped[str | None] = mapped_column(Text)
     detail: Mapped[str | None] = mapped_column(Text)
     grade: Mapped[str] = grade_column(Grade.PERSONAL)
@@ -33,3 +34,18 @@ class Experience(Base):
     created_at: Mapped[CreatedAt]
     updated_at: Mapped[UpdatedAt]
     deleted_at: Mapped[DeletedAt]
+
+
+class QuestionExperience(Base):
+    """자소서 문항에 끌어온 경험 기록(B5 "자소서 문항에 끌어오기", part2_guide 4.18)."""
+
+    __tablename__ = "question_experiences"
+
+    question_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("questions.id", ondelete="CASCADE"), primary_key=True
+    )
+    experience_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("experiences.id", ondelete="CASCADE"), primary_key=True, index=True
+    )
+    owner_id: Mapped[str] = owner_fk()
+    created_at: Mapped[CreatedAt]

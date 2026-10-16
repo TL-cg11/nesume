@@ -78,7 +78,7 @@ class Version(Base):
     )
     owner_id: Mapped[str] = owner_fk()
     version_no: Mapped[int] = mapped_column(Integer)
-    # v0는 평문. B7에서 사용자별 DEK 암호화 컬럼으로 전환한다.
+    # PII 토큰화 상태로 저장한다(part2_guide 4.8). 원문 PII는 B7 매핑 테이블에만.
     body: Mapped[str] = mapped_column(Text)
     char_count: Mapped[int] = mapped_column(Integer)
     source: Mapped[str] = mapped_column(String(10))
