@@ -2,32 +2,33 @@
 #
 # 역할 키: user=일반 사용자, mentor=멘토, operator=운영자, system=시스템
 #   (토큰 role 클레임 값. B1 잠정값 기준, D1 확정 시 조정)
-# 등급 키: 공개/내부/개인/민감/기밀 (spec §6.2)
+# 등급 키: public/internal/personal/sensitive/confidential
+#   (B2 `Grade` enum 값과 동일. spec §6.2의 공개/내부/개인/민감/기밀)
 # decision: allow / block / mask
-# scope: own=본인 소유, shared=공유+만료 전, all=소유 조건 없음, (없으면 무조건)
+# scope: own=본인 소유, shared=공유+만료 전(resumes.shared_with JSONB), all=소유 조건 없음, (없으면 무조건)
 version: 0
 roles:
   user:
-    공개: {decision: allow}
-    내부: {decision: block}
-    개인: {decision: allow, scope: own}
-    민감: {decision: mask, scope: own}
-    기밀: {decision: block}
+    public: {decision: allow}
+    internal: {decision: block}
+    personal: {decision: allow, scope: own}
+    sensitive: {decision: mask, scope: own}
+    confidential: {decision: block}
   mentor:
-    공개: {decision: allow}
-    내부: {decision: block}
-    개인: {decision: allow, scope: shared}
-    민감: {decision: mask, scope: shared}
-    기밀: {decision: block}
+    public: {decision: allow}
+    internal: {decision: block}
+    personal: {decision: allow, scope: shared}
+    sensitive: {decision: mask, scope: shared}
+    confidential: {decision: block}
   operator:
-    공개: {decision: allow}
-    내부: {decision: allow}
-    개인: {decision: mask, scope: all}
-    민감: {decision: mask, scope: all}
-    기밀: {decision: block}
+    public: {decision: allow}
+    internal: {decision: allow}
+    personal: {decision: mask, scope: all}
+    sensitive: {decision: mask, scope: all}
+    confidential: {decision: block}
   system:
-    공개: {decision: allow}
-    내부: {decision: allow}
-    개인: {decision: allow, scope: all}
-    민감: {decision: mask, scope: all}
-    기밀: {decision: block}
+    public: {decision: allow}
+    internal: {decision: allow}
+    personal: {decision: allow, scope: all}
+    sensitive: {decision: mask, scope: all}
+    confidential: {decision: block}

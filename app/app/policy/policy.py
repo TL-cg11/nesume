@@ -60,10 +60,11 @@ def build_where(
     grade_col: str = "grade",
     owner_col: str = "owner_id",
     shared_col: str = "shared_with",
-    expires_col: str = "expires_at",
 ) -> tuple[str, dict]:
     """FilterSpec → 파라미터화된 WHERE 절. 문자열 연결 금지, 바인딩만(인젝션 방지).
 
+    공유(scope=shared)는 B2 스키마대로 `resumes.shared_with` JSONB
+    `[{"user_id", "expires_at"}]`를 풀어 요청자 원소의 만료 전 여부를 본다.
     허용 등급이 하나도 없으면 'FALSE' (결과 없음)로 안전하게 닫는다.
     """
     clauses: list[str] = []
@@ -78,7 +79,9 @@ def build_where(
             params["uid"] = user_id
         elif c.scope == "shared":
             clauses.append(
-                f"({grade_col} = :{gp} AND :uid = ANY({shared_col}) AND {expires_col} > now())"
+                f"({grade_col} = :{gp} AND EXISTS ("
+                f" SELECT 1 FROM jsonb_array_elements({shared_col}) AS e"
+                f" WHERE e->>'user_id' = :uid AND (e->>'expires_at')::timestamptz > now()))"
             )
             params["uid"] = user_id
         else:
