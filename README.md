@@ -98,6 +98,42 @@ init/
   cognito/db/        cognito-local user pool/client 시드 (고정 ID)
 ```
 
+## 프론트엔드 개발 서버 (화면 수정 시)
+
+```bash
+cd web
+npm ci
+API_PROXY_TARGET=http://localhost:8080 npm run dev   # http://localhost:5173, /api는 nginx로 프록시
+```
+
+- `docker compose up -d`로 백엔드가 떠 있어야 한다.
+- 로그인 화면(D7) 추합 전까지 상단 **DEV 토큰** 입력란에 cognito-local Access Token을 넣어 API를 호출한다. 이 입력란은 개발 서버에서만 보이며 운영 빌드(`npm run build`, Docker 이미지)에는 포함되지 않는다.
+- 토큰 발급 예시(cognito-local):
+
+```bash
+H='Content-Type: application/x-amz-json-1.1'; C=nesumelocalclient00000001; E=dev@example.com; P='Dev!Passw0rd1'
+curl -s -X POST localhost:9229/ -H "$H" -H 'X-Amz-Target: AWSCognitoIdentityProviderService.SignUp' \
+  -d "{\"ClientId\":\"$C\",\"Username\":\"$E\",\"Password\":\"$P\",\"UserAttributes\":[{\"Name\":\"email\",\"Value\":\"$E\"}]}"
+curl -s -X POST localhost:9229/ -H "$H" -H 'X-Amz-Target: AWSCognitoIdentityProviderService.AdminConfirmSignUp' \
+  -d "{\"UserPoolId\":\"local_nesume\",\"Username\":\"$E\"}"
+curl -s -X POST localhost:9229/ -H "$H" -H 'X-Amz-Target: AWSCognitoIdentityProviderService.InitiateAuth' \
+  -d "{\"ClientId\":\"$C\",\"AuthFlow\":\"USER_PASSWORD_AUTH\",\"AuthParameters\":{\"USERNAME\":\"$E\",\"PASSWORD\":\"$P\"}}" \
+  | python3 -c 'import sys,json; print(json.load(sys.stdin)["AuthenticationResult"]["AccessToken"])'
+```
+
+## 테스트
+
+```bash
+docker compose up -d                      # db, localstack, cognito가 healthy 상태여야 함
+docker compose --profile test build test  # 최초 1회 또는 requirements 변경 시
+docker compose run --rm test              # pytest 실행 (인자 전달 예: ... test pytest -k health)
+```
+
+- 테스트는 `app` 이미지의 `test` 스테이지(개발 의존성 포함)에서 실행된다. 운영 이미지(`runtime`)에는 pytest가 포함되지 않는다.
+- `./app`을 읽기 전용으로 마운트하므로 코드 수정 후 재빌드 없이 바로 실행된다.
+- 세션 시작 시 `<DB_NAME>_test` DB를 새로 만들고 마이그레이션을 적용하며, 종료 시 삭제한다. 개발 DB는 건드리지 않는다.
+- 경고는 오류로 처리한다(`pytest.ini`의 `filterwarnings = error`).
+
 ## 마이그레이션
 
 ```bash
