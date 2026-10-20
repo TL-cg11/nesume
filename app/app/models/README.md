@@ -1,6 +1,6 @@
 # 데이터 모델 (B1, B2)
 
-마이그레이션: `0002` B1 핵심 테이블, `0003` B2 문서 등급·공유 컬럼, `0004` B4 복원 출처, `0005` B5 문항↔경험 연결, `0006` B6 다운로드 토큰, `0007` B3 감사 로그 무결성
+마이그레이션: `0002` B1 핵심 테이블, `0003` B2 문서 등급·공유 컬럼, `0004` B4 복원 출처, `0005` B5 문항↔경험 연결, `0006` B6 다운로드 토큰, `0007` B3 감사 로그 무결성, `0008` B7 PII 대응표·사용자 키
 소유: B (모델 추가는 B가 취합, tasks.md 디렉터리 소유). **C·D 리뷰 요청 대상.**
 
 ## ERD
@@ -12,6 +12,8 @@ erDiagram
     users ||--o{ applications : owns
     users ||--o{ shares : "owner / shared_with"
     users ||--o{ download_tokens : issues
+    users ||--o| user_keys : "DEK 1개"
+    users ||--o{ pii_vaults : owns
     resumes ||--o{ questions : has
     questions ||--o{ versions : has
     resumes ||--o{ shares : shared
@@ -67,6 +69,18 @@ erDiagram
         uuid question_id PK
         uuid experience_id PK
         string owner_id FK
+    }
+    user_keys {
+        string user_id PK
+        bytes encrypted_dek "KMS 암호화"
+        text kms_key_id
+    }
+    pii_vaults {
+        string id PK "A1 vault id"
+        string owner_id FK
+        bytes entries_enc "AES-GCM, AAD=id|owner"
+        timestamptz expires_at "NULL=만료 없음(저장용)"
+        string grade "sensitive"
     }
     download_tokens {
         uuid id PK
@@ -129,6 +143,8 @@ erDiagram
 | 다운로드 토큰은 해시만 저장, 10분·1회용, 만료 24시간 후 정리 | `download_tokens`, `core/storage/tokens.py` | spec 3.2, part2_guide 4.1, 4.23 (B6) |
 | 감사 로그 무결성: doc_grades 5등급만, `test-` 접두어⇔is_test, query_hash SHA-256 형식 | `audit_logs` CHECK 3종 | spec 10.1, part2_guide 4.25 (B3) |
 | 감사 로그 90일 보관 | `features/audit/retention.py` (1회 최대 5,000행, 오래된 순) | spec 10.2 (B3) |
+| PII 대응표는 사용자별 DEK로 암호화, DEK는 KMS 암호화 상태로만 저장 | `user_keys`, `pii_vaults`, `app/app/pii/envelope.py` | spec 8.3, tasks B7 |
+| 저장용 대응표는 만료 없음, LLM용은 만료 후 열람 시·정리 배치로 삭제 | `pii_vaults.expires_at`, `pg_vault_store.cleanup_expired` | part2_guide 4.26, 4.28 |
 | 공유 대상·멘토별 만료 | `resumes.shared_with` JSONB 배열, 원본은 `shares` (B10에서 동기화) | tasks B2, spec 3.7 |
 | 값 목록이 문서에 정의된 컬럼만 CHECK 제약 | `_common.one_of()` | versions.source, applications.status, audit_logs 등 |
 
@@ -161,7 +177,7 @@ ORM을 거치지 않는 INSERT에도 DB 기본값으로 같은 등급이 붙는�
 | B4 | 버전 압축 시 `applications.version_ids`가 참조하는 버전 제외(배열은 FK 보호 불가) |
 | B11 | 감사 로그 수정·삭제 방지(팀 합의), 기록 함수·조회 API |
 | (A팀 합의 후) | `audit_logs` doc_ids·doc_grades 길이 일치 제약 |
-| B7 | `user_keys`, `pii_token_map`(PII 원문 암호화). 본문·경험은 토큰화 상태로 저장(A1 연결 시) |
+| B7(A1 추가 기능 후) | 버전·경험 행에 대응표 ID 컬럼, pii_hooks를 A1 + 저장소로 교체 |
 | B10 | `shares` ↔ `resumes.shared_with` ↔ 벡터 메타데이터 동기화 |
 | B12·B13 | PDF·면접 연습 테이블 |
 | B20 | 삭제 작업 테이블 |
