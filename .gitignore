@@ -16,3 +16,9 @@ dist/
 .DS_Store
 .idea/
 .vscode/
+.ruff_cache/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*

@@ -95,6 +95,9 @@ services:
     environment: &app-env
       <<: *app-db-env
       APP_ENV: ${APP_ENV:?APP_ENV is required}
+      # 로그 형식(json|text)·레벨. 비우면 json / INFO. test 서비스에도 앵커로 전파된다.
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
       AWS_REGION: ${AWS_REGION}
       AWS_ENDPOINT_URL: http://localstack:4566
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:?AWS_ACCESS_KEY_ID is required}
@@ -136,6 +139,8 @@ services:
       APP_ENV: test
       # 테스트에서 cognito-local에 사용자 생성·로그인할 때 사용
       COGNITO_LOCAL_ENDPOINT: http://cognito:9229
+      # 소스가 읽기 전용(:ro)이라 ruff가 /srv/.ruff_cache를 만들 수 없다. 캐시 없이 실행한다.
+      RUFF_NO_CACHE: "true"
     volumes:
       - ./app:/srv:ro
     depends_on:

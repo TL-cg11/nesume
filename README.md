@@ -6,7 +6,7 @@ AI 자소서 작성·관리 서비스의 공통 Docker 개발 환경.
 
 | 서비스 | 이미지 | 역할 | 호스트 포트(기본) |
 |---|---|---|---|
-| web | `nginxinc/nginx-unprivileged:1.30.5-alpine` (React 19 + Vite 8 빌드) | 프론트엔드, `/api/*` → app 프록시 | `WEB_PORT` (8080) |
+| web | `nginxinc/nginx-unprivileged:1.30.6-alpine` (React 19 + Vite 8 빌드) | 프론트엔드, `/api/*` → app 프록시 | `WEB_PORT` (8080) |
 | app | `python:3.12.15-slim-bookworm` (FastAPI + SQLAlchemy 2.0 + Alembic) | 백엔드 API | `APP_PORT` (8000) |
 | migrate | app 이미지 | `alembic upgrade head` 1회 실행 후 종료 | — |
 | db | `pgvector/pgvector:0.8.7-pg16-bookworm` | PostgreSQL 16 + pgvector | **노출 안 함** |
@@ -68,14 +68,14 @@ COGNITO_CLIENT_ID=nesumelocalclient00000001
 |---|---|
 | `http://localhost:8080` | 프론트엔드 |
 | `http://localhost:8080/api/health` | 프론트 경유 health |
-| `http://localhost:8000/health` | Liveness — 프로세스 생존만 확인 |
+| `http://localhost:8000/health` | Liveness — 프로세스 생존만 확인. `version`(빌드 시 넣은 git sha, 로컬은 `dev`) 포함 |
 | `http://localhost:8000/ready` | Readiness — DB, vector 확장, S3 버킷 확인 (실패 시 503) |
-| `http://localhost:8000/docs` | API 문서 (`APP_ENV=local`일 때만) |
+| `http://localhost:8000/docs` | API 문서 (`APP_ENV=local`·`test`일 때만) |
 
 ## 검증
 
 ```bash
-# 1. /health 200
+# 1. /health 200. 응답 헤더에 X-Request-ID, 본문에 "version":"dev"
 curl -i http://localhost:8000/health
 
 # 2. vector 확장 활성화
@@ -90,8 +90,16 @@ docker compose exec localstack awslocal s3 ls
 ```
 app/                 백엔드 (FastAPI)
   app/               애플리케이션 패키지
+    core/            공통 모듈 (D3: request_id, errors, logging, health, aws)
+    auth/            Cognito 토큰 검증 (B 초안, D7에서 확장)
+    policy/          역할×등급 매트릭스 matrix.yaml + 로더 (C2)
+    features/        기능 모듈 (resumes, experiences, ...)
   migrations/        Alembic 마이그레이션
+  tests/             pytest
 web/                 프론트엔드 (React + Vite, nginx)
+infra/
+  bootstrap/         Terraform: tfstate 버킷·잠금 테이블·ECR (D4, apply는 크레딧 뒤)
+docs/dev/            개발 가이드 (backend-guide.md)
 init/
   db/                DB 최초 기동 SQL (빈 볼륨일 때만 실행)
   localstack/        LocalStack ready 훅 (버킷·KMS 키·시크릿 생성, 매 기동 실행)
@@ -146,11 +154,44 @@ docker compose run --rm migrate alembic upgrade head
 - `vector` 확장 활성화의 기준은 첫 마이그레이션(`0001`)이다. `init/db`는 로컬 편의용이며 RDS에서는 실행되지 않는다.
 - 생성된 리비전 파일은 컨테이너 내부에 생기므로 `docker compose cp` 또는 볼륨 마운트로 가져온다. 
 
+## 로그 형식
+
+- `LOG_FORMAT=json`(운영 기본): 한 줄 JSON. CloudWatch Logs에서 필드로 조회한다.
+- `LOG_FORMAT=text`(로컬 권장): 사람이 읽기 쉬운 형식. `.env`에 넣으면 `docker compose logs app`이 읽기 편하다.
+- `LOG_LEVEL`: 기본 `INFO`.
+- 모든 줄에 `request_id`가 붙고, 요청 1건당 접근 로그 1줄(method, path, status, duration_ms)이 남는다. 요청 본문은 기록하지 않는다.
+- 응답 헤더 `X-Request-ID`와 에러 본문의 `request_id`가 같은 값이다. 문의·로그 추적에 쓴다. 자세한 규칙은 `docs/dev/backend-guide.md`.
+
+## 이미지 태그 규칙 (ECR)
+
+- 저장소: `<ECR>/nesume/app`, `<ECR>/nesume/web`. `<ECR>`은 `<account>.dkr.ecr.ap-northeast-2.amazonaws.com`.
+- 태그는 **git sha 하나**: `<ECR>/nesume/app:<git sha>`. `latest`·브랜치명 태그 금지. ECR은 `IMMUTABLE`이라 같은 태그를 덮어쓸 수 없다.
+- 환경 승격(dev → staging → prod)은 재빌드가 아니라 **같은 sha를 Helm values의 `image.tag`에 적는 방식**으로 한다.
+- 빌드 시 `--build-arg APP_VERSION=<git sha>`를 넣으면 `/health`의 `version`으로 어떤 빌드가 떠 있는지 확인할 수 있다. 로컬 빌드는 `dev`.
+
+```bash
+# 로컬에서 sha 태그로 빌드해 보기 (컨텍스트는 ./app, 저장소 루트가 아니다)
+SHA=$(git rev-parse --short HEAD)
+docker build -f app/Dockerfile --target runtime --build-arg APP_VERSION=$SHA -t nesume/app:$SHA ./app
+docker run --rm -e APP_ENV=local -e DB_HOST=x -e DB_PORT=1 -e DB_NAME=x -e DB_USER=x -e DB_PASSWORD=x -p 8000:8000 nesume/app:$SHA
+curl -s localhost:8000/health   # {"status":"ok","version":"<sha>"}
+```
+
+- ECR 생성·푸시는 AWS 크레딧 도착 후 `infra/bootstrap`(`terraform apply`)으로 저장소를 만들고 CI(D11)가 푸시한다. 그 전에는 `terraform init -backend=false && terraform validate`까지만 확인한다.
+- 이미지 취약점 검사(Trivy). 수정판이 있는 HIGH/CRITICAL은 0이어야 한다. 나오면 베이스 이미지 패치 태그를 올리고 재빌드한다.
+
+```bash
+trivy image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 nesume-app:local
+trivy image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 nesume-web:local
+```
+
+  `--ignore-unfixed`를 두는 이유: Debian 베이스(python:*-slim-bookworm)에는 배포판이 `will_not_fix`로 둔 CVE가 다수 있어 패치 태그를 올려도 사라지지 않는다. 전체 목록은 플래그를 빼고 본다.
+
 ## 운영 규칙
 
 - 연결 정보는 전부 환경변수. 코드에 호스트 주소 하드코딩 금지.
 - AWS SDK endpoint는 `AWS_ENDPOINT_URL`로만 지정. AWS 배포 시 미설정 → 실제 엔드포인트 사용.
-- 이미지·패키지 버전 고정(`latest` 금지).
+- 이미지·패키지 버전 고정(`latest` 금지). 이미지 태그는 git sha(위 규칙).
 - `.env`는 커밋 금지.
 
 ## 로컬 Cognito 제약 (cognito-local)
