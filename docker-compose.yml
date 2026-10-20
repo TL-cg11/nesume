@@ -71,7 +71,9 @@ services:
 
   # 마이그레이션은 앱과 분리된 일회성 작업으로 실행한다(앱 복제본마다 중복 실행 방지).
   migrate:
-    build: ./app
+    build:
+      context: ./app
+      target: runtime
     image: nesume-app:local
     command: ["alembic", "upgrade", "head"]
     environment: &app-db-env
@@ -86,9 +88,11 @@ services:
     restart: "no"
 
   app:
-    build: ./app
+    build:
+      context: ./app
+      target: runtime
     image: nesume-app:local
-    environment:
+    environment: &app-env
       <<: *app-db-env
       APP_ENV: ${APP_ENV:?APP_ENV is required}
       AWS_REGION: ${AWS_REGION}
@@ -118,6 +122,30 @@ services:
       timeout: 3s
       retries: 10
     restart: unless-stopped
+
+  # 테스트 전용(profile: test). `docker compose run --rm test`로 실행.
+  # 소스를 마운트하므로 코드 수정 후 재빌드 없이 실행된다. DB는 <DB_NAME>_test를 별도로 생성해 사용한다.
+  test:
+    build:
+      context: ./app
+      target: test
+    image: nesume-app:test
+    profiles: ["test"]
+    environment:
+      <<: *app-env
+      APP_ENV: test
+      # 테스트에서 cognito-local에 사용자 생성·로그인할 때 사용
+      COGNITO_LOCAL_ENDPOINT: http://cognito:9229
+    volumes:
+      - ./app:/srv:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+      cognito:
+        condition: service_healthy
+    restart: "no"
 
   web:
     build: ./web
