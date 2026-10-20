@@ -190,8 +190,3 @@ async def test_detokenize_fixes_particles() -> None:
     llm_output = f"{token}은 지원했습니다"
     d = await detokenize(llm_output, t.vault_id, "u1", store=store)
     assert d.text == "김철수는 지원했습니다"
-
-
-@pytest.fixture
-def anyio_backend() -> str:
-    return "asyncio"
