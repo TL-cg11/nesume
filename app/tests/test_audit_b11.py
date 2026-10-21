@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import delete, select, text, update
 from sqlalchemy.exc import IntegrityError
@@ -14,9 +15,13 @@ from sqlalchemy.exc import IntegrityError
 from app.auth import CurrentUser, Role, get_current_user
 from app.db import SessionLocal
 from app.features.audit import retention
+from app.features.audit.router import router as audit_router
 from app.features.audit.sink import AuditRecordInvalid, DbAuditSink
-from app.main import app
 from app.models import AuditLog, User
+
+# main.py(D 소유) 등록은 D팀에 요청. 테스트는 라우터를 테스트 앱에 직접 붙여 검증한다.
+app = FastAPI()
+app.include_router(audit_router)
 
 
 def _fields(**kw):
