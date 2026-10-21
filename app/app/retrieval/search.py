@@ -9,11 +9,13 @@ C2 정책 로더가 만든 WHERE를 벡터 검색에 **강제로** 붙인다. �
 """
 from pathlib import Path
 
-import app.policy.policy as policy_mod
-from app.models.embedding import JobPostingEmbedding, UserProfileEmbedding
-from app.policy.policy import build_where
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
+
+import app.policy.policy as policy_mod
+from app.models.embedding import MODEL_VERSION, JobPostingEmbedding, UserProfileEmbedding
+from app.models.posting import JobPosting
+from app.policy.policy import build_where
 
 #: 정책은 `app/app/policy/matrix.yaml`(D2 공식본 나오면 교체)에서 1회 로드
 _policy = policy_mod.Policy.load(str(Path(policy_mod.__file__).parent / "matrix.yaml"))
@@ -23,10 +25,19 @@ _ITERATIVE_SCAN = "SET LOCAL hnsw.iterative_scan = 'strict_order'"
 
 
 def search_public(session: Session, query_embedding: list[float], *, top_k: int = 20):
-    """공개 인덱스(공고) 검색. grade=public뿐이라 역할 접근 필터가 필요 없다."""
+    """공개 인덱스(공고) 검색. grade=public뿐이라 역할 접근 필터는 없다.
+
+    단 적대적 패스 결과로 두 가지를 강제한다(docs/C6.md):
+    - **비활성·검토대기 공고 제외** — `job_postings` 조인으로 `is_active`·`not needs_review`.
+      (마감·백스톱 처리분, 식별 불확실 공고가 추천에 뜨지 않게.)
+    - **임베딩 버전 일치** — 모델 버전 혼재 시 검색 품질 붕괴 방지.
+    """
     dist = JobPostingEmbedding.embedding.cosine_distance(query_embedding)
     stmt = (
         select(JobPostingEmbedding.id, JobPostingEmbedding.source_id, dist.label("distance"))
+        .join(JobPosting, JobPosting.id == JobPostingEmbedding.source_id)
+        .where(JobPosting.is_active.is_(True), JobPosting.needs_review.is_(False))
+        .where(JobPostingEmbedding.model_version == MODEL_VERSION)
         .order_by(dist)
         .limit(top_k)
     )
@@ -63,7 +74,11 @@ def search_personal(
         )
         .where(text(where_sql).bindparams(**params))
         .where(UserProfileEmbedding.deleted_at.is_(None))  # 소프트 삭제 제외(B 요청, 30일 전까지)
+        .where(UserProfileEmbedding.model_version == MODEL_VERSION)  # 버전 혼재 방지(적대적 패스)
         .order_by(dist)
         .limit(top_k)
     )
+    # TODO(B 통합): 고등급(sensitive·confidential) 심층 방어 — 벡터 행의 복제된 shared_with만
+    #   믿지 말고 원본 `resumes`(shared_with·deleted_at)와 EXISTS 조인으로 재확인(docs/C3.md #1 ③).
+    #   B의 resumes 모델(컬럼·관계) 확정 후 추가. 추측 SQL은 접근통제 사고 위험이라 지금은 미구현.
     return session.execute(stmt).all()
