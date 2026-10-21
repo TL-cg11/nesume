@@ -197,7 +197,9 @@ async def test_doc_ids_are_recorded() -> None:
     result = await guard.run("경험 정리", CTX)
 
     assert result.doc_ids == ("d1", "d2")
+    assert result.doc_grades == ("personal", "personal")
     assert audit.rows[0]["doc_ids"] == ["d1", "d2"]
+    assert audit.rows[0]["doc_grades"] == ["personal", "personal"], "등급별 차단율(B21)에 쓴다"
 
 
 @pytest.mark.anyio
@@ -261,8 +263,9 @@ async def test_audit_fields_match_the_schema() -> None:
 
     row = audit.rows[0]
     for key in ("request_id", "session_id", "user_id", "role", "feature",
-                "decision", "decision_stage", "flags", "rule_id", "canary_hit",
-                "is_test", "latency_ms"):
+                "query_masked", "query_hash", "doc_ids", "doc_grades",
+                "decision", "decision_stage", "query_type", "flags", "rule_id",
+                "canary_hit", "is_test", "latency_ms"):
         assert key in row, f"빠진 컬럼: {key}"
 
 
@@ -321,3 +324,16 @@ async def test_is_test_flag_is_passed_through() -> None:
 @pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"
+
+
+@pytest.mark.anyio
+async def test_audit_keys_all_exist_as_columns() -> None:
+    """★ A8 이 넣는 키가 전부 audit_logs 컬럼이어야 한다. 아니면 INSERT 가 깨진다."""
+    from app.models.audit import AuditLog
+
+    audit = FakeAudit()
+    await _guard(audit=audit).run("지원 동기", CTX)
+
+    columns = set(AuditLog.__table__.c.keys())
+    extra = set(audit.rows[0]) - columns
+    assert not extra, f"컬럼에 없는 키: {extra}"

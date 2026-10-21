@@ -123,6 +123,8 @@ class PipelineResult:
     #: 복원하지 못한 토큰. 비어 있어야 정상이다
     unresolved: tuple[str, ...] = ()
     doc_ids: tuple[str, ...] = ()
+    #: 참조한 문서들의 등급. doc_ids 와 같은 순서다 (audit_logs.doc_grades)
+    doc_grades: tuple[str, ...] = ()
 
     @property
     def blocked(self) -> bool:
@@ -192,6 +194,7 @@ class Guardrail:
                 ctx=ctx,
                 verdict=verdict,
                 doc_ids=result.doc_ids,
+                doc_grades=result.doc_grades,
                 latency_ms=int((time.monotonic() - started) * 1000),
                 suppress=failure is not None,
             )
@@ -245,10 +248,15 @@ class Guardrail:
         verdict = verdict.merge(checked.verdict)
 
         doc_ids = tuple(c.doc_id for c in chunks)
+        doc_grades = tuple(c.grade for c in chunks)
         if checked.verdict.decision == "block":
             # 복원하지 않는다. 복원하면 막기로 한 본문에 진짜 이름이 들어간다
             return PipelineResult(
-                text="", verdict=verdict, usage=response.usage, doc_ids=doc_ids
+                text="",
+                verdict=verdict,
+                usage=response.usage,
+                doc_ids=doc_ids,
+                doc_grades=doc_grades,
             )
 
         # 8. 복원 (A1)
@@ -262,6 +270,7 @@ class Guardrail:
             usage=response.usage,
             unresolved=tuple(restored.unresolved),
             doc_ids=doc_ids,
+            doc_grades=doc_grades,
         )
 
     async def _write_audit(
@@ -271,6 +280,7 @@ class Guardrail:
         ctx: RequestContext,
         verdict: Verdict,
         doc_ids: tuple[str, ...],
+        doc_grades: tuple[str, ...],
         latency_ms: int,
         suppress: bool,
     ) -> None:
@@ -287,6 +297,8 @@ class Guardrail:
             "query_masked": mask(query),
             "query_hash": hashlib.sha256(query.encode("utf-8")).hexdigest(),
             "doc_ids": list(doc_ids),
+            # 등급별 차단율 집계(B21)에 쓴다. doc_ids 와 같은 순서다
+            "doc_grades": list(doc_grades),
             "is_test": ctx.is_test,
             "latency_ms": latency_ms,
             **verdict.to_audit_fields(),
