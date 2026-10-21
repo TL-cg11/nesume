@@ -70,10 +70,11 @@ def test_invalid_rows_rejected(db_session, kw):
         db_session.flush()
 
 
-def test_doc_ids_and_grades_length_not_enforced_yet(db_session):
-    # 길이 일치 제약은 A팀(A8) 기록 형식 합의 후 추가(part2_guide 4.25)
+def test_doc_ids_and_grades_length_enforced(db_session):
+    # A8이 1:1로 기록함을 확인한 뒤 B11(마이그레이션 0009)에서 추가(part2_guide 4.29)
     db_session.add(_log(doc_ids=["d1", "d2"], doc_grades=["personal"]))
-    db_session.flush()
+    with pytest.raises(IntegrityError):
+        db_session.flush()
 
 
 # --- 90일 보관 정리 ---------------------------------------------------------

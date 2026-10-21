@@ -2,7 +2,9 @@
 
 user_id는 FK를 두지 않는다. 계정 삭제 시 anon_id로 치환해 보존한다(spec 10.2).
 무결성 제약(B3, part2_guide 4.25): doc_grades 5등급만, test- 접두어⇔is_test, query_hash SHA-256 형식.
-보관 90일: features/audit/retention.py 배치가 삭제. 수정·삭제 방지는 B11에서 추가.
+보관 90일: features/audit/retention.py 배치가 삭제.
+수정·삭제 방지(B11, 마이그레이션 0009 트리거): UPDATE는 user_id를 users.anon_id 값으로 바꾸는 것만,
+DELETE는 90일 지난 행만 허용, TRUNCATE 거부.
 """
 import uuid
 from datetime import datetime
@@ -34,6 +36,8 @@ class AuditLog(Base):
         CheckConstraint(f"doc_grades <@ {_GRADE_ARRAY}", name="doc_grades_known"),
         CheckConstraint(f"(session_id LIKE '{TEST_SESSION_PREFIX}%') = is_test", name="test_session_matches_flag"),
         CheckConstraint("query_hash IS NULL OR query_hash ~ '^[0-9a-f]{64}$'", name="query_hash_sha256"),
+        # B11: A8은 doc_ids·doc_grades를 같은 순서로 1:1 기록한다
+        CheckConstraint("cardinality(doc_ids) = cardinality(doc_grades)", name="doc_ids_grades_paired"),
         Index("ix_audit_logs_user_ts", "user_id", "timestamp"),
         Index("ix_audit_logs_ts", "timestamp"),
     )
