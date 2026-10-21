@@ -10,13 +10,22 @@ import secrets
 import time
 
 from app.pii.rules import scan
-from app.pii.types import Hit, PiiKind, TOKENIZED_KINDS, DetokenizeResult, TokenizeResult
+from app.pii.types import (
+    Hit,
+    PiiKind,
+    TOKENIZED_KINDS,
+    DetokenizeResult,
+    FieldsDetokenizeResult,
+    FieldsTokenizeResult,
+    TokenizeResult,
+)
 from app.pii.vault import (
     DEFAULT_TTL_SECONDS,
     TOKEN_FORMAT_VERSION,
     Vault,
     VaultStore,
 )
+from collections.abc import Mapping
 
 #: 토큰 형식 `[[PERSON_1]]`.
 #: 대괄호 둘 — 하나면 마크다운 링크와 겹친다.
@@ -41,13 +50,76 @@ class VaultExpired(Exception):
     """치환표가 만료됐다. 부분 복원은 더 나쁘므로 시도하지 않는다."""
 
 
+class _Tokenizer:
+    """치환 상태를 들고 여러 텍스트에 걸쳐 재사용한다.
+
+    ``seen`` 과 ``counters`` 를 공유하는 것이 핵심이다. 덕분에 필드가 여럿이어도
+    같은 값은 같은 토큰을 받고 번호는 1부터 이어진다.
+    """
+
+    def __init__(self, targets: set[str]) -> None:
+        self.targets = targets
+        self.entries: dict[str, str] = {}  # token -> 원문
+        self._seen: dict[tuple[str, str], str] = {}  # (kind, 원문) -> token
+        self._counters: dict[str, int] = {}
+        self.counts: dict[str, int] = {}
+
+    def run(self, text: str) -> tuple[str, list[Hit]]:
+        hits: list[Hit] = []
+        out: list[str] = []
+        cursor = 0
+
+        for span in scan(text):
+            kind = span.rule.kind
+            if kind not in self.targets:
+                continue
+
+            key = (kind, span.value)
+            token = self._seen.get(key)
+            if token is None:
+                self._counters[kind] = self._counters.get(kind, 0) + 1
+                token = _make_token(kind, self._counters[kind])
+                self._seen[key] = token
+                self.entries[token] = span.value
+
+            out.append(text[cursor : span.start])
+            out.append(token)
+            cursor = span.end
+
+            hits.append(
+                Hit(
+                    kind=kind,
+                    rule_id=span.rule.rule_id,
+                    start=span.start,
+                    end=span.end,
+                    confidence=span.rule.confidence,
+                    token=token,
+                )
+            )
+            self.counts[kind] = self.counts.get(kind, 0) + 1
+
+        out.append(text[cursor:])
+        return "".join(out), hits
+
+
+def _new_vault(owner_id: str, entries: dict[str, str], ttl_seconds: int | None) -> Vault:
+    return Vault(
+        id=secrets.token_urlsafe(24),  # 순번이면 남의 치환표를 열어볼 수 있다
+        owner_id=owner_id,
+        entries=entries,
+        # None 이면 만료 없음 — 저장용 치환표 (vault.NO_EXPIRY)
+        expires_at=None if ttl_seconds is None else time.time() + ttl_seconds,
+        format_version=TOKEN_FORMAT_VERSION,
+    )
+
+
 async def tokenize(
     text: str,
     *,
     owner_id: str,
     store: VaultStore,
     kinds: tuple[PiiKind, ...] | None = None,
-    ttl_seconds: int = DEFAULT_TTL_SECONDS,
+    ttl_seconds: int | None = DEFAULT_TTL_SECONDS,
 ) -> TokenizeResult:
     """LLM에 보내기 직전에 부른다.
 
@@ -57,59 +129,82 @@ async def tokenize(
     치환표는 문서 단위로 새로 만든다. 요청 사이에 번호를 이어받지 않는다 —
     이어받으면 같은 사람이 항상 ``[[PERSON_1]]`` 이 되어 토큰 자체가 식별자가 된다
     (제안서 4장).
+
+    ``ttl_seconds=None`` 이면 만료 없는 치환표를 만든다. 토큰 상태로 **저장**하는
+    경우(B7)에 쓴다 — 30분 뒤 지우면 그 자소서는 영구히 복원 불가가 된다.
     """
-    targets = set(kinds or TOKENIZED_KINDS)
+    tokenizer = _Tokenizer(set(kinds or TOKENIZED_KINDS))
+    tokenized, hits = tokenizer.run(text)
 
-    entries: dict[str, str] = {}  # token -> 원문
-    seen: dict[tuple[str, str], str] = {}  # (kind, 원문) -> token
-    counters: dict[str, int] = {}
-    counts: dict[str, int] = {}
-    hits: list[Hit] = []
-
-    out: list[str] = []
-    cursor = 0
-
-    for span in scan(text):
-        kind = span.rule.kind
-        if kind not in targets:
-            continue
-
-        key = (kind, span.value)
-        token = seen.get(key)
-        if token is None:
-            counters[kind] = counters.get(kind, 0) + 1
-            token = _make_token(kind, counters[kind])
-            seen[key] = token
-            entries[token] = span.value
-
-        out.append(text[cursor : span.start])
-        out.append(token)
-        cursor = span.end
-
-        hits.append(
-            Hit(
-                kind=kind,
-                rule_id=span.rule.rule_id,
-                start=span.start,
-                end=span.end,
-                confidence=span.rule.confidence,
-                token=token,
-            )
-        )
-        counts[kind] = counts.get(kind, 0) + 1
-
-    out.append(text[cursor:])
-
-    vault = Vault(
-        id=secrets.token_urlsafe(24),  # 순번이면 남의 치환표를 열어볼 수 있다
-        owner_id=owner_id,
-        entries=entries,
-        expires_at=time.time() + ttl_seconds,
-        format_version=TOKEN_FORMAT_VERSION,
-    )
+    vault = _new_vault(owner_id, tokenizer.entries, ttl_seconds)
     await store.save(vault)
 
-    return TokenizeResult(text="".join(out), vault_id=vault.id, hits=hits, counts=counts)
+    return TokenizeResult(
+        text=tokenized, vault_id=vault.id, hits=hits, counts=tokenizer.counts
+    )
+
+
+async def tokenize_fields(
+    fields: Mapping[str, str],
+    *,
+    owner_id: str,
+    store: VaultStore,
+    kinds: tuple[PiiKind, ...] | None = None,
+    ttl_seconds: int | None = DEFAULT_TTL_SECONDS,
+) -> FieldsTokenizeResult:
+    """여러 필드를 **치환표 하나로** 묶어 치환한다 (B4·B5 요청).
+
+    자소서 한 건은 문항이 여럿이고 같은 전화번호가 여러 문항에 나온다.
+    필드마다 ``tokenize`` 를 따로 부르면 같은 값이 문항마다 다른 토큰을 받아
+    모델이 다른 사람으로 읽고, 치환표도 문항 수만큼 생긴다.
+
+    호출자가 필드를 구분자로 이어 붙여 한 번에 넣고 다시 나누는 방법은 쓰지 않는다 —
+    그 구분자가 본문에 섞여 있거나 개인정보가 경계에 걸리면 깨진다.
+
+    번호는 **입력 순서대로** 1부터 이어진다. dict 는 입력 순서를 유지하므로
+    같은 입력에 대해 결과가 항상 같다.
+    """
+    tokenizer = _Tokenizer(set(kinds or TOKENIZED_KINDS))
+
+    texts: dict[str, str] = {}
+    hits: dict[str, list[Hit]] = {}
+    for name, text in fields.items():
+        texts[name], hits[name] = tokenizer.run(text)
+
+    vault = _new_vault(owner_id, tokenizer.entries, ttl_seconds)
+    await store.save(vault)
+
+    return FieldsTokenizeResult(
+        texts=texts, vault_id=vault.id, hits=hits, counts=tokenizer.counts
+    )
+
+
+async def _load_vault(store: VaultStore, vault_id: str, owner_id: str) -> Vault:
+    vault = await store.load(vault_id)
+    if vault is None:
+        raise VaultExpired(f"치환표를 찾을 수 없거나 만료되었습니다 (id={vault_id})")
+    if vault.owner_id != owner_id:
+        raise VaultOwnerMismatch("치환표 소유자와 복원 요청자가 다릅니다")
+    return vault
+
+
+def _restore(text: str, vault: Vault, fix_particles: bool) -> tuple[str, list[str]]:
+    unresolved: list[str] = []
+
+    def replace(match: re.Match[str]) -> str:
+        token = match.group(0)
+        value = vault.entries.get(token)
+        if value is None:
+            unresolved.append(token)
+            return token  # 그대로 둔다. 호출자가 unresolved 를 보고 판단한다
+        return value
+
+    restored = _TOKEN_RE.sub(replace, text)
+    if fix_particles:
+        restored = fix_korean_particles(restored)
+
+    # 중복 제거하되 순서는 유지한다
+    return restored, list(dict.fromkeys(unresolved))
 
 
 async def detokenize(
@@ -128,29 +223,34 @@ async def detokenize(
     owner_id 를 받는 이유: vault_id 만으로 열면 그 값이 유출됐을 때 남의 원문이
     복원된다. 치환표 주인과 복원 요청자가 같은지 대조한다.
     """
-    vault = await store.load(vault_id)
-    if vault is None:
-        raise VaultExpired(f"치환표를 찾을 수 없거나 만료되었습니다 (id={vault_id})")
-    if vault.owner_id != owner_id:
-        raise VaultOwnerMismatch("치환표 소유자와 복원 요청자가 다릅니다")
+    vault = await _load_vault(store, vault_id, owner_id)
+    restored, unresolved = _restore(text, vault, fix_particles)
+    return DetokenizeResult(text=restored, unresolved=unresolved)
 
-    unresolved: list[str] = []
 
-    def replace(match: re.Match[str]) -> str:
-        token = match.group(0)
-        value = vault.entries.get(token)
-        if value is None:
-            unresolved.append(token)
-            return token  # 그대로 둔다. 호출자가 unresolved 를 보고 판단한다
-        return value
+async def detokenize_fields(
+    fields: Mapping[str, str],
+    vault_id: str,
+    owner_id: str,
+    *,
+    store: VaultStore,
+    fix_particles: bool = True,
+) -> FieldsDetokenizeResult:
+    """``tokenize_fields`` 로 묶은 필드들을 한 번에 복원한다.
 
-    restored = _TOKEN_RE.sub(replace, text)
-    if fix_particles:
-        restored = fix_korean_particles(restored)
+    치환표를 한 번만 읽는다. 필드마다 ``detokenize`` 를 부르면 같은 치환표를
+    문항 수만큼 복호화하게 된다 (B7 은 KMS 를 거친다).
+    """
+    vault = await _load_vault(store, vault_id, owner_id)
 
-    # 중복 제거하되 순서는 유지한다
-    unique_unresolved = list(dict.fromkeys(unresolved))
-    return DetokenizeResult(text=restored, unresolved=unique_unresolved)
+    texts: dict[str, str] = {}
+    unresolved: dict[str, list[str]] = {}
+    for name, text in fields.items():
+        texts[name], missing = _restore(text, vault, fix_particles)
+        if missing:
+            unresolved[name] = missing
+
+    return FieldsDetokenizeResult(texts=texts, unresolved=unresolved)
 
 
 # --------------------------------------------------------------------------

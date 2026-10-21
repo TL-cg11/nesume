@@ -8,14 +8,17 @@ from __future__ import annotations
 import pytest
 
 from app.pii import (
+    NO_EXPIRY,
     InMemoryVaultStore,
     VaultExpired,
     VaultOwnerMismatch,
     detect,
     detokenize,
+    detokenize_fields,
     fix_korean_particles,
     mask,
     tokenize,
+    tokenize_fields,
     validate_input,
 )
 from tests.pii.cases import (
@@ -190,3 +193,148 @@ async def test_detokenize_fixes_particles() -> None:
     llm_output = f"{token}은 지원했습니다"
     d = await detokenize(llm_output, t.vault_id, "u1", store=store)
     assert d.text == "김철수는 지원했습니다"
+
+
+# ---------------------------------------------------------------- 만료 없는 치환표 (B7)
+
+@pytest.mark.anyio
+async def test_no_expiry_vault_never_expires() -> None:
+    """저장용 치환표. 30분 뒤 지우면 그 자소서는 영구히 복원 불가가 된다."""
+    store = InMemoryVaultStore()
+    t = await tokenize("이름: 김철수", owner_id="u1", store=store, ttl_seconds=NO_EXPIRY)
+
+    vault = await store.load(t.vault_id)
+    assert vault is not None
+    assert vault.expires_at is None
+    assert vault.is_permanent is True
+    # 아무리 먼 미래를 줘도 만료되지 않는다
+    assert vault.is_expired(now=1e18) is False
+
+
+@pytest.mark.anyio
+async def test_no_expiry_vault_still_restores_later() -> None:
+    store = InMemoryVaultStore()
+    t = await tokenize("연락처 010-1234-5678", owner_id="u1", store=store, ttl_seconds=None)
+    d = await detokenize(t.text, t.vault_id, "u1", store=store, fix_particles=False)
+    assert d.text == "연락처 010-1234-5678"
+
+
+@pytest.mark.anyio
+async def test_ttl_vault_expires() -> None:
+    """임시 치환표는 그대로 만료된다. 오래 남을수록 유출 창이 넓어진다."""
+    store = InMemoryVaultStore()
+    t = await tokenize("이름: 김철수", owner_id="u1", store=store, ttl_seconds=0)
+
+    assert await store.load(t.vault_id) is None, "만료된 치환표가 조회됐다"
+    with pytest.raises(VaultExpired):
+        await detokenize(t.text, t.vault_id, "u1", store=store)
+
+
+@pytest.mark.anyio
+async def test_default_ttl_is_not_permanent() -> None:
+    """기본값은 임시다. 저장용은 호출자가 명시해야 한다."""
+    store = InMemoryVaultStore()
+    t = await tokenize("이름: 김철수", owner_id="u1", store=store)
+    vault = await store.load(t.vault_id)
+    assert vault is not None and vault.is_permanent is False
+
+
+# ---------------------------------------------------------------- 필드 묶음 (B4·B5)
+
+@pytest.mark.anyio
+async def test_fields_share_one_vault() -> None:
+    """문항마다 치환표를 따로 만들면 문항 수만큼 생긴다."""
+    store = InMemoryVaultStore()
+    r = await tokenize_fields(
+        {"q1": "이름: 김철수 입니다", "q2": "연락처 010-1234-5678"},
+        owner_id="u1",
+        store=store,
+    )
+
+    assert set(r.texts) == {"q1", "q2"}
+    assert "김철수" not in r.texts["q1"]
+    assert "010-1234-5678" not in r.texts["q2"]
+    assert len(store._items) == 1, "치환표는 하나여야 한다"
+
+
+@pytest.mark.anyio
+async def test_same_value_across_fields_gets_same_token() -> None:
+    """★ 이것이 필드를 묶는 이유다. 다른 토큰을 주면 모델이 다른 사람으로 읽는다."""
+    store = InMemoryVaultStore()
+    r = await tokenize_fields(
+        {"q1": "연락처 010-1234-5678", "q2": "다시 적습니다 010-1234-5678"},
+        owner_id="u1",
+        store=store,
+    )
+
+    tokens = {h.token for hits in r.hits.values() for h in hits}
+    assert len(tokens) == 1, f"같은 값이 다른 토큰을 받았다: {tokens}"
+    assert r.counts["PHONE"] == 2  # 두 번 나온 것은 그대로 센다
+
+
+@pytest.mark.anyio
+async def test_field_numbering_continues_across_fields() -> None:
+    """번호는 문서 안에서 1부터 이어진다. 필드마다 1로 돌아가지 않는다."""
+    store = InMemoryVaultStore()
+    r = await tokenize_fields(
+        {"q1": "이름: 김철수", "q2": "이름: 이영희"},
+        owner_id="u1",
+        store=store,
+    )
+
+    assert "[[PERSON_1]]" in r.texts["q1"]
+    assert "[[PERSON_2]]" in r.texts["q2"]
+
+
+@pytest.mark.anyio
+async def test_fields_roundtrip() -> None:
+    store = InMemoryVaultStore()
+    original = {"q1": "이름: 김철수 입니다", "q2": "연락처 010-1234-5678", "q3": "개인정보 없음"}
+
+    r = await tokenize_fields(original, owner_id="u1", store=store)
+    d = await detokenize_fields(r.texts, r.vault_id, "u1", store=store, fix_particles=False)
+
+    assert d.texts == original
+    assert d.unresolved == {}
+
+
+@pytest.mark.anyio
+async def test_fields_detokenize_checks_owner() -> None:
+    store = InMemoryVaultStore()
+    r = await tokenize_fields({"q1": "이름: 김철수"}, owner_id="u1", store=store)
+    with pytest.raises(VaultOwnerMismatch):
+        await detokenize_fields(r.texts, r.vault_id, "u2", store=store)
+
+
+@pytest.mark.anyio
+async def test_fields_report_unresolved_per_field() -> None:
+    store = InMemoryVaultStore()
+    r = await tokenize_fields({"q1": "이름: 김철수", "q2": "정상"}, owner_id="u1", store=store)
+
+    broken = dict(r.texts)
+    broken["q2"] = "없는 토큰 [[PERSON_9]]"
+    d = await detokenize_fields(broken, r.vault_id, "u1", store=store)
+
+    assert d.unresolved == {"q2": ["[[PERSON_9]]"]}, "미복원 필드만 보고해야 한다"
+
+
+@pytest.mark.anyio
+async def test_empty_fields() -> None:
+    store = InMemoryVaultStore()
+    r = await tokenize_fields({}, owner_id="u1", store=store)
+    assert r.texts == {}
+    assert r.counts == {}
+
+
+@pytest.mark.anyio
+async def test_fields_can_be_permanent() -> None:
+    """B4 자소서 저장 경로 — 묶음 + 만료 없음을 함께 쓴다."""
+    store = InMemoryVaultStore()
+    r = await tokenize_fields(
+        {"q1": "이름: 김철수", "q2": "연락처 010-1234-5678"},
+        owner_id="u1",
+        store=store,
+        ttl_seconds=NO_EXPIRY,
+    )
+    vault = await store.load(r.vault_id)
+    assert vault is not None and vault.is_permanent is True

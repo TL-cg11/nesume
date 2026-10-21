@@ -8,6 +8,14 @@
     tokenize(text, owner_id=, store=)     LLM에 보내기 직전             (비동기, 치환표 생성)
     detokenize(text, vault_id, owner_id=) 사용자에게 돌려주기 직전      (비동기, 치환표 조회)
 
+여러 필드를 치환표 하나로 묶는 변형이 있다 (B4·B5 요청). 연산이 늘어난 것은 아니다.
+
+    tokenize_fields({"문항1": ..., "문항2": ...}, owner_id=, store=)
+    detokenize_fields({"문항1": ..., "문항2": ...}, vault_id, owner_id=, store=)
+
+치환표 수명은 ``ttl_seconds`` 로 정한다. 기본 30분이고, ``None`` 이면 만료 없음 —
+토큰 상태로 **저장**하는 경우(B7)에 쓴다.
+
 호출 순서 계약 (제안서 8장):
 
     1. validate_input   거절 대상이면 여기서 끝
@@ -29,12 +37,16 @@ from app.pii.tokens import (
     VaultExpired,
     VaultOwnerMismatch,
     detokenize,
+    detokenize_fields,
     fix_korean_particles,
     tokenize,
+    tokenize_fields,
 )
 from app.pii.types import (
     BlockedKind,
     DetokenizeResult,
+    FieldsDetokenizeResult,
+    FieldsTokenizeResult,
     Hit,
     PiiKind,
     TokenizeResult,
@@ -42,6 +54,7 @@ from app.pii.types import (
 )
 from app.pii.vault import (
     DEFAULT_TTL_SECONDS,
+    NO_EXPIRY,
     TOKEN_FORMAT_VERSION,
     InMemoryVaultStore,
     Vault,
@@ -55,6 +68,8 @@ __all__ = [
     "mask",
     "tokenize",
     "detokenize",
+    "tokenize_fields",
+    "detokenize_fields",
     "fix_korean_particles",
     # 타입
     "PiiKind",
@@ -63,12 +78,15 @@ __all__ = [
     "ValidationResult",
     "TokenizeResult",
     "DetokenizeResult",
+    "FieldsTokenizeResult",
+    "FieldsDetokenizeResult",
     # 치환표
     "Vault",
     "VaultStore",
     "InMemoryVaultStore",
     "TOKEN_FORMAT_VERSION",
     "DEFAULT_TTL_SECONDS",
+    "NO_EXPIRY",
     # 예외
     "VaultExpired",
     "VaultOwnerMismatch",

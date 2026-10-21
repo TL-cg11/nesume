@@ -23,7 +23,18 @@ from typing import Protocol
 TOKEN_FORMAT_VERSION = 1
 
 #: 기본 만료 30분. 한 번의 편집 세션을 넘기지 않는 길이 (제안서 6장).
+#: LLM 호출용 임시 치환표의 수명이다.
 DEFAULT_TTL_SECONDS = 1800
+
+#: 만료 없음. 저장용 치환표에 쓴다.
+#:
+#: 자소서 본문을 토큰 상태로 **저장**하면(B7 설계), 그 치환표는 문서가 살아 있는 동안
+#: 함께 살아 있어야 한다. 30분 뒤 지우면 그 자소서는 영구히 복원 불가가 된다.
+#: 반대로 LLM 호출용 임시 치환표는 오래 남을수록 유출 창이 넓어지므로 TTL 을 둔다.
+#:
+#: 수명은 치환표 자체의 속성이므로 만료 판정(`Vault.is_expired`)과 함께 A1 에 둔다.
+#: 저장소가 "100년 뒤"로 우회하면 판정 규칙이 두 곳으로 갈라진다.
+NO_EXPIRY: None = None
 
 
 @dataclass
@@ -40,10 +51,18 @@ class Vault:
     id: str
     owner_id: str
     entries: dict[str, str]  # token -> 원문
-    expires_at: float  # epoch seconds
+    #: epoch seconds. None 이면 만료 없음 — 저장용 치환표 (NO_EXPIRY 참조)
+    expires_at: float | None
     format_version: int = TOKEN_FORMAT_VERSION
 
+    @property
+    def is_permanent(self) -> bool:
+        """저장용 치환표인가. 삭제 배치가 건너뛰어야 하는 대상이다."""
+        return self.expires_at is None
+
     def is_expired(self, now: float | None = None) -> bool:
+        if self.expires_at is None:
+            return False
         return (now if now is not None else time.time()) >= self.expires_at
 
     def __repr__(self) -> str:  # pragma: no cover - 디버깅 편의
@@ -61,10 +80,20 @@ class VaultStore(Protocol):
     호출부가 달라지지 않게 한다.
     """
 
-    async def save(self, vault: Vault) -> None: ...
+    async def save(self, vault: Vault) -> None:
+        """``expires_at`` 이 None 인 치환표는 **만료 없음**(저장용)이다.
+
+        ★ 주기 삭제 배치(B20)는 ``expires_at IS NULL`` 행을 건너뛰어야 한다.
+          지우면 그 자소서는 영구히 복원 불가가 된다.
+        """
+        ...
 
     async def load(self, vault_id: str) -> Vault | None:
-        """없거나 이미 만료돼 삭제되었으면 None."""
+        """없거나 이미 만료돼 삭제되었으면 None.
+
+        만료 판정은 ``Vault.is_expired()`` 를 쓴다. 저장소가 직접 시각을 비교하면
+        만료 없음(None) 처리가 두 곳으로 갈라진다.
+        """
         ...
 
     async def delete(self, vault_id: str) -> None: ...
@@ -86,7 +115,7 @@ class InMemoryVaultStore:
         vault = self._items.get(vault_id)
         if vault is None:
             return None
-        if vault.is_expired():
+        if vault.is_expired():  # 만료 없음(None)이면 False 를 돌려준다
             # 만료된 것은 실제로 지운다. 표시만 하고 남겨두면 지운 게 아니다 (제안서 6장).
             del self._items[vault_id]
             return None

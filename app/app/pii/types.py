@@ -84,3 +84,28 @@ class DetokenizeResult:
     #: 치환표에 없어서 복원하지 못한 토큰 목록.
     #: 비어 있어야 정상이다. 비어 있지 않으면 호출자가 재생성을 유도한다 (제안서 7장).
     unresolved: list[str]
+
+
+@dataclass(frozen=True)
+class FieldsTokenizeResult:
+    """여러 필드를 치환표 하나로 묶은 결과.
+
+    자소서 한 건은 문항이 여럿이고, 같은 전화번호가 여러 문항에 나온다.
+    필드마다 따로 치환하면 같은 값이 문항마다 다른 토큰을 받아 모델이 다른
+    사람으로 읽고, 치환표도 문항 수만큼 생긴다 (B4·B5 요청).
+    """
+
+    #: 입력과 같은 키, 값만 치환된 본문
+    texts: dict[str, str]
+    vault_id: str
+    #: 필드별 탐지 결과. 키는 입력과 같다
+    hits: dict[str, list[Hit]]
+    #: 전체 합산 개수. 키는 PiiKind
+    counts: dict[str, int]
+
+
+@dataclass(frozen=True)
+class FieldsDetokenizeResult:
+    texts: dict[str, str]
+    #: 필드별 미복원 토큰. 비어 있는 필드는 키가 없다
+    unresolved: dict[str, list[str]]
