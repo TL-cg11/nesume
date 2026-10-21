@@ -1,6 +1,6 @@
 # 데이터 모델 (B1, B2)
 
-마이그레이션: `0002` B1 핵심 테이블, `0003` B2 문서 등급·공유 컬럼, `0004` B4 복원 출처, `0005` B5 문항↔경험 연결, `0006` B6 다운로드 토큰, `0007` B3 감사 로그 무결성, `0008` B7 PII 대응표·사용자 키
+마이그레이션: `0002` B1 핵심 테이블, `0003` B2 문서 등급·공유 컬럼, `0004` B4 복원 출처, `0005` B5 문항↔경험 연결, `0006` B6 다운로드 토큰, `0007` B3 감사 로그 무결성, `0008` B7 PII 대응표·사용자 키, `0009` B11 감사 로그 변조 방지
 소유: B (모델 추가는 B가 취합, tasks.md 디렉터리 소유). **C·D 리뷰 요청 대상.**
 
 ## ERD
@@ -142,6 +142,8 @@ erDiagram
 | 문항에 끌어온 경험 기록 | `question_experiences` (문항·경험 삭제 시 CASCADE) | B5 "자소서 문항에 끌어오기" |
 | 다운로드 토큰은 해시만 저장, 10분·1회용, 만료 24시간 후 정리 | `download_tokens`, `core/storage/tokens.py` | spec 3.2, part2_guide 4.1, 4.23 (B6) |
 | 감사 로그 무결성: doc_grades 5등급만, `test-` 접두어⇔is_test, query_hash SHA-256 형식 | `audit_logs` CHECK 3종 | spec 10.1, part2_guide 4.25 (B3) |
+| 감사 로그 수정·삭제 방지: UPDATE는 user_id→anon_id 익명화만, DELETE는 90일 지난 행만, TRUNCATE 거부 | `audit_logs_guard` 트리거 | 팀 합의, part2_guide 4.29 (B11) |
+| 감사 로그 doc_ids·doc_grades 길이 일치 | `audit_logs` CHECK | A8 1:1 기록 (B11) |
 | 감사 로그 90일 보관 | `features/audit/retention.py` (1회 최대 5,000행, 오래된 순) | spec 10.2 (B3) |
 | PII 대응표는 사용자별 DEK로 암호화, DEK는 KMS 암호화 상태로만 저장 | `user_keys`, `pii_vaults`, `app/app/pii/envelope.py` | spec 8.3, tasks B7 |
 | 저장용 대응표는 만료 없음, LLM용은 만료 후 열람 시·정리 배치로 삭제 | `pii_vaults.expires_at`, `pg_vault_store.cleanup_expired` | part2_guide 4.26, 4.28 |
@@ -175,8 +177,6 @@ ORM을 거치지 않는 INSERT에도 DB 기본값으로 같은 등급이 붙는�
 | 태스크 | 변경 |
 |---|---|
 | B4 | 버전 압축 시 `applications.version_ids`가 참조하는 버전 제외(배열은 FK 보호 불가) |
-| B11 | 감사 로그 수정·삭제 방지(팀 합의), 기록 함수·조회 API |
-| (A팀 합의 후) | `audit_logs` doc_ids·doc_grades 길이 일치 제약 |
 | B7(A1 추가 기능 후) | 버전·경험 행에 대응표 ID 컬럼, pii_hooks를 A1 + 저장소로 교체 |
 | B10 | `shares` ↔ `resumes.shared_with` ↔ 벡터 메타데이터 동기화 |
 | B12·B13 | PDF·면접 연습 테이블 |
