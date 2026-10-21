@@ -10,13 +10,12 @@
 """
 import uuid
 
-from sqlalchemy import delete as sa_delete
-from sqlalchemy.orm import Session
-
-from app.pii import mask
 from app.models.embedding import JobPostingEmbedding, UserProfileEmbedding
+from app.pii import mask
 from app.retrieval.embedder import Embedder
 from app.retrieval.preprocess import preprocess_external_text
+from sqlalchemy import delete as sa_delete
+from sqlalchemy.orm import Session
 
 
 def index_posting(

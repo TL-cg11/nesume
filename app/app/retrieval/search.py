@@ -9,12 +9,11 @@ C2 정책 로더가 만든 WHERE를 벡터 검색에 **강제로** 붙인다. �
 """
 from pathlib import Path
 
+import app.policy.policy as policy_mod
+from app.models.embedding import JobPostingEmbedding, UserProfileEmbedding
+from app.policy.policy import build_where
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
-
-import app.policy.policy as policy_mod
-from app.policy.policy import build_where
-from app.models.embedding import JobPostingEmbedding, UserProfileEmbedding
 
 #: 정책은 `app/app/policy/matrix.yaml`(D2 공식본 나오면 교체)에서 1회 로드
 _policy = policy_mod.Policy.load(str(Path(policy_mod.__file__).parent / "matrix.yaml"))

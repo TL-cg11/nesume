@@ -30,7 +30,7 @@ class Policy:
         self._roles = roles
 
     @classmethod
-    def load(cls, path: str) -> "Policy":
+    def load(cls, path: str) -> Policy:
         with open(path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
         return cls(roles=data["roles"])

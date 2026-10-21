@@ -25,7 +25,8 @@ DEFAULT_MAX_LEN = 8000
 _INJECTION_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     # 이전 지시 무시류 — "지시/명령/지침" 과 "무시/무효" 사이에 단어가 끼어도 잡도록 창(window) 방식
     ("R-OVERRIDE", re.compile(r"(지시|명령|지침)[\w\s]{0,12}?(무시|무효)", re.I)),
-    ("R-OVERRIDE", re.compile(r"(ignore|disregard|forget)\s+[\w\s]{0,20}?(instruction|prompt|direction|rule|context)s?", re.I)),
+    ("R-OVERRIDE", re.compile(
+        r"(ignore|disregard|forget)\s+[\w\s]{0,20}?(instruction|prompt|direction|rule|context)s?", re.I)),
     ("R-OVERRIDE", re.compile(r"disregard\s+(the\s+)?(above|previous|prior|earlier)", re.I)),
     # 역할 탈취
     ("R-ROLE", re.compile(r"(지금부터|이제부터|이제)\s*(너는|당신은|넌)", re.I)),
@@ -35,7 +36,8 @@ _INJECTION_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     # 시스템 프롬프트·내부 규칙 추출
     ("R-SYSPROMPT", re.compile(r"시스템\s*프롬프트|system\s+prompt", re.I)),
     ("R-SYSPROMPT", re.compile(r"(프롬프트|지침|규칙)[을를]?\s*(출력|공개|보여|알려)", re.I)),
-    ("R-SYSPROMPT", re.compile(r"(reveal|print|show|repeat)\s+(your\s+|the\s+)?(system\s+)?(prompt|instruction)s?", re.I)),
+    ("R-SYSPROMPT", re.compile(
+        r"(reveal|print|show|repeat)\s+(your\s+|the\s+)?(system\s+)?(prompt|instruction)s?", re.I)),
     # 대량 유출 유도
     ("R-EXFIL", re.compile(r"모든\s*(문서|데이터|기록|파일)[을를]?\s*(나열|출력|보여|공개)", re.I)),
     ("R-EXFIL", re.compile(r"list\s+all\s+(document|file|record|data)s?", re.I)),
