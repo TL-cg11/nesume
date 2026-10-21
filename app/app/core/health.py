@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Response, status
 from sqlalchemy import text
 
-from app import aws
 from app.config import get_settings
+from app.core import aws
 from app.db import engine
 
 router = APIRouter(tags=["health"])
@@ -11,7 +11,7 @@ router = APIRouter(tags=["health"])
 @router.get("/health")
 def health() -> dict:
     """Liveness: 프로세스 생존 여부만 확인한다. 외부 의존성 장애로 실패하지 않는다."""
-    return {"status": "ok"}
+    return {"status": "ok", "version": get_settings().app_version}
 
 
 @router.get("/ready")

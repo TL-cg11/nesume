@@ -1,15 +1,8 @@
-import boto3
-from botocore.config import Config
+"""호환용 re-export. 구현은 app.core.aws로 옮겼다(D3).
 
-from app.config import get_settings
+B6 storage(app/app/core/storage/objects.py)와 test_storage.py가 `from app import aws`를 쓰므로 유지한다.
+새 코드는 `from app.core import aws`를 쓴다.
+"""
+from app.core.aws import client
 
-
-def client(service: str):
-    """AWS SDK 클라이언트. endpoint는 환경변수(AWS_ENDPOINT_URL)로만 결정한다."""
-    s = get_settings()
-    return boto3.client(
-        service,
-        region_name=s.aws_region,
-        endpoint_url=s.aws_endpoint_url,
-        config=Config(connect_timeout=2, read_timeout=5, retries={"max_attempts": 2}),
-    )
+__all__ = ["client"]

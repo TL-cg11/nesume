@@ -1,24 +1,46 @@
+"""애플리케이션 조립(D 소유).
+
+- 미들웨어·예외 처리·로깅은 여기서만 붙인다.
+- 기능 라우터는 명시적으로 include한다. 추가는 PR로 요청(커밋 메시지 [D 리뷰 요청]).
+  접두사는 아직 없음(web이 /api/<기능> 호출).
+"""
 from fastapi import FastAPI
 
 from app.config import get_settings
+from app.core import health
+from app.core.errors import register_exception_handlers
+from app.core.logging import setup_logging
+from app.core.request_id import RequestIdMiddleware
 from app.core.storage.router import router as downloads_router
 from app.features.experiences.router import links_router as experience_links_router
 from app.features.experiences.router import router as experiences_router
 from app.features.resumes.router import router as resumes_router
-from app.routers import health
 
-settings = get_settings()
 
-app = FastAPI(
-    title="nesume-api",
-    # API 문서는 로컬에서만 노출
-    docs_url="/docs" if settings.app_env == "local" else None,
-    redoc_url=None,
-    openapi_url="/openapi.json" if settings.app_env == "local" else None,
-)
+def create_app() -> FastAPI:
+    settings = get_settings()
+    setup_logging(settings.log_level, settings.log_format)
 
-app.include_router(health.router)
-app.include_router(resumes_router)
-app.include_router(experiences_router)
-app.include_router(experience_links_router)
-app.include_router(downloads_router)
+    application = FastAPI(
+        title="nesume-api",
+        version=settings.app_version,
+        # API 문서는 로컬·테스트에서만 노출
+        docs_url="/docs" if settings.is_local else None,
+        redoc_url=None,
+        openapi_url="/openapi.json" if settings.is_local else None,
+    )
+
+    # 미들웨어는 바깥쪽부터: request_id가 가장 먼저 설정되어야 이후 로그·에러에 붙는다.
+    application.add_middleware(RequestIdMiddleware)
+    register_exception_handlers(application)
+
+    application.include_router(health.router)
+    application.include_router(resumes_router)
+    application.include_router(experiences_router)
+    application.include_router(experience_links_router)
+    application.include_router(downloads_router)
+    return application
+
+
+# B conftest의 client 픽스처와 uvicorn(app.main:app)이 이 이름을 쓴다. 반드시 남긴다.
+app = create_app()
