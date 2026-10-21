@@ -3,8 +3,19 @@
 ★ 기능 코드(B·C 팀 포함)는 이 패키지의 **A8 파이프라인**만 호출한다.
   `llm_client` 를 기능에서 직접 import 하지 않는다. CI가 grep으로 막는다 (D11).
 
-현재 들어 있는 것: A2 LLM 클라이언트 래퍼 · A5 출력 검사.
+현재 들어 있는 것: A2 LLM 클라이언트 래퍼 · A4 분류 결과 스키마 · A5 출력 검사.
 앞으로 들어올 것: A3 질의 분류 · A8 파이프라인 조립.
+
+## A4 — 단계별 판정의 공통 모양
+
+A3(분류) · C6(검색 필터) · A5(출력 검사)가 각각 `Verdict` 를 만들고,
+A8 이 `merge` 로 합쳐 감사 로그(B3) 한 행을 만든다.
+
+    v = classifier_verdict.merge(retriever_verdict).merge(output_verdict)
+    await write_audit_log(request_id=..., **v.to_audit_fields())
+
+판정은 `allow` / `block` / `mask` 세 값뿐이다. `flag` 는 판정이 아니라 표식이며
+`flags` 배열로 나간다 — 이미 머지된 `models/audit.py` 의 DB 제약과 같다.
 
 ## A2 사용법
 
@@ -51,14 +62,31 @@ from app.guardrail.errors import (
     LlmTransient,
     LlmUnavailable,
 )
+from app.guardrail.schema import (
+    CANARY_RULE_ID,
+    DECISION_STAGES,
+    DECISIONS,
+    MAX_FLAG_LEN,
+    MAX_RULE_ID_LEN,
+    QUERY_TYPES,
+    SEVERITIES,
+    Decision,
+    DecisionStage,
+    Finding,
+    QueryType,
+    Severity,
+    Verdict,
+    allow,
+    decision_rank,
+    severity_rank,
+    worse_decision,
+)
 from app.guardrail.output_guard import (
     EMPTY_CONTEXT,
     SHINGLE_SIZE,
-    Decision,
+    STAGE,
     OutputCheckResult,
     OutputContext,
-    OutputFinding,
-    Severity,
     check_output,
 )
 from app.guardrail.llm_client import (
@@ -77,15 +105,31 @@ from app.guardrail.llm_client import (
 )
 
 __all__ = [
+    # A4 분류 결과 스키마
+    "Verdict",
+    "Finding",
+    "allow",
+    "Decision",
+    "QueryType",
+    "DecisionStage",
+    "Severity",
+    "DECISIONS",
+    "QUERY_TYPES",
+    "DECISION_STAGES",
+    "SEVERITIES",
+    "CANARY_RULE_ID",
+    "MAX_RULE_ID_LEN",
+    "MAX_FLAG_LEN",
+    "worse_decision",
+    "decision_rank",
+    "severity_rank",
     # A5 출력 검사
     "check_output",
     "OutputCheckResult",
     "OutputContext",
-    "OutputFinding",
     "EMPTY_CONTEXT",
     "SHINGLE_SIZE",
-    "Decision",
-    "Severity",
+    "STAGE",
     # 클라이언트
     "LlmClient",
     "RetryPolicy",

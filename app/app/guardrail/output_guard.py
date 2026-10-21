@@ -24,12 +24,18 @@ from __future__ import annotations
 import re
 import unicodedata
 from dataclasses import dataclass, field
-from typing import Literal
 
+from app.guardrail.schema import (
+    CANARY_RULE_ID,
+    Decision,
+    Finding,
+    Severity,
+    Verdict,
+)
 from app.pii import detect, mask
 
-Severity = Literal["info", "warn", "critical"]
-Decision = Literal["allow", "block", "mask"]
+#: 이 모듈이 내리는 판정의 단계 이름 (audit_logs.decision_stage)
+STAGE = "output_guard"
 
 #: 유출로 볼 "그대로 일치하는 연속 구간"의 길이 (정규화 후 글자 수).
 #:
@@ -67,20 +73,13 @@ _SECRET_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 # --------------------------------------------------------------------------
 
 @dataclass(frozen=True)
-class OutputFinding:
-    """걸린 것 하나.
+class OutputCheckResult:
+    """출력 검사 결과.
 
-    ★ 값을 담지 않는다. 종류와 개수만 담는다. 유출을 잡아내는 구조체가
-      유출 경로가 되면 안 된다 — A1 의 ``Hit`` 과 같은 판단이다.
+    판정 자체는 A4 스키마(``Verdict``)를 쓴다. 여기서 더 들고 있는 것은
+    **내보낼 본문** 하나뿐이다 — 다른 단계와 달리 이 단계는 본문을 바꾼다.
     """
 
-    rule_id: str
-    severity: Severity
-    count: int
-
-
-@dataclass(frozen=True)
-class OutputCheckResult:
     decision: Decision
     #: 내보낼 본문.
     #: - allow: 원본 그대로
@@ -88,12 +87,26 @@ class OutputCheckResult:
     #: - block: **빈 문자열**. 호출자가 실수로 이 값을 내보내도 유출되지 않는다.
     #:   사용자에게 보여줄 안내 문구는 A9 가 만든다
     text: str
-    findings: list[OutputFinding] = field(default_factory=list)
+    findings: list[Finding] = field(default_factory=list)
+
+    @property
+    def verdict(self) -> Verdict:
+        """A4 판정 구조체. A8 이 다른 단계의 판정과 합친다."""
+        return Verdict(decision=self.decision, stage=STAGE, findings=tuple(self.findings))
 
     @property
     def flags(self) -> list[str]:
         """감사 로그(B3)의 ``flags`` 배열에 그대로 넣는 값."""
-        return [f.rule_id for f in self.findings]
+        return self.verdict.flags
+
+    @property
+    def rule_id(self) -> str | None:
+        """감사 로그의 대표 규칙 하나."""
+        return self.verdict.rule_id
+
+    @property
+    def canary_hit(self) -> bool:
+        return self.verdict.canary_hit
 
     @property
     def ok(self) -> bool:
@@ -180,28 +193,28 @@ def check_output(text: str, *, context: OutputContext = EMPTY_CONTEXT) -> Output
     if not text:
         return OutputCheckResult(decision="allow", text=text)
 
-    findings: list[OutputFinding] = []
+    findings: list[Finding] = []
     output_norm = _normalize(text)
 
     # 1. 카나리 — 나왔다는 사실 자체가 유출 확정이다. 가장 먼저 본다
     hits = sum(1 for c in context.canaries if c and _normalize(c) in output_norm)
     if hits:
-        findings.append(OutputFinding("LEAK_CANARY", "critical", hits))
+        findings.append(Finding(CANARY_RULE_ID, "critical", hits))
 
     # 2. 기밀 청크 — 다른 사용자 문서가 섞여 나왔다
     hits = sum(1 for chunk in context.confidential_chunks if _overlaps(output_norm, chunk))
     if hits:
-        findings.append(OutputFinding("LEAK_OTHER_USER", "critical", hits))
+        findings.append(Finding("LEAK_OTHER_USER", "critical", hits))
 
     # 3. 시스템 프롬프트 조각
     if context.system_prompt and _overlaps(output_norm, context.system_prompt):
-        findings.append(OutputFinding("INJ_SYSPROMPT", "critical", 1))
+        findings.append(Finding("INJ_SYSPROMPT", "critical", 1))
 
     # 4. 자격증명
     for rule_name, pattern in _SECRET_PATTERNS:
         found = len(pattern.findall(text))
         if found:
-            findings.append(OutputFinding(f"LEAK_SECRET.{rule_name}", "critical", found))
+            findings.append(Finding(f"LEAK_SECRET.{rule_name}", "critical", found))
 
     # 5. 원문 PII — 토큰화가 놓쳤거나 모델이 지어낸 값.
     #    차단이 아니라 마스킹이다. 응답 자체는 쓸모가 있을 수 있다
@@ -209,7 +222,7 @@ def check_output(text: str, *, context: OutputContext = EMPTY_CONTEXT) -> Output
     for hit in detect(text):
         pii_counts[hit.rule_id] = pii_counts.get(hit.rule_id, 0) + 1
     for rule_id, count in sorted(pii_counts.items()):
-        findings.append(OutputFinding(rule_id, "warn", count))
+        findings.append(Finding(rule_id, "warn", count))
 
     # 6. 모르는 토큰 — 모델이 토큰을 지어냈다.
     #    복원 단계에서도 unresolved 로 잡히지만, 그때는 이미 사용자에게 갈 본문이다
@@ -218,12 +231,12 @@ def check_output(text: str, *, context: OutputContext = EMPTY_CONTEXT) -> Output
             m.group(0) for m in _TOKEN_RE.finditer(text) if m.group(0) not in context.allowed_tokens
         }
         if unknown:
-            findings.append(OutputFinding("OUT_UNKNOWN_TOKEN", "info", len(unknown)))
+            findings.append(Finding("OUT_UNKNOWN_TOKEN", "info", len(unknown)))
 
     return OutputCheckResult(decision=_decide(findings), text=_apply(text, findings), findings=findings)
 
 
-def _decide(findings: list[OutputFinding]) -> Decision:
+def _decide(findings: list[Finding]) -> Decision:
     """가장 무거운 신호가 판정을 정한다. critical > warn > info."""
     if any(f.severity == "critical" for f in findings):
         return "block"
@@ -232,7 +245,7 @@ def _decide(findings: list[OutputFinding]) -> Decision:
     return "allow"
 
 
-def _apply(text: str, findings: list[OutputFinding]) -> str:
+def _apply(text: str, findings: list[Finding]) -> str:
     decision = _decide(findings)
     if decision == "block":
         # 본문을 돌려주지 않는다. 호출자가 실수로 .text 를 내보내도 유출되지 않는다
