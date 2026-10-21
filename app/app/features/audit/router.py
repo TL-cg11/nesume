@@ -3,6 +3,7 @@
 필터: 기간·user_id·role·feature·query_type·decision·is_test (tasks B11).
 D15 대시보드와 B16 평가 러너가 같은 API를 쓴다. 집계 API는 두지 않는다(문서대로).
 운영자 판정은 토큰 역할만 확인한다. MFA 세션 확인은 D7 공통 모듈로 교체 예정.
+doc_ids는 문서 삭제의 "참조"에 포함하지 않으므로 고아 ID일 수 있다(A·C 합의). 문서 테이블과 조인하지 않는다.
 """
 import uuid
 from datetime import datetime
