@@ -3,8 +3,18 @@
 ★ 기능 코드(B·C 팀 포함)는 이 패키지의 **A8 파이프라인**만 호출한다.
   `llm_client` 를 기능에서 직접 import 하지 않는다. CI가 grep으로 막는다 (D11).
 
-현재 들어 있는 것: A2 LLM 클라이언트 래퍼 · A3 질의 분류 · A4 분류 결과 스키마 · A5 출력 검사.
-앞으로 들어올 것: A8 파이프라인 조립.
+현재 들어 있는 것: A2 래퍼 · A3 분류 · A4 스키마 · A5 출력 검사 · **A8 파이프라인**.
+
+## A8 — LLM 을 쓰는 모든 기능이 지나는 단 하나의 경로
+
+    guard = Guardrail(llm=..., vault=..., policy=..., retriever=..., audit=...)
+    result = await guard.run(query, RequestContext(user_id=..., role=..., feature=...))
+    result.text      # 사용자에게 보여줄 본문 (차단이면 빈 문자열)
+    result.verdict   # A4 Verdict — 단계별 판정을 합친 것
+    result.usage     # 토큰 사용량 (C7 쿼터)
+
+감사 로그(B11)는 `finally` 에서 **정확히 한 번** 쓴다.
+C6 검색과 B11 기록은 아직 없어 프로토콜로 두고 주입받는다.
 
 ## A3 사용법
 
@@ -92,6 +102,19 @@ from app.guardrail.schema import (
     severity_rank,
     worse_decision,
 )
+from app.guardrail.pipeline import (
+    DEFAULT_SYSTEM_PROMPT,
+    DEFAULT_TOP_K,
+    AuditSink,
+    AuditWriteFailed,
+    Chunk,
+    Guardrail,
+    PipelineResult,
+    PromptBuilder,
+    RequestContext,
+    Retriever,
+    build_prompt,
+)
 from app.guardrail.classifier import (
     RULES_PATH,
     TYPE_TO_DECISION,
@@ -126,6 +149,18 @@ from app.guardrail.llm_client import (
 )
 
 __all__ = [
+    # A8 파이프라인
+    "Guardrail",
+    "RequestContext",
+    "PipelineResult",
+    "Chunk",
+    "Retriever",
+    "AuditSink",
+    "AuditWriteFailed",
+    "PromptBuilder",
+    "build_prompt",
+    "DEFAULT_SYSTEM_PROMPT",
+    "DEFAULT_TOP_K",
     # A3 질의 유형 분류
     "classify",
     "Classification",
