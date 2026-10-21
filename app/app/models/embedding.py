@@ -7,13 +7,12 @@
 벡터 행에 **복제(denormalize)**한다. C2 build_where / C6 search 가 이 컬럼들에 바로 WHERE를 건다.
 벡터 차원 1024 = bge-m3. 유사도는 코사인(bge-m3는 정규화 임베딩) → vector_cosine_ops.
 
-※ 마이그레이션 번호 지정·`models/__init__.py` 등록은 B가 취합(tasks.md). 공고 FK는 C4
-  job_postings 모델 생성 시 추가(현재는 source_id로 느슨히 참조).
+※ 마이그레이션 번호 지정·`models/__init__.py` 등록은 B가 취합(tasks.md).
 """
 import uuid
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Index, Integer, String, Text, Uuid
+from sqlalchemy import ForeignKey, Index, Integer, String, Text, Uuid
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -31,6 +30,10 @@ from app.models._common import (
 
 #: bge-m3 임베딩 차원 (docs/C_임베딩모델_제안.md)
 EMBED_DIM = 1024
+
+#: 임베딩 모델 버전 태그. 버전이 바뀌면 벡터 값이 달라져 섞이면 검색 품질이 붕괴하므로,
+#: 검색은 같은 버전끼리만(docs/C3.md #4). 버전 변경 시 백그라운드 전량 재임베딩 후 원자 교체.
+MODEL_VERSION = "bge-m3"
 
 
 def _hnsw_index(name: str) -> Index:
@@ -51,11 +54,16 @@ class JobPostingEmbedding(Base):
     __table_args__ = (grade_check(), _hnsw_index("ix_jpe_hnsw"))
 
     id: Mapped[UuidPk]
-    # C4 job_postings 생성 시 FK로 전환. 지금은 느슨히 참조.
-    source_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
+    # 공고 FK — 공고 물리 삭제 시 임베딩도 함께 삭제(파생 데이터, docs/C4.md 결정2 CASCADE).
+    source_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("job_postings.id", ondelete="CASCADE"), index=True
+    )
     chunk_index: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     content: Mapped[str] = mapped_column(Text)  # A1 mask 적용 텍스트(복원 불필요)
     grade: Mapped[str] = grade_column(Grade.PUBLIC)
+    model_version: Mapped[str] = mapped_column(
+        String(64), default=MODEL_VERSION, server_default=MODEL_VERSION, index=True
+    )
     embedding: Mapped[list[float]] = mapped_column(Vector(EMBED_DIM))
     created_at: Mapped[CreatedAt]
     updated_at: Mapped[UpdatedAt]
@@ -78,6 +86,9 @@ class UserProfileEmbedding(Base):
     chunk_index: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     content: Mapped[str] = mapped_column(Text)  # A1 처리(토큰화 or 마스킹, docs/C3.md 미결정) 텍스트
     grade: Mapped[str] = grade_column(Grade.PERSONAL)
+    model_version: Mapped[str] = mapped_column(
+        String(64), default=MODEL_VERSION, server_default=MODEL_VERSION, index=True
+    )
     # 자소서만: 멘토 공유 [{"user_id","expires_at"}] — B resumes.shared_with 복제(B10 동기화)
     shared_with: Mapped[list[dict]] = mapped_column(JSONB, default=list, server_default="[]")
     # 원본(resume/experience) 소프트 삭제 복제 → C6가 deleted_at IS NULL 필터(B 요청)

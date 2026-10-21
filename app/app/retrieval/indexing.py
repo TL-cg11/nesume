@@ -10,12 +10,14 @@
 """
 import uuid
 
+from sqlalchemy import delete as sa_delete
+from sqlalchemy import update as sa_update
+from sqlalchemy.orm import Session
+
 from app.models.embedding import JobPostingEmbedding, UserProfileEmbedding
 from app.pii import mask
 from app.retrieval.embedder import Embedder
 from app.retrieval.preprocess import preprocess_external_text
-from sqlalchemy import delete as sa_delete
-from sqlalchemy.orm import Session
 
 
 def index_posting(
@@ -68,6 +70,34 @@ def index_personal(
     )
     session.add(row)
     return row
+
+
+def sync_shared_with(session: Session, *, source_id: uuid.UUID, shared_with: list[dict] | None) -> None:
+    """자소서 공유 변경(B10) 시 해당 자소서의 모든 임베딩 행 `shared_with`를 갱신한다.
+
+    복제(denormalize)한 `shared_with`가 원본 `resumes`와 어긋나면 **접근통제 실패**
+    (권한 없는 멘토 열람 / 정당한 공유 차단)이므로, B10 공유 변경과 **같은 트랜잭션**에서
+    이 훅을 호출해야 한다(docs/C3.md #1 ①). 멱등 — 같은 값으로 여러 번 호출해도 안전.
+    """
+    session.execute(
+        sa_update(UserProfileEmbedding)
+        .where(UserProfileEmbedding.source_id == source_id)
+        .values(shared_with=shared_with or [])
+    )
+
+
+def reconcile_shared_with(
+    session: Session, *, authoritative: dict[uuid.UUID, list[dict]]
+) -> int:
+    """정합성 재검사 골격(일 1회 배치, docs/C3.md #1 ②).
+
+    `authoritative` = {자소서 source_id: 원본 기준 shared_with}. 동기 갱신이 한 번이라도
+    누락됐을 때를 대비해 **원본을 진실로** 벡터 행을 일괄 복구한다(멱등). 복구한 자소서 수를
+    돌려준다 — 불일치 탐지·알림(심각도)은 호출측(B/D 로깅)에서. 원본 조회·대상 범위는 B 연동 시 확정.
+    """
+    for source_id, truth in authoritative.items():
+        sync_shared_with(session, source_id=source_id, shared_with=truth)
+    return len(authoritative)
 
 
 def delete_personal(session: Session, *, source_id: uuid.UUID) -> None:
