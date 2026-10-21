@@ -3,8 +3,19 @@
 ★ 기능 코드(B·C 팀 포함)는 이 패키지의 **A8 파이프라인**만 호출한다.
   `llm_client` 를 기능에서 직접 import 하지 않는다. CI가 grep으로 막는다 (D11).
 
-현재 들어 있는 것: A2 LLM 클라이언트 래퍼 · A4 분류 결과 스키마 · A5 출력 검사.
-앞으로 들어올 것: A3 질의 분류 · A8 파이프라인 조립.
+현재 들어 있는 것: A2 LLM 클라이언트 래퍼 · A3 질의 분류 · A4 분류 결과 스키마 · A5 출력 검사.
+앞으로 들어올 것: A8 파이프라인 조립.
+
+## A3 사용법
+
+    from app.guardrail import classify
+
+    c = classify(user_query, role=token_role, policy=policy)   # policy 는 C2 로더
+    c.query_type   # normal | out_of_scope | sensitive | exfiltration
+    c.verdict      # A4 Verdict (stage="classifier")
+
+★ 권한 밖(`out_of_scope`)은 **막지 않고 표시만** 한다. 실제 문서 제외는
+  C6 검색 필터가 matrix.yaml 로 한다. 하드 차단은 `exfiltration` 명시 패턴에 한정.
 
 ## A4 — 단계별 판정의 공통 모양
 
@@ -81,6 +92,16 @@ from app.guardrail.schema import (
     severity_rank,
     worse_decision,
 )
+from app.guardrail.classifier import (
+    RULES_PATH,
+    TYPE_TO_DECISION,
+    Classification,
+    PolicyLike,
+    Rule,
+    RuleFileError,
+    classify,
+    load_rules,
+)
 from app.guardrail.output_guard import (
     EMPTY_CONTEXT,
     SHINGLE_SIZE,
@@ -105,6 +126,15 @@ from app.guardrail.llm_client import (
 )
 
 __all__ = [
+    # A3 질의 유형 분류
+    "classify",
+    "Classification",
+    "Rule",
+    "RuleFileError",
+    "PolicyLike",
+    "load_rules",
+    "RULES_PATH",
+    "TYPE_TO_DECISION",
     # A4 분류 결과 스키마
     "Verdict",
     "Finding",

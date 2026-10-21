@@ -1,0 +1,106 @@
+# A3 질의 유형 분류 규칙
+#
+# ★ 이 파일을 고치면 PR 리뷰가 필수이고, 변경 뒤 B16 평가 러너를 다시 돌린다
+#   (tasks.md 공통 규칙 5번).
+#
+# query_type 은 네 값뿐이다 — audit_logs.query_type 의 DB CHECK 제약과 같아야 한다.
+#   normal / out_of_scope / sensitive / exfiltration
+#
+# priority: 겹칠 때 높은 쪽이 이긴다. 1차 프로젝트에서 규칙 순서대로 적용하다
+#           엉뚱한 규칙이 먼저 먹은 일이 있어 전부 명시한다.
+# exempt_roles: 이 역할에게는 적용하지 않는다. 운영자에게 정상인 질의가
+#               일반 사용자에게는 권한 밖인 경우를 표현한다.
+# grade: 이 질의가 요구하는 문서 등급. 적으면 matrix.yaml(D2)을 C2 로더로 읽어
+#        역할×등급 판정을 한다. block 이 나오면 out_of_scope 로 본다.
+version: 0
+
+rules:
+  # ────────────────────────────── 탈취 시도 (하드 차단)
+  # tasks.md A3: "하드 차단은 명시 패턴 한정". 여기 있는 것만 막는다.
+  # 외부 텍스트(공고·README)의 같은 시도는 C5 가 중화한다 — 다층 방어의 다른 겹이다.
+  - rule_id: INJ_SYSPROMPT
+    query_type: exfiltration
+    severity: critical
+    priority: 100
+    patterns:
+      - '시스템\s*프롬프트'
+      - '(프롬프트|지침|규칙|설정)(을|를)?\s*(그대로\s*)?(출력|공개|보여|알려|말해)'
+      - '(reveal|show|print|repeat|output)\s+(me\s+)?(your\s+|the\s+)?(system\s+)?(prompt|instruction)s?'
+      - '(초기|최초|원래)\s*(지시|명령|프롬프트)'
+
+  - rule_id: INJ_DIRECT
+    query_type: exfiltration
+    severity: critical
+    priority: 95
+    patterns:
+      - '(지금부터|이제부터|이제)\s*(너는|당신은|넌)'
+      - '개발자\s*모드'
+      - 'developer\s+mode|jailbreak|DAN\s+mode'
+      - '(이전|앞의|위의)\s*(지시|명령|지침)(을|는)?\s*(전부|모두)?\s*(무시|잊)'
+      - '(ignore|disregard|forget)\s+(all\s+)?(previous|prior|above|earlier)\s+(instruction|prompt|rule)s?'
+      - '^\s*(system|assistant)\s*:'
+
+  - rule_id: EXF_BULK
+    query_type: exfiltration
+    severity: critical
+    priority: 90
+    patterns:
+      - '(모든|전체)\s*(사용자|회원|지원자)(의|들의)?\s*(자소서|이력서|문서|정보|목록)'
+      - '(모든|전체)\s*(자소서|문서|파일|기록)(을|를)?\s*(나열|출력|보여|공개|덤프)'
+      - 'list\s+all\s+(user|document|resume|record|file)s?'
+      - '(데이터베이스|DB|테이블)\s*(전체|전부)?\s*(덤프|추출|내보내)'
+
+  # ────────────────────────────── 민감정보 (마스킹)
+  - rule_id: SENS_IDNUM
+    query_type: sensitive
+    severity: warn
+    priority: 70
+    patterns:
+      - '주민\s*(등록)?\s*번호'
+      - '계좌\s*번호|카드\s*번호'
+      - '여권\s*번호|운전\s*면허\s*번호'
+
+  # ⚠ '다른 지원자의 자소서' 는 여기 넣지 않는다. 그건 민감정보 요구가 아니라
+  #   권한 밖 열람 요구이므로 AUTHZ_OTHER_RESUME 소관이다.
+  #   처음에 양쪽에 넣었다가 우선순위가 높은 이 규칙이 먼저 먹어 유형이 뒤집혔다.
+  - rule_id: SENS_OTHER_PERSON
+    query_type: sensitive
+    severity: warn
+    priority: 65
+    patterns:
+      - '(다른|타|남의)\s*(사람|사용자|지원자|회원|분)(의|들의)?\s*(연락처|전화|이메일|주소|개인\s*정보)'
+
+  # ────────────────────────────── 권한 밖 (표시만, 막지 않음)
+  # ★ tasks.md A3: "권한 외는 flag 만". 여기 걸려도 판정은 allow 다.
+  #   실제 제외는 C6 검색 필터가 matrix.yaml 로 한다.
+  - rule_id: AUTHZ_OPERATOR_ONLY
+    query_type: out_of_scope
+    severity: info
+    priority: 40
+    exempt_roles: [operator, system]
+    patterns:
+      - '감사\s*로그'
+      - '(전체|모든)\s*(사용자|회원)\s*(통계|현황|수)'
+      - '(차단|탐지)\s*(율|통계|현황)'
+
+  - rule_id: AUTHZ_TEMPLATE
+    query_type: out_of_scope
+    severity: info
+    priority: 35
+    grade: internal          # 템플릿은 내부 등급 (B9)
+    exempt_roles: [operator, system]
+    patterns:
+      - '프롬프트\s*템플릿'
+      - '(내부|운영)\s*(규정|기준|문서)'
+
+  # other_owner: 남의 것을 달라는 질의다. matrix 가 allow 라도 scope 가 own/shared 면
+  #   "본인 것만 볼 수 있다"는 뜻이므로 권한 밖으로 본다.
+  - rule_id: AUTHZ_OTHER_RESUME
+    query_type: out_of_scope
+    severity: info
+    priority: 30
+    grade: personal
+    other_owner: true
+    exempt_roles: [operator, system]
+    patterns:
+      - '(다른|타)\s*(사용자|지원자|회원)(의)?\s*(자소서|이력서|경험)'
