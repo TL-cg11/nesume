@@ -105,6 +105,8 @@ from app.guardrail.schema import (
 from app.guardrail.pipeline import (
     DEFAULT_SYSTEM_PROMPT,
     DEFAULT_TOP_K,
+    ROLES,
+    TEST_SESSION_PREFIX,
     AuditSink,
     AuditWriteFailed,
     Chunk,
@@ -161,6 +163,8 @@ __all__ = [
     "build_prompt",
     "DEFAULT_SYSTEM_PROMPT",
     "DEFAULT_TOP_K",
+    "TEST_SESSION_PREFIX",
+    "ROLES",
     # A3 질의 유형 분류
     "classify",
     "Classification",
