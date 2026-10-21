@@ -4,7 +4,8 @@ from sqlalchemy import text
 def test_health_returns_200(client):
     r = client.get("/health")
     assert r.status_code == 200
-    assert r.json() == {"status": "ok"}
+    # 응답 전체를 고정하지 않는다. D4가 배포 확인용 version 등 필드를 추가한다.
+    assert r.json()["status"] == "ok"
 
 
 def test_ready_checks_db_vector_and_s3(client):
