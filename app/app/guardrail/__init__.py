@@ -3,8 +3,8 @@
 ★ 기능 코드(B·C 팀 포함)는 이 패키지의 **A8 파이프라인**만 호출한다.
   `llm_client` 를 기능에서 직접 import 하지 않는다. CI가 grep으로 막는다 (D11).
 
-현재 들어 있는 것: A2 LLM 클라이언트 래퍼.
-앞으로 들어올 것: A3 질의 분류 · A5 출력 검사 · A8 파이프라인 조립.
+현재 들어 있는 것: A2 LLM 클라이언트 래퍼 · A5 출력 검사.
+앞으로 들어올 것: A3 질의 분류 · A8 파이프라인 조립.
 
 ## A2 사용법
 
@@ -19,6 +19,20 @@
 분할 호출은 사용량이 합산되어 돌아온다.
 
     responses, usage = await client.generate_split([req1, req2])
+
+## A5 사용법
+
+    from app.guardrail import check_output, OutputContext
+
+    result = check_output(response.text, context=OutputContext(
+        system_prompt=..., canaries=..., confidential_chunks=..., allowed_tokens=...,
+    ))
+    result.decision    # "allow" | "block" | "mask"
+    result.text        # 내보낼 본문 (block 이면 빈 문자열)
+    result.flags       # 감사 로그(B3)의 flags 배열
+
+★ **복원(A1 detokenize)보다 먼저** 부른다. 복원 후에 검사하면 방금 되돌려놓은
+  진짜 이름과 전화번호가 전부 PII 로 걸려 모든 응답이 경고가 된다.
 
 ## 제공자 미정 (2026-10-20)
 
@@ -37,6 +51,16 @@ from app.guardrail.errors import (
     LlmTransient,
     LlmUnavailable,
 )
+from app.guardrail.output_guard import (
+    EMPTY_CONTEXT,
+    SHINGLE_SIZE,
+    Decision,
+    OutputCheckResult,
+    OutputContext,
+    OutputFinding,
+    Severity,
+    check_output,
+)
 from app.guardrail.llm_client import (
     DEFAULT_MAX_CALLS,
     DEFAULT_MAX_OUTPUT_TOKENS,
@@ -53,6 +77,15 @@ from app.guardrail.llm_client import (
 )
 
 __all__ = [
+    # A5 출력 검사
+    "check_output",
+    "OutputCheckResult",
+    "OutputContext",
+    "OutputFinding",
+    "EMPTY_CONTEXT",
+    "SHINGLE_SIZE",
+    "Decision",
+    "Severity",
     # 클라이언트
     "LlmClient",
     "RetryPolicy",
