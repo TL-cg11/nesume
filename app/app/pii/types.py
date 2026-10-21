@@ -86,6 +86,10 @@ class DetokenizeResult:
     unresolved: list[str]
 
 
+#: 필드 하나의 값. 경험 데이터의 태그·사용 기술처럼 배열인 필드가 있다 (B5).
+FieldValue = str | list[str]
+
+
 @dataclass(frozen=True)
 class FieldsTokenizeResult:
     """여러 필드를 치환표 하나로 묶은 결과.
@@ -95,10 +99,12 @@ class FieldsTokenizeResult:
     사람으로 읽고, 치환표도 문항 수만큼 생긴다 (B4·B5 요청).
     """
 
-    #: 입력과 같은 키, 값만 치환된 본문
-    texts: dict[str, str]
+    #: 입력과 같은 키·같은 모양(문자열은 문자열, 배열은 배열), 값만 치환된 본문
+    texts: dict[str, FieldValue]
     vault_id: str
-    #: 필드별 탐지 결과. 키는 입력과 같다
+    #: 필드별 탐지 결과.
+    #: 배열 필드는 원소마다 ``"tags[0]"`` 처럼 색인을 붙인 키를 쓴다 —
+    #: Hit 의 start/end 는 텍스트 하나 안의 위치라서 배열을 한 키로 묶으면 뜻이 모호해진다
     hits: dict[str, list[Hit]]
     #: 전체 합산 개수. 키는 PiiKind
     counts: dict[str, int]
@@ -106,6 +112,8 @@ class FieldsTokenizeResult:
 
 @dataclass(frozen=True)
 class FieldsDetokenizeResult:
-    texts: dict[str, str]
-    #: 필드별 미복원 토큰. 비어 있는 필드는 키가 없다
+    #: 입력과 같은 키·같은 모양
+    texts: dict[str, FieldValue]
+    #: 필드별 미복원 토큰. 비어 있는 필드는 키가 없다.
+    #: 배열 필드는 ``"tags[0]"`` 처럼 색인을 붙인다
     unresolved: dict[str, list[str]]

@@ -10,8 +10,10 @@
 
 여러 필드를 치환표 하나로 묶는 변형이 있다 (B4·B5 요청). 연산이 늘어난 것은 아니다.
 
-    tokenize_fields({"문항1": ..., "문항2": ...}, owner_id=, store=)
-    detokenize_fields({"문항1": ..., "문항2": ...}, vault_id, owner_id=, store=)
+    tokenize_fields({"제목": ..., "성과": ..., "태그": [...]}, owner_id=, store=)
+    detokenize_fields({"제목": ..., "성과": ..., "태그": [...]}, vault_id, owner_id=, store=)
+
+필드 값은 문자열 또는 문자열 배열이다 — 경험 데이터의 태그·사용 기술이 배열이다 (B5).
 
 치환표 수명은 ``ttl_seconds`` 로 정한다. 기본 30분이고, ``None`` 이면 만료 없음 —
 토큰 상태로 **저장**하는 경우(B7)에 쓴다.
@@ -47,6 +49,7 @@ from app.pii.types import (
     DetokenizeResult,
     FieldsDetokenizeResult,
     FieldsTokenizeResult,
+    FieldValue,
     Hit,
     PiiKind,
     TokenizeResult,
@@ -80,6 +83,7 @@ __all__ = [
     "DetokenizeResult",
     "FieldsTokenizeResult",
     "FieldsDetokenizeResult",
+    "FieldValue",
     # 치환표
     "Vault",
     "VaultStore",

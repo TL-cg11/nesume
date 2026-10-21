@@ -17,6 +17,7 @@ from app.pii.types import (
     DetokenizeResult,
     FieldsDetokenizeResult,
     FieldsTokenizeResult,
+    FieldValue,
     TokenizeResult,
 )
 from app.pii.vault import (
@@ -144,8 +145,14 @@ async def tokenize(
     )
 
 
+def _reject_bad_field(name: str, value: object) -> None:
+    raise TypeError(
+        f"필드 {name!r} 의 값은 str 또는 list[str] 여야 합니다 (받은 값: {type(value).__name__})"
+    )
+
+
 async def tokenize_fields(
-    fields: Mapping[str, str],
+    fields: Mapping[str, FieldValue],
     *,
     owner_id: str,
     store: VaultStore,
@@ -154,22 +161,41 @@ async def tokenize_fields(
 ) -> FieldsTokenizeResult:
     """여러 필드를 **치환표 하나로** 묶어 치환한다 (B4·B5 요청).
 
-    자소서 한 건은 문항이 여럿이고 같은 전화번호가 여러 문항에 나온다.
-    필드마다 ``tokenize`` 를 따로 부르면 같은 값이 문항마다 다른 토큰을 받아
-    모델이 다른 사람으로 읽고, 치환표도 문항 수만큼 생긴다.
+    자소서 한 건은 문항이 여럿이고, 경험 데이터는 제목·역할·성과·상세·사용 기술·태그로
+    나뉜다. 같은 전화번호가 여러 필드에 나오는데, 필드마다 ``tokenize`` 를 따로 부르면
+    같은 값이 필드마다 다른 토큰을 받아 모델이 다른 사람으로 읽고, 치환표도
+    필드 수만큼 생긴다.
 
     호출자가 필드를 구분자로 이어 붙여 한 번에 넣고 다시 나누는 방법은 쓰지 않는다 —
     그 구분자가 본문에 섞여 있거나 개인정보가 경계에 걸리면 깨진다.
 
-    번호는 **입력 순서대로** 1부터 이어진다. dict 는 입력 순서를 유지하므로
+    **배열 필드**(태그·사용 기술)는 원소마다 치환하고 배열 모양을 그대로 돌려준다.
+    탐지 결과의 키만 ``"tags[0]"`` 처럼 색인이 붙는다 — Hit 의 start/end 는 텍스트
+    하나 안의 위치라서 배열을 한 키로 묶으면 뜻이 모호해진다.
+
+    번호는 **입력 순서대로** 1부터 이어진다. dict 와 list 가 순서를 유지하므로
     같은 입력에 대해 결과가 항상 같다.
     """
     tokenizer = _Tokenizer(set(kinds or TOKENIZED_KINDS))
 
-    texts: dict[str, str] = {}
+    texts: dict[str, FieldValue] = {}
     hits: dict[str, list[Hit]] = {}
-    for name, text in fields.items():
-        texts[name], hits[name] = tokenizer.run(text)
+
+    for name, value in fields.items():
+        if isinstance(value, str):
+            texts[name], hits[name] = tokenizer.run(value)
+            continue
+        if not isinstance(value, list):
+            _reject_bad_field(name, value)
+
+        items: list[str] = []
+        for index, item in enumerate(value):
+            if not isinstance(item, str):
+                _reject_bad_field(f"{name}[{index}]", item)
+            tokenized, item_hits = tokenizer.run(item)
+            items.append(tokenized)
+            hits[f"{name}[{index}]"] = item_hits
+        texts[name] = items
 
     vault = _new_vault(owner_id, tokenizer.entries, ttl_seconds)
     await store.save(vault)
@@ -229,7 +255,7 @@ async def detokenize(
 
 
 async def detokenize_fields(
-    fields: Mapping[str, str],
+    fields: Mapping[str, FieldValue],
     vault_id: str,
     owner_id: str,
     *,
@@ -239,16 +265,33 @@ async def detokenize_fields(
     """``tokenize_fields`` 로 묶은 필드들을 한 번에 복원한다.
 
     치환표를 한 번만 읽는다. 필드마다 ``detokenize`` 를 부르면 같은 치환표를
-    문항 수만큼 복호화하게 된다 (B7 은 KMS 를 거친다).
+    필드 수만큼 복호화하게 된다 (B7 은 KMS 를 거친다).
+
+    배열 필드는 배열 모양 그대로 돌려주고, 미복원 토큰의 키에만 색인이 붙는다.
     """
     vault = await _load_vault(store, vault_id, owner_id)
 
-    texts: dict[str, str] = {}
+    texts: dict[str, FieldValue] = {}
     unresolved: dict[str, list[str]] = {}
-    for name, text in fields.items():
-        texts[name], missing = _restore(text, vault, fix_particles)
-        if missing:
-            unresolved[name] = missing
+
+    for name, value in fields.items():
+        if isinstance(value, str):
+            texts[name], missing = _restore(value, vault, fix_particles)
+            if missing:
+                unresolved[name] = missing
+            continue
+        if not isinstance(value, list):
+            _reject_bad_field(name, value)
+
+        items: list[str] = []
+        for index, item in enumerate(value):
+            if not isinstance(item, str):
+                _reject_bad_field(f"{name}[{index}]", item)
+            restored, missing = _restore(item, vault, fix_particles)
+            items.append(restored)
+            if missing:
+                unresolved[f"{name}[{index}]"] = missing
+        texts[name] = items
 
     return FieldsDetokenizeResult(texts=texts, unresolved=unresolved)
 

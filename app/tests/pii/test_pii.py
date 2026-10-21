@@ -338,3 +338,97 @@ async def test_fields_can_be_permanent() -> None:
     )
     vault = await store.load(r.vault_id)
     assert vault is not None and vault.is_permanent is True
+
+
+# ---------------------------------------------------------------- 배열 필드 (B5 경험 데이터)
+
+@pytest.mark.anyio
+async def test_list_field_keeps_shape() -> None:
+    """태그·사용 기술은 배열이다. 배열로 받아 배열로 돌려준다."""
+    store = InMemoryVaultStore()
+    r = await tokenize_fields(
+        {
+            "제목": "이름: 김철수 의 프로젝트",
+            "태그": ["연락처 010-1234-5678", "백엔드", "메일 hong@example.com"],
+        },
+        owner_id="u1",
+        store=store,
+    )
+
+    assert isinstance(r.texts["제목"], str)
+    assert isinstance(r.texts["태그"], list)
+    assert len(r.texts["태그"]) == 3
+    assert r.texts["태그"][1] == "백엔드", "PII 없는 원소는 그대로"
+    assert "010-1234-5678" not in r.texts["태그"][0]
+
+
+@pytest.mark.anyio
+async def test_list_field_hits_are_indexed() -> None:
+    """Hit 의 start/end 는 텍스트 하나 안의 위치다. 배열은 원소별 키로 나눈다."""
+    store = InMemoryVaultStore()
+    r = await tokenize_fields(
+        {"태그": ["연락처 010-1234-5678", "백엔드"]}, owner_id="u1", store=store
+    )
+
+    assert set(r.hits) == {"태그[0]", "태그[1]"}
+    assert len(r.hits["태그[0]"]) == 1
+    assert r.hits["태그[1]"] == []
+
+
+@pytest.mark.anyio
+async def test_same_value_shared_between_str_and_list_fields() -> None:
+    """★ 문자열 필드와 배열 원소에 같은 값이 있으면 같은 토큰을 받아야 한다."""
+    store = InMemoryVaultStore()
+    r = await tokenize_fields(
+        {"상세": "연락처는 010-1234-5678 입니다", "태그": ["010-1234-5678"]},
+        owner_id="u1",
+        store=store,
+    )
+
+    all_tokens = {h.token for hits in r.hits.values() for h in hits}
+    assert len(all_tokens) == 1, f"같은 값이 다른 토큰을 받았다: {all_tokens}"
+
+
+@pytest.mark.anyio
+async def test_list_field_roundtrip() -> None:
+    store = InMemoryVaultStore()
+    original = {
+        "제목": "이름: 김철수 의 프로젝트",
+        "성과": "연락처 010-1234-5678 로 문의",
+        "태그": ["hong@example.com", "백엔드", ""],
+        "사용기술": ["Python 3.12", "FastAPI"],
+    }
+
+    r = await tokenize_fields(original, owner_id="u1", store=store, ttl_seconds=NO_EXPIRY)
+    d = await detokenize_fields(r.texts, r.vault_id, "u1", store=store, fix_particles=False)
+
+    assert d.texts == original
+    assert d.unresolved == {}
+
+
+@pytest.mark.anyio
+async def test_list_field_unresolved_is_indexed() -> None:
+    store = InMemoryVaultStore()
+    r = await tokenize_fields({"태그": ["이름: 김철수", "정상"]}, owner_id="u1", store=store)
+
+    broken = {"태그": [r.texts["태그"][0], "없는 토큰 [[PERSON_9]]"]}
+    d = await detokenize_fields(broken, r.vault_id, "u1", store=store)
+
+    assert d.unresolved == {"태그[1]": ["[[PERSON_9]]"]}
+
+
+@pytest.mark.anyio
+async def test_empty_list_field() -> None:
+    store = InMemoryVaultStore()
+    r = await tokenize_fields({"태그": []}, owner_id="u1", store=store)
+    assert r.texts == {"태그": []}
+
+
+@pytest.mark.anyio
+async def test_bad_field_type_is_rejected() -> None:
+    """조용히 넘기면 dict 의 키만 치환되는 식으로 이상하게 동작한다."""
+    store = InMemoryVaultStore()
+    with pytest.raises(TypeError):
+        await tokenize_fields({"태그": {"a": "b"}}, owner_id="u1", store=store)  # type: ignore[dict-item]
+    with pytest.raises(TypeError):
+        await tokenize_fields({"태그": [1, 2]}, owner_id="u1", store=store)  # type: ignore[list-item]
