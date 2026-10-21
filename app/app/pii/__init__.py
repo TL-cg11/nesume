@@ -34,7 +34,7 @@
 HTTP 상태코드 결정(호출자).
 """
 
-from app.pii.core import detect, mask, validate_input
+from app.pii.core import DEFAULT_MASK_TAIL, detect, mask, validate_input
 from app.pii.tokens import (
     VaultExpired,
     VaultOwnerMismatch,
@@ -90,6 +90,7 @@ __all__ = [
     "InMemoryVaultStore",
     "TOKEN_FORMAT_VERSION",
     "DEFAULT_TTL_SECONDS",
+    "DEFAULT_MASK_TAIL",
     "NO_EXPIRY",
     # 예외
     "VaultExpired",

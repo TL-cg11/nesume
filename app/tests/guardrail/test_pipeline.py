@@ -316,9 +316,32 @@ async def test_verdicts_from_both_stages_are_merged() -> None:
 @pytest.mark.anyio
 async def test_is_test_flag_is_passed_through() -> None:
     audit = FakeAudit()
-    ctx = RequestContext(user_id="u1", role="user", feature="writing", is_test=True)
+    ctx = RequestContext(
+        user_id="u1", role="user", feature="writing", session_id="test-1", is_test=True
+    )
     await _guard(audit=audit).run("지원 동기", ctx)
     assert audit.rows[0]["is_test"] is True
+
+
+def test_test_traffic_requires_test_session_prefix() -> None:
+    """★ 감사 로그 쓰기는 finally 에서 일어난다. 거기서 터지면 요청을 다
+    처리한 뒤에 실패한다. 컨텍스트를 만들 때 먼저 막는다 (B11 규약)."""
+    with pytest.raises(ValueError, match="test-"):
+        RequestContext(user_id="u1", role="user", feature="writing", is_test=True)
+
+
+def test_normal_traffic_has_no_prefix_rule() -> None:
+    RequestContext(user_id="u1", role="user", feature="writing", session_id="s1")
+
+
+@pytest.mark.anyio
+async def test_audit_query_masked_has_no_digits() -> None:
+    """★ B 보고 반영 — 뒷자리 4자리도 남기지 않는다. 대조는 query_hash 가 맡는다."""
+    audit = FakeAudit()
+    await _guard(audit=audit).run("연락처 010-1234-5678 로 연락주세요", CTX)
+
+    masked = str(audit.rows[0]["query_masked"])
+    assert not any(ch.isdigit() for ch in masked), f"숫자가 남았다: {masked}"
 
 
 @pytest.fixture

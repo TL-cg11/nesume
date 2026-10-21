@@ -92,10 +92,27 @@ def test_blocked_reason_has_no_raw_value() -> None:
 
 # ---------------------------------------------------------------- mask
 
-def test_mask_is_irreversible() -> None:
+def test_mask_hides_everything_by_default() -> None:
+    """★ 기본값은 전부 가린다.
+
+    1차에서는 대조용으로 뒷자리 4자리를 남겼다. 2차에서는 감사 로그에
+    query_hash(원문 SHA-256)가 따로 있어 대조를 해시가 맡는다. 뒷자리를 남기면
+    이득 없이 PII 만 남는다 (spec 15장 "감사 로그에 PII 유입").
+    """
     masked = mask("연락처 010-1234-5678")
-    assert "010" not in masked or "*" in masked
-    assert "5678" in masked, "대조용 뒷자리는 남긴다"
+    assert not any(ch.isdigit() for ch in masked), f"숫자가 남았다: {masked}"
+
+
+def test_mask_keep_tail_is_opt_in() -> None:
+    """대조용 꼬리가 꼭 필요한 호출자는 명시한다."""
+    assert "5678" in mask("연락처 010-1234-5678", keep_tail=4)
+
+
+def test_mask_hides_email_domain_by_default() -> None:
+    """개인 메일 도메인은 소속을 드러낸다."""
+    masked = mask("메일은 hong@example.com 입니다")
+    assert "example.com" not in masked
+    assert "hong" not in masked
 
 
 def test_mask_hides_rrn_completely() -> None:

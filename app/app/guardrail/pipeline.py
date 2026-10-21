@@ -111,6 +111,16 @@ class RequestContext:
     #: 평가 러너(B16)가 넣은 트래픽인가. 지표에서 분리한다
     is_test: bool = False
 
+    def __post_init__(self) -> None:
+        # B11 이 같은 규약을 DB 쪽에서도 검사한다. 여기서 먼저 막는 이유는
+        # 감사 로그 쓰기가 finally 에서 일어나기 때문이다 — 거기서 터지면
+        # 요청을 다 처리한 뒤에 실패하고, 원인도 찾기 어렵다.
+        if self.is_test and not self.session_id.startswith("test-"):
+            raise ValueError(
+                "is_test=True 인 요청의 session_id 는 'test-' 로 시작해야 합니다 "
+                f"(받은 값: {self.session_id!r})"
+            )
+
 
 @dataclass(frozen=True)
 class PipelineResult:
@@ -293,7 +303,8 @@ class Guardrail:
             "user_id": ctx.user_id,
             "role": ctx.role,
             "feature": ctx.feature,
-            # ★ 원문이 아니라 가린 것. 감사 로그에 원문 질의를 저장하지 않는다
+            # ★ 원문이 아니라 가린 것. 감사 로그에 원문 질의를 저장하지 않는다.
+            #   뒷자리도 남기지 않는다 — 대조는 바로 아래 query_hash 가 맡는다
             "query_masked": mask(query),
             "query_hash": hashlib.sha256(query.encode("utf-8")).hexdigest(),
             "doc_ids": list(doc_ids),
