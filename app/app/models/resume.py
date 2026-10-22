@@ -26,8 +26,10 @@ class Resume(Base):
     id: Mapped[UuidPk]
     owner_id: Mapped[str] = owner_fk()
     title: Mapped[str] = mapped_column(String(200))
-    # 공고 내부 고유 ID(C4). 공고 테이블은 C 소유라 FK는 C4 마이그레이션에서 추가한다.
-    job_posting_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    # 공고 내부 고유 ID(C4). 참조 중인 공고는 물리 삭제 금지(RESTRICT, C 결정 2·part2_guide 4.30)
+    job_posting_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("job_postings.id", ondelete="RESTRICT")
+    )
     # 상태 값 목록은 문서에 정의되지 않아 제약 없이 둔다(팀 확정 후 CHECK 추가)
     status: Mapped[str | None] = mapped_column(String(20))
     grade: Mapped[str] = grade_column(Grade.PERSONAL)
