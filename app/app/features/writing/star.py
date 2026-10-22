@@ -27,9 +27,6 @@ from app.features.writing.suggestions import Suggestion
 StarElement = Literal["S", "T", "A", "R"]
 STAR_ELEMENTS: tuple[StarElement, ...] = ("S", "T", "A", "R")
 
-#: 이 수 이하면 변환하지 않고 보완 안내만 한다 (tasks.md A7)
-MIN_ELEMENTS_TO_CONVERT = 3
-
 ELEMENT_NAMES: dict[StarElement, str] = {
     "S": "상황(Situation)",
     "T": "과제(Task)",
@@ -74,12 +71,6 @@ class StarAnalysis:
     @property
     def count(self) -> int:
         return len(self.present)
-
-    @property
-    def can_convert(self) -> bool:
-        """LLM 변환을 맡겨도 되는가. 요소가 적으면 지어내기 때문에 막는다."""
-        return self.count >= MIN_ELEMENTS_TO_CONVERT
-
 
 def analyze(text: str) -> StarAnalysis:
     """어떤 요소가 들어 있는지 본다. 글을 바꾸지 않는다."""

@@ -69,7 +69,6 @@ class StarOut(BaseModel):
     #: 화면에 보여줄 한글 이름 (상황(Situation) 등)
     missing_names: list[str]
     count: int
-    can_convert: bool
 
     @classmethod
     def of(cls, a: StarAnalysis) -> "StarOut":
@@ -78,7 +77,6 @@ class StarOut(BaseModel):
             missing=list(a.missing),
             missing_names=[ELEMENT_NAMES[e] for e in a.missing],
             count=a.count,
-            can_convert=a.can_convert,
         )
 
 

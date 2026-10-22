@@ -51,9 +51,11 @@ def test_proofread_reports_star_in_korean() -> None:
     r = make_client().post("/writing/proofread", json={"text": "열심히 했습니다."})
     body = r.json()
 
-    assert body["star"]["can_convert"] is False
+    assert body["star"]["count"] == 0
     assert "상황(Situation)" in body["star"]["missing_names"], "화면에 그대로 보여줄 이름"
-    assert body["llm_used"] is False, "요소가 적으면 모델을 부르지 않는다"
+    assert body["llm_used"] is True, "요소 수로 2차를 막지 않는다 (2026-10-22 팀 회의)"
+    star_ids = {s["rule_id"] for s in body["suggestions"] if s["kind"] == "star"}
+    assert star_ids == {"WR_STAR_S", "WR_STAR_T", "WR_STAR_A", "WR_STAR_R"}
 
 
 def test_proofread_without_llm() -> None:

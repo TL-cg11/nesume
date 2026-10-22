@@ -29,7 +29,6 @@ from app.features.writing.service import (
 )
 from app.features.writing.star import (
     ELEMENT_NAMES,
-    MIN_ELEMENTS_TO_CONVERT,
     STAR_ELEMENTS,
     StarAnalysis,
     StarElement,
@@ -51,7 +50,7 @@ __all__ = [
     "parse_llm_suggestions",
     "check", "RULES", "MAX_SENTENCE_LEN", "MAX_TEXT_LEN",
     "analyze", "guidance", "StarAnalysis", "StarElement", "STAR_ELEMENTS",
-    "ELEMENT_NAMES", "MIN_ELEMENTS_TO_CONVERT",
+    "ELEMENT_NAMES",
     "Suggestion", "SuggestionKind", "Confidence", "apply_suggestions",
     "OverlappingSuggestions", "StaleSuggestion",
     "has_final_consonant", "has_rieul_final",

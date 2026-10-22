@@ -3,10 +3,18 @@
 흐름은 이렇다.
 
     1. 규칙 검사 (proofread.check)        LLM 없이, 항상 같은 결과
-    2. STAR 분석 (star.analyze)
-    3. 요소가 2개 이하면  → 보완 안내만 하고 **여기서 끝낸다**
-    4. 아니면 LLM 2차      → A8 가드레일 파이프라인 경유
-    5. 모델 제안을 **원문과 대조해 검증**한 뒤 합친다
+    2. STAR 분석 + 빠진 요소 보완 안내 (star)
+    3. LLM 2차                            A8 가드레일 파이프라인 경유
+    4. 모델 제안을 **원문과 대조해 검증**한 뒤 합친다
+
+★ **요소 수로 2차를 막지 않는다** (2026-10-22 팀 회의 결정).
+  이전에는 STAR 요소가 2개 이하면 모델을 부르지 않았다 — 빈칸이 많은 글을 모델에
+  주면 없는 경험을 지어낸다고 보았기 때문이다. 회의에서 그 조건을 빼기로 했다.
+  남은 방어는 두 겹이다.
+    - 프롬프트가 "사실을 바꾸거나 없는 경험을 만들지 않습니다" 를 명시한다
+    - `parse_llm_suggestions` 가 **글에 없는 조각을 가리키는 제안을 버린다**
+  다만 이 둘은 *고칠 자리*를 검증할 뿐, 모델이 **고친 문장 안에서** 사실을 더하는
+  것은 막지 못한다. 화면이 모델 제안을 `medium` 신뢰도로 구분해 보여주는 이유다.
 
 ★ LLM 을 직접 부르지 않는다. A8 만 호출한다 (tasks.md 공통 규칙 2번).
   그래서 PII 토큰화·질의 분류·출력 검사·감사 로그가 전부 자동으로 걸린다.
@@ -144,16 +152,14 @@ async def improve(
     use_llm: bool = True,
 ) -> ImproveResult:
     """1차 + 2차를 돌려 제안 목록을 만든다."""
-    rule_found = proofread.check(text)
     analysis = star.analyze(text)
 
-    # STAR 요소가 적으면 변환을 맡기지 않는다. 모델이 없는 내용을 지어낸다
-    if not analysis.can_convert:
-        found = rule_found + star.guidance(analysis, text)
-        found.sort(key=lambda s: (s.start, s.end, s.rule_id))
-        return ImproveResult(suggestions=found, star=analysis, counts=_counts(found))
+    # ★ 빠진 요소 안내는 **항상** 붙인다. 요소 수로 2차를 막지 않기로 했으므로
+    #   (2026-10-22 팀 회의), 이 안내가 "무엇을 더 써야 하는지" 알리는 유일한 장치다.
+    rule_found = proofread.check(text) + star.guidance(analysis, text)
 
     if not use_llm:
+        rule_found.sort(key=lambda s: (s.start, s.end, s.rule_id))
         return ImproveResult(suggestions=rule_found, star=analysis, counts=_counts(rule_found))
 
     ctx = RequestContext(

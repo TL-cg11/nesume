@@ -6,7 +6,6 @@ import pytest
 
 from app.features.writing import (
     MAX_LLM_SUGGESTIONS,
-    MIN_ELEMENTS_TO_CONVERT,
     SEP,
     analyze,
     guidance,
@@ -36,13 +35,12 @@ def test_full_text_has_all_elements() -> None:
     a = analyze(FULL)
     assert a.present == frozenset({"S", "T", "A", "R"})
     assert a.missing == ()
-    assert a.can_convert is True
 
 
 def test_thin_text_has_none() -> None:
     a = analyze(THIN)
     assert a.count == 0
-    assert a.can_convert is False
+    assert len(a.missing) == 4
 
 
 @pytest.mark.parametrize(
@@ -71,11 +69,6 @@ def test_evidence_points_into_the_text() -> None:
     a = analyze(FULL)
     for element, (start, end) in a.evidence.items():
         assert 0 <= start < end <= len(FULL), element
-
-
-def test_threshold_matches_tasks_md() -> None:
-    """tasks.md A7: 'STAR 요소 2개 이하면 보완 안내'."""
-    assert MIN_ELEMENTS_TO_CONVERT == 3
 
 
 def test_guidance_asks_questions_for_missing_only() -> None:
@@ -152,16 +145,34 @@ def test_caps_the_number_of_suggestions() -> None:
 # ---------------------------------------------------------------- 조립
 
 @pytest.mark.anyio
-async def test_thin_text_skips_the_model() -> None:
-    """★ 요소가 적은 글을 모델에 주면 없는 경험을 지어냅니다."""
+async def test_thin_text_also_goes_to_the_model() -> None:
+    """요소 수로 2차를 막지 않는다 (2026-10-22 팀 회의 결정).
+
+    이전에는 요소가 2개 이하면 모델을 부르지 않았다. 지금은 부른다.
+    """
     provider = FakeProvider()
     guard = Guardrail(llm=LlmClient(provider=provider), vault=InMemoryVaultStore())
 
     result = await improve(THIN, guard=guard, user_id="u1", role="user")
 
-    assert result.llm_used is False
-    assert provider.calls == [], "모델을 불렀습니다"
+    assert result.llm_used is True
+    assert len(provider.calls) == 1
+
+
+@pytest.mark.anyio
+async def test_missing_star_guidance_is_always_included() -> None:
+    """★ 요소 수로 막지 않으므로, 이 안내가 "무엇을 더 써야 하는지" 알리는 유일한 장치다."""
+    result = await improve(THIN, guard=_guard(""), user_id="u1", role="user")
+    assert {s.rule_id for s in result.suggestions if s.kind == "star"} == {
+        "WR_STAR_S", "WR_STAR_T", "WR_STAR_A", "WR_STAR_R"
+    }
+
+
+@pytest.mark.anyio
+async def test_guidance_is_included_even_without_the_model() -> None:
+    result = await improve(THIN, guard=_guard(""), user_id="u1", role="user", use_llm=False)
     assert any(s.rule_id.startswith("WR_STAR_") for s in result.suggestions)
+    assert result.llm_used is False
 
 
 @pytest.mark.anyio

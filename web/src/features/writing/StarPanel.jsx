@@ -1,7 +1,7 @@
 // STAR 네 요소가 들어 있는지 보여준다.
 //
-// 요소가 2개 이하면 서버가 AI 변환을 돌리지 않는다 — 빈칸이 많은 글을 모델에 주면
-// 없는 경험을 지어내기 때문이다. 화면에서도 그 이유를 밝혀 둔다.
+// 요소 수로 AI 다듬기를 막지 않는다 (2026-10-22 팀 회의). 대신 빠진 요소를 그대로
+// 보여주고, 제안 목록의 "직접 고쳐야 할 것" 에 보완 질문이 함께 올라간다.
 
 const LABELS = { S: '상황', T: '과제', A: '행동', R: '결과' }
 const ORDER = ['S', 'T', 'A', 'R']
@@ -28,13 +28,6 @@ export default function StarPanel({ star }) {
         <p className="muted">네 요소가 모두 들어 있습니다.</p>
       ) : (
         <p className="muted">빠진 요소: {star.missing_names.join(', ')}</p>
-      )}
-
-      {!star.can_convert && (
-        <p className="notice">
-          요소가 {star.count}개뿐이라 AI 다듬기를 돌리지 않았습니다. 빈칸이 많은 글을
-          AI에 맡기면 없는 경험을 지어내기 때문입니다. 아래 안내를 먼저 채워 주십시오.
-        </p>
       )}
     </div>
   )
