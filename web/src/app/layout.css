@@ -1,55 +1,102 @@
-:root {
-  --bg: #ffffff;
-  --fg: #1f2328;
-  --muted: #656d76;
-  --border: #d0d7de;
-  --accent: #0969da;
-  font-family: system-ui, -apple-system, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
+/*
+ * 공통 레이아웃·기본 요소·공용 클래스 — B 소유. 값은 theme.css 변수만 쓴다.
+ * 기능 전용 스타일은 features/<기능>/<기능>.css 에 기능 접두사를 붙여 둔다.
+ */
+
+/* --- 바탕 --- */
+html {
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  line-height: var(--leading);
   color: var(--fg);
   background: var(--bg);
+  -webkit-font-smoothing: antialiased;
 }
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0d1117;
-    --fg: #e6edf3;
-    --muted: #8d96a0;
-    --border: #30363d;
-    --accent: #4493f8;
-  }
-}
-
 body { margin: 0; background: var(--bg); }
+*, *::before, *::after { box-sizing: border-box; }
 
+h1 { font-size: var(--text-xl); font-weight: 700; margin: 0 0 var(--space-4); letter-spacing: -0.01em; }
+h2 { font-size: var(--text-lg); font-weight: 650; margin: 0 0 var(--space-3); }
+h3 { font-size: var(--text-md); font-weight: 650; margin: var(--space-5) 0 var(--space-2); }
+p { margin: 0 0 var(--space-3); }
+a { color: var(--accent-text); }
+
+/* --- 레이아웃 --- */
 .app-header {
   display: flex;
   align-items: center;
-  gap: 24px;
-  padding: 12px 16px;
+  gap: var(--space-5);
+  padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--border);
+  background: var(--bg);
   flex-wrap: wrap;
 }
+.app-brand { font-weight: 800; font-size: var(--text-lg); color: var(--fg); text-decoration: none; letter-spacing: -0.02em; }
+.app-nav { display: flex; gap: var(--space-1); flex-wrap: wrap; }
+.app-nav a {
+  color: var(--muted);
+  text-decoration: none;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-sm);
+}
+.app-nav a:hover { color: var(--fg); background: var(--surface); }
+.app-nav a.active { color: var(--accent-text); background: var(--accent-soft); font-weight: 600; }
+.app-main { max-width: var(--content-max); margin: 0 auto; padding: var(--space-5) var(--space-4); }
 
-.app-brand { font-weight: 700; color: var(--fg); text-decoration: none; }
-
-.app-nav { display: flex; gap: 16px; flex-wrap: wrap; }
-.app-nav a { color: var(--muted); text-decoration: none; }
-.app-nav a.active { color: var(--accent); font-weight: 600; }
-
-.app-main { max-width: 1080px; margin: 0 auto; padding: 24px 16px; }
-
-.dev-token { margin-left: auto; display: flex; gap: 6px; align-items: center; font-size: 13px; }
-.dev-token-label { font-weight: 700; color: #bf3989; }
-.dev-token input { width: 220px; }
-.dev-token-state { color: var(--muted); }
-
+/* --- 기본 요소: 버튼 --- */
 button, input, textarea, select { font: inherit; color: inherit; }
 button {
-  background: var(--accent); color: #fff; border: 0; border-radius: 6px; padding: 6px 12px; cursor: pointer;
+  background: var(--accent);
+  color: var(--on-accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-3);
+  min-height: 34px;
+  cursor: pointer;
+  font-weight: 600;
 }
-button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--border); }
-button:disabled { opacity: 0.5; cursor: default; }
+button:hover:not(:disabled) { filter: brightness(1.08); }
+button.secondary { background: var(--bg); color: var(--fg); border-color: var(--border-input); font-weight: 500; }
+button.secondary:hover:not(:disabled) { background: var(--surface); filter: none; }
+button.danger { background: var(--bg); color: var(--danger); border-color: var(--danger); font-weight: 500; }
+button.danger:hover:not(:disabled) { background: var(--danger-soft); filter: none; }
+button.link { background: none; border: 0; color: var(--fg); padding: 0; min-height: 0; font-weight: 500; text-align: left; }
+button:disabled { opacity: 0.45; cursor: default; }
+
+/* --- 기본 요소: 입력 --- */
 input, textarea, select {
-  background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px;
+  background: var(--bg);
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  min-height: 34px;
 }
-.error { color: #cf222e; }
+textarea { line-height: var(--leading); resize: vertical; }
+input::placeholder, textarea::placeholder { color: var(--muted); }
+:where(button, input, textarea, select, a):focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+/* --- 공용 클래스 (모든 기능에서 사용) --- */
+.row { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; margin: var(--space-2) 0; }
+.stack { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-3); }
+.grow { flex: 1; }
+.muted { color: var(--muted); font-size: var(--text-sm); }
+.card { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-4); box-shadow: var(--shadow-sm); }
+.list { list-style: none; padding: 0; margin: 0; }
+.list > li { padding: var(--space-3) 0; border-bottom: 1px solid var(--border); }
+.list > li:last-child { border-bottom: 0; }
+
+/* 상태 메시지: 색 + 배경으로 구분(색만으로 구분하지 않도록 문구도 함께 쓴다) */
+.error, .notice, .success {
+  font-size: var(--text-sm);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+}
+.error { color: var(--danger); background: var(--danger-soft); }
+.notice { color: var(--warning); background: var(--warning-soft); }
+.success { color: var(--success); background: var(--success-soft); }
+
+/* --- 개발 서버 전용 (운영 빌드에서 DevTokenPanel이 렌더링되지 않음) --- */
+.dev-token { margin-left: auto; display: flex; gap: var(--space-2); align-items: center; font-size: var(--text-sm); }
+.dev-token-label { font-weight: 700; color: var(--warning); }
+.dev-token input { width: 220px; min-height: 30px; }
+.dev-token-state { color: var(--muted); }

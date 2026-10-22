@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { experiencesApi } from './api.js'
 import ExperienceForm from './ExperienceForm.jsx'
-import '../resumes/resumes.css'
 import './experiences.css'
 
 export default function ExperiencesPage() {
@@ -54,7 +53,7 @@ export default function ExperiencesPage() {
   return (
     <section>
       <div className="row">
-        <h1 style={{ flex: 1 }}>경험</h1>
+        <h1 className="grow">경험</h1>
         {editing === null && <button onClick={() => setEditing('new')}>경험 추가</button>}
       </div>
       {error && <p className="error">{error}</p>}
@@ -83,7 +82,7 @@ export default function ExperiencesPage() {
         </div>
       )}
 
-      <ul className="exp-list">
+      <ul className="list exp-list">
         {items.map((e) => (
           <li key={e.id}>
             <div className="head">
@@ -96,7 +95,7 @@ export default function ExperiencesPage() {
               <button className="secondary" onClick={() => setEditing(e)}>
                 수정
               </button>
-              <button className="secondary" onClick={() => remove(e)}>
+              <button className="danger" onClick={() => remove(e)}>
                 삭제
               </button>
             </div>
