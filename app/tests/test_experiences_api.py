@@ -8,9 +8,8 @@ from sqlalchemy import select
 from app.auth import CurrentUser, get_current_user
 from app.db import SessionLocal
 from app.features.experiences import index_hooks
-from app.features.resumes import pii_hooks
 from app.main import app
-from app.models import Experience
+from app.models import Experience, PiiVault
 
 
 def _as(sub: str) -> TestClient:
@@ -83,38 +82,60 @@ def test_tag_filter_matches_any(alice):
 
 # --- PII 처리 지점 ----------------------------------------------------------
 
-@pytest.fixture
-def fake_tokenizer(monkeypatch):
-    """PII '010-1234-5678'을 토큰으로 바꾸는 가짜 A1·B7."""
-    monkeypatch.setattr(pii_hooks, "tokenize_for_storage",
-                        lambda owner, t: t.replace("010-1234-5678", "[PHONE_1]"))
-    monkeypatch.setattr(pii_hooks, "restore_for_owner",
-                        lambda owner, req, t: t.replace("[PHONE_1]", "010-1234-5678"))
+PII = "010-1234-5678"
 
 
-def test_all_string_fields_tokenized_on_save_and_restored_for_owner(alice, fake_tokenizer):
-    pii = "010-1234-5678"
-    e = _exp(alice, title=f"제목 {pii}", type=f"유형{pii}", role=f"역할 {pii}", outcome=f"성과 {pii}",
-             detail=f"상세 {pii}", tech_stack=[f"기술 {pii}"], tags=[f"태그 {pii}"])
+def _row(exp_id):
     with SessionLocal() as db:
-        row = db.scalar(select(Experience).where(Experience.id == uuid.UUID(e["id"])))
+        return db.scalar(select(Experience).where(Experience.id == uuid.UUID(exp_id)))
+
+
+def _vault_exists(vault_id):
+    with SessionLocal() as db:
+        return db.get(PiiVault, vault_id) is not None
+
+
+def test_all_string_fields_tokenized_on_save_and_restored_for_owner(alice):
+    e = _exp(alice, title=f"제목 {PII}", type=f"유형{PII}", role=f"역할 {PII}", outcome=f"성과 {PII}",
+             detail=f"상세 {PII}", tech_stack=[f"기술 {PII}"], tags=[f"태그 {PII}"])
+    row = _row(e["id"])
     stored = [row.title, row.type, row.role, row.outcome, row.detail, *row.tech_stack, *row.tags]
-    assert all("[PHONE_1]" in v and pii not in v for v in stored), stored
-    assert e["detail"] == f"상세 {pii}" and e["tags"] == [f"태그 {pii}"]
+    # 같은 값은 문서 안에서 같은 토큰(A1 tokenize_fields, 대응표 하나)
+    assert all("[[PHONE_1]]" in v and PII not in v for v in stored), stored
+    assert row.vault_id is not None and _vault_exists(row.vault_id)
+    assert e["detail"] == f"상세 {PII}" and e["tags"] == [f"태그 {PII}"]
+    assert alice.get(f"/experiences/{e['id']}").json()["tech_stack"] == [f"기술 {PII}"]
 
 
-def test_tag_filter_uses_tokenized_value(alice, fake_tokenizer):
-    e = _exp(alice, tags=["연락 010-1234-5678"])
-    got = alice.get("/experiences", params={"tags": "연락 010-1234-5678"}).json()
-    assert [x["id"] for x in got] == [e["id"]]
+def test_no_pii_means_no_vault(alice):
+    e = _exp(alice, detail="개인정보 없음")
+    assert _row(e["id"]).vault_id is None
+    assert e["detail"] == "개인정보 없음"
 
 
-def test_sensitive_input_blocked_and_not_saved(alice, monkeypatch):
-    def block(text):
-        if "900101-1234567" in text:
-            raise pii_hooks.SensitiveInputBlocked()
-    monkeypatch.setattr(pii_hooks, "ensure_no_sensitive", block)
+def test_partial_update_keeps_other_fields_and_replaces_vault(alice):
+    e = _exp(alice, title=f"제목 {PII}", detail=f"상세 {PII}")
+    old_vault = _row(e["id"]).vault_id
+    r = alice.patch(f"/experiences/{e['id']}", json={"role": "역할 010-9999-0000"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["title"] == f"제목 {PII}" and body["detail"] == f"상세 {PII}"
+    assert body["role"] == "역할 010-9999-0000"
+    row = _row(e["id"])
+    assert row.vault_id != old_vault and not _vault_exists(old_vault)
+    assert PII not in row.title and "010-9999-0000" not in row.role
 
+
+def test_tag_filter_matches_plain_tags_only(alice):
+    # 개인정보 없는 태그는 그대로 검색되고, 개인정보가 든 태그는 토큰으로 저장돼 검색되지 않는다(part2_guide 4.33)
+    plain = _exp(alice, tags=["백엔드"])
+    _exp(alice, tags=[f"연락 {PII}"])
+    got = alice.get("/experiences", params={"tags": "백엔드"}).json()
+    assert [x["id"] for x in got] == [plain["id"]]
+    assert alice.get("/experiences", params={"tags": f"연락 {PII}"}).json() == []
+
+
+def test_sensitive_input_blocked_and_not_saved(alice):
     r = alice.post("/experiences", json={"title": "t", "type": "x", "detail": "주민번호 900101-1234567"})
     assert r.status_code == 422
     assert "민감정보" in r.json()["detail"]

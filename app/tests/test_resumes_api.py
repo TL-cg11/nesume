@@ -7,9 +7,9 @@ from sqlalchemy import select
 
 from app.auth import CurrentUser, get_current_user
 from app.db import SessionLocal
-from app.features.resumes import pii_hooks, service
+from app.features.resumes import service
 from app.main import app
-from app.models import Version
+from app.models import PiiVault, Version
 
 
 def _client_for(sub: str) -> TestClient:
@@ -183,20 +183,45 @@ def test_deleted_question_hides_versions(alice):
 
 # --- PII 처리 지점 연결 -----------------------------------------------------
 
-def test_pii_hooks_wired_on_save_and_read(alice, monkeypatch):
-    monkeypatch.setattr(pii_hooks, "tokenize_for_storage",
-                        lambda owner, text: text.replace("010-1234-5678", "[PHONE_1]"))
-    monkeypatch.setattr(pii_hooks, "restore_for_owner",
-                        lambda owner, requester, text: text.replace("[PHONE_1]", "010-1234-5678"))
+def test_pii_tokenized_on_save_and_restored_for_owner(alice):
     r = _resume(alice)
     q = _question(alice, r["id"])
-    v = _version(alice, r["id"], q["id"], "연락처 010-1234-5678")
+    body = "연락처 010-1234-5678, 다시 010-1234-5678"
+    v = _version(alice, r["id"], q["id"], body)
 
     with SessionLocal() as db:
-        stored = db.scalar(select(Version.body).where(Version.id == uuid.UUID(v["id"])))
-    assert stored == "연락처 [PHONE_1]"          # DB에는 토큰화 상태
-    assert v["body"] == "연락처 010-1234-5678"   # 본인 응답은 복원
-    assert v["char_count"] == len("연락처 010-1234-5678")  # 글자 수는 원문 기준
+        row = db.get(Version, uuid.UUID(v["id"]))
+        assert row.body == "연락처 [[PHONE_1]], 다시 [[PHONE_1]]"   # DB에는 토큰화 상태
+        assert row.vault_id is not None and db.get(PiiVault, row.vault_id) is not None
+    assert v["body"] == body                       # 본인 응답은 원문 그대로(조사 보정 없음)
+    assert v["char_count"] == len(body)            # 글자 수는 원문 기준
+    got = alice.get(f"/resumes/{r['id']}/questions/{q['id']}/versions/{v['id']}").json()
+    assert got["body"] == body
+
+
+def test_restore_and_diff_use_original_text(alice):
+    r = _resume(alice)
+    q = _question(alice, r["id"])
+    base = f"/resumes/{r['id']}/questions/{q['id']}/versions"
+    v1 = _version(alice, r["id"], q["id"], "전화 010-1234-5678")
+    v2 = _version(alice, r["id"], q["id"], "메일 a@example.com")
+    restored = alice.post(f"{base}/{v1['id']}/restore").json()
+    assert restored["body"] == "전화 010-1234-5678"
+    with SessionLocal() as db:
+        # 복원본은 새 버전이므로 대응표도 새로 만든다(원본 버전 대응표와 분리)
+        new_vault = db.get(Version, uuid.UUID(restored["id"])).vault_id
+        assert new_vault is not None and new_vault != db.get(Version, uuid.UUID(v1["id"])).vault_id
+    diff = alice.get(f"{base}/diff", params={"from": v1["version_no"], "to": v2["version_no"]}).json()
+    assert "010-1234-5678" in str(diff) and "[[" not in str(diff)
+
+
+def test_sensitive_body_blocked_and_not_saved(alice):
+    r = _resume(alice)
+    q = _question(alice, r["id"])
+    res = alice.post(f"/resumes/{r['id']}/questions/{q['id']}/versions", json={"body": "주민번호 900101-1234567"})
+    assert res.status_code == 422
+    assert "민감정보" in res.json()["detail"] and "900101" not in res.text
+    assert alice.get(f"/resumes/{r['id']}/questions/{q['id']}/versions").json() == []
 
 
 # --- 소유자 격리 (IDOR) -----------------------------------------------------

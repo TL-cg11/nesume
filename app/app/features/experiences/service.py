@@ -1,6 +1,6 @@
 """경험 데이터 비즈니스 로직 (spec 3.5).
 
-저장 경로: 민감정보 차단(A1) → 문자열 필드 토큰화(A1, B7) → 저장 → 개인 인덱스 반영(C3).
+저장 경로: 민감정보 차단(A1) → 문자열 필드 토큰화(A1) + 대응표 저장(B7) → 저장 → 개인 인덱스 반영(C3).
 조회 경로: 소유자 본인에게만 토큰 복원.
 """
 import uuid
@@ -19,49 +19,50 @@ TEXT_FIELDS = ("title", "type", "role", "outcome", "detail")
 LIST_FIELDS = ("tech_stack", "tags")
 
 
-def _check_and_tokenize(owner_id: str, fields: dict) -> dict:
-    out = dict(fields)
-    for name in TEXT_FIELDS:
-        if out.get(name) is not None:
-            pii_hooks.ensure_no_sensitive(out[name])
-            out[name] = pii_hooks.tokenize_for_storage(owner_id, out[name])
-    for name in LIST_FIELDS:
-        if out.get(name) is not None:
-            for item in out[name]:
-                pii_hooks.ensure_no_sensitive(item)
-            out[name] = [pii_hooks.tokenize_for_storage(owner_id, item) for item in out[name]]
-    return out
+_PII_FIELDS = TEXT_FIELDS + LIST_FIELDS
 
 
-def to_owner_view(owner_id: str, requester_id: str, e: Experience) -> dict:
+def _raw_fields(db: Session, owner_id: str, e: Experience) -> dict:
+    """저장된 PII 대상 필드를 원문으로 복원한다(소유자 본인 경로 전용)."""
+    stored = {name: getattr(e, name) for name in _PII_FIELDS}
+    return pii_hooks.restore_fields(db, owner_id, owner_id, stored, e.vault_id)
+
+
+def _protect(db: Session, owner_id: str, fields: dict) -> dict:
+    """민감정보 거부 → 토큰화 → 대응표 저장. vault_id를 포함한 저장용 필드를 돌려준다."""
+    pii = {k: v for k, v in fields.items() if k in _PII_FIELDS}
+    protected, vault_id = pii_hooks.protect_fields(db, owner_id, pii)
+    return {**fields, **protected, "vault_id": vault_id}
+
+
+def to_owner_view(db: Session, owner_id: str, requester_id: str, e: Experience) -> dict:
     """응답용. 토큰은 소유자 본인에게만 원문으로 복원한다."""
-    def restore(v):
-        return None if v is None else pii_hooks.restore_for_owner(owner_id, requester_id, v)
-
+    stored = {name: getattr(e, name) for name in _PII_FIELDS}
+    raw = pii_hooks.restore_fields(db, owner_id, requester_id, stored, e.vault_id)
     return {
         "id": e.id,
-        "title": restore(e.title),
-        "type": restore(e.type),
+        "title": raw["title"],
+        "type": raw["type"],
         "period_start": e.period_start,
         "period_end": e.period_end,
-        "role": restore(e.role),
-        "tech_stack": [restore(t) for t in e.tech_stack],
-        "outcome": restore(e.outcome),
-        "detail": restore(e.detail),
-        "tags": [restore(t) for t in e.tags],
+        "role": raw["role"],
+        "tech_stack": raw["tech_stack"],
+        "outcome": raw["outcome"],
+        "detail": raw["detail"],
+        "tags": raw["tags"],
         "created_at": e.created_at,
         "updated_at": e.updated_at,
     }
 
 
-def tokenize_tag_filter(owner_id: str, tags: list[str]) -> list[str]:
-    """저장값이 토큰화 상태이므로 필터 값도 같은 처리를 거친다."""
-    return [pii_hooks.tokenize_for_storage(owner_id, t) for t in tags]
+def tag_filter_values(tags: list[str]) -> list[str]:
+    """태그 필터는 입력값 그대로 비교한다. 개인정보가 든 태그는 토큰으로 저장돼 검색되지 않는다(part2_guide 4.33)."""
+    return list(tags)
 
 
 def create_experience(db: Session, owner_id: str, fields: dict) -> Experience:
     ensure_user(db, owner_id)
-    e = Experience(owner_id=owner_id, **_check_and_tokenize(owner_id, fields))
+    e = Experience(owner_id=owner_id, **_protect(db, owner_id, fields))
     db.add(e)
     db.flush()
     db.refresh(e)
@@ -70,9 +71,13 @@ def create_experience(db: Session, owner_id: str, fields: dict) -> Experience:
 
 
 def update_experience(db: Session, owner_id: str, e: Experience, fields: dict) -> Experience:
-    for k, v in _check_and_tokenize(owner_id, fields).items():
+    # 토큰 번호는 문서(대응표) 단위라, 일부 필드만 바뀌어도 전체를 원문으로 되돌린 뒤 새 대응표로 다시 토큰화한다.
+    old_vault = e.vault_id
+    merged = {**_raw_fields(db, owner_id, e), **fields}
+    for k, v in _protect(db, owner_id, merged).items():
         setattr(e, k, v)
     db.flush()
+    pii_hooks.discard_vault(db, old_vault)
     db.refresh(e)
     index_hooks.index_experience(owner_id, e.id)
     return e

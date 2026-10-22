@@ -80,6 +80,7 @@ def create_version(
 ) -> tuple[Version, bool] | None:
     """새 버전을 저장한다(덮어쓰기 없음). 문항이 없거나 타인 소유면 None.
 
+    본문에 민감정보가 있으면 pii_hooks.SensitiveInputBlocked.
     반환: (버전, 문항당 50개 초과 여부)
     """
     if source not in VERSION_SOURCES:
@@ -88,13 +89,16 @@ def create_version(
     if question is None:
         return None
 
+    # 민감정보 거부 → 토큰화 → 대응표 저장(같은 트랜잭션, part2_guide 4.33)
+    protected, vault_id = pii_hooks.protect_fields(db, owner_id, {"body": body})
     version = Version(
         question_id=question.id,
         owner_id=owner_id,
         version_no=repo.max_version_no(db, question.id) + 1,
         # 글자 수는 사용자가 입력한 원문 기준(공백 포함)
         char_count=len(body),
-        body=pii_hooks.tokenize_for_storage(owner_id, body),
+        body=protected["body"],
+        vault_id=vault_id,
         source=source,
         restored_from=restored_from,
     )
@@ -114,9 +118,14 @@ def restore_version(
     source_version = repo.get_version(db, owner_id, question_id, version_id)
     if source_version is None:
         return None
-    body = pii_hooks.restore_for_owner(owner_id, owner_id, source_version.body)
+    body = restore_body(db, owner_id, owner_id, source_version)
     return create_version(db, owner_id, resume_id, question_id, body, "manual",
                           restored_from=source_version.id)
+
+
+def restore_body(db: Session, owner_id: str, requester_id: str, version: Version) -> str:
+    """버전 본문을 소유자 본인에게 원문으로 복원한다."""
+    return pii_hooks.restore_fields(db, owner_id, requester_id, {"body": version.body}, version.vault_id)["body"]
 
 
 _TOKEN = re.compile(r"\s+|[^\s]+")

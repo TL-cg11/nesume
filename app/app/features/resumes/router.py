@@ -49,10 +49,17 @@ def _question_or_404(db: Session, owner_id: str, resume_id: uuid.UUID, question_
     return question
 
 
-def _version_out(owner_id: str, requester_id: str, v) -> dict:
+def _version_out(db: Session, owner_id: str, requester_id: str, v) -> dict:
     data = VersionSummary.model_validate(v).model_dump()
-    data["body"] = pii_hooks.restore_for_owner(owner_id, requester_id, v.body)
+    data["body"] = service.restore_body(db, owner_id, requester_id, v)
     return data
+
+
+# 안내 문구는 spec 9.1 block(민감정보)
+_SENSITIVE = HTTPException(
+    status.HTTP_422_UNPROCESSABLE_CONTENT,
+    "주민번호·계좌번호 등 민감정보는 제공하지 않습니다. 입력 시에도 자동 차단됩니다.",
+)
 
 
 # --- 자소서 -----------------------------------------------------------------
@@ -131,11 +138,14 @@ def delete_question(resume_id: uuid.UUID, question_id: uuid.UUID, user: Authenti
 def create_version(
     resume_id: uuid.UUID, question_id: uuid.UUID, payload: VersionCreate, user: AuthenticatedUser, db: Db
 ):
-    result = service.create_version(db, user.sub, resume_id, question_id, payload.body, "manual")
+    try:
+        result = service.create_version(db, user.sub, resume_id, question_id, payload.body, "manual")
+    except pii_hooks.SensitiveInputBlocked:
+        raise _SENSITIVE from None
     if result is None:
         raise _NOT_FOUND
     version, over_limit = result
-    return {**_version_out(user.sub, user.sub, version), "over_limit": over_limit}
+    return {**_version_out(db, user.sub, user.sub, version), "over_limit": over_limit}
 
 
 @router.get("/{resume_id}/questions/{question_id}/versions", response_model=list[VersionSummary])
@@ -158,8 +168,8 @@ def diff_versions(
     b = repo.get_version_by_no(db, user.sub, question_id, to_no)
     if a is None or b is None:
         raise _NOT_FOUND
-    before = pii_hooks.restore_for_owner(user.sub, user.sub, a.body)
-    after = pii_hooks.restore_for_owner(user.sub, user.sub, b.body)
+    before = service.restore_body(db, user.sub, user.sub, a)
+    after = service.restore_body(db, user.sub, user.sub, b)
     return {"from_version": from_no, "to_version": to_no,
             "segments": service.diff_segments(before, after)}
 
@@ -172,7 +182,7 @@ def get_version(
     version = repo.get_version(db, user.sub, question_id, version_id)
     if version is None:
         raise _NOT_FOUND
-    return _version_out(user.sub, user.sub, version)
+    return _version_out(db, user.sub, user.sub, version)
 
 
 @router.post(
@@ -187,4 +197,4 @@ def restore_version(
     if result is None:
         raise _NOT_FOUND
     version, over_limit = result
-    return {**_version_out(user.sub, user.sub, version), "over_limit": over_limit}
+    return {**_version_out(db, user.sub, user.sub, version), "over_limit": over_limit}

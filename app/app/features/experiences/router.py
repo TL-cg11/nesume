@@ -38,7 +38,7 @@ def create_experience(payload: ExperienceCreate, user: AuthenticatedUser, db: Db
         e = service.create_experience(db, user.sub, payload.model_dump())
     except pii_hooks.SensitiveInputBlocked:
         raise _SENSITIVE from None
-    return service.to_owner_view(user.sub, user.sub, e)
+    return service.to_owner_view(db, user.sub, user.sub, e)
 
 
 @router.get("", response_model=list[ExperienceOut])
@@ -49,13 +49,13 @@ def list_experiences(
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ):
-    rows = repo.list_experiences(db, user.sub, service.tokenize_tag_filter(user.sub, tags), limit, offset)
-    return [service.to_owner_view(user.sub, user.sub, e) for e in rows]
+    rows = repo.list_experiences(db, user.sub, service.tag_filter_values(tags), limit, offset)
+    return [service.to_owner_view(db, user.sub, user.sub, e) for e in rows]
 
 
 @router.get("/{experience_id}", response_model=ExperienceOut)
 def get_experience(experience_id: uuid.UUID, user: AuthenticatedUser, db: Db):
-    return service.to_owner_view(user.sub, user.sub, _experience_or_404(db, user.sub, experience_id))
+    return service.to_owner_view(db, user.sub, user.sub, _experience_or_404(db, user.sub, experience_id))
 
 
 @router.patch("/{experience_id}", response_model=ExperienceOut)
@@ -65,7 +65,7 @@ def update_experience(experience_id: uuid.UUID, payload: ExperienceUpdate, user:
         e = service.update_experience(db, user.sub, e, payload.model_dump(exclude_unset=True))
     except pii_hooks.SensitiveInputBlocked:
         raise _SENSITIVE from None
-    return service.to_owner_view(user.sub, user.sub, e)
+    return service.to_owner_view(db, user.sub, user.sub, e)
 
 
 @router.delete("/{experience_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -86,7 +86,7 @@ def _question_or_404(db: Session, owner_id: str, resume_id: uuid.UUID, question_
 @links_router.get("", response_model=list[ExperienceOut])
 def list_linked(resume_id: uuid.UUID, question_id: uuid.UUID, user: AuthenticatedUser, db: Db):
     _question_or_404(db, user.sub, resume_id, question_id)
-    return [service.to_owner_view(user.sub, user.sub, e)
+    return [service.to_owner_view(db, user.sub, user.sub, e)
             for e in repo.linked_experiences(db, user.sub, question_id)]
 
 
@@ -99,7 +99,7 @@ def link_experience(
     e = _experience_or_404(db, user.sub, payload.experience_id)
     created = service.link(db, user.sub, question_id, e.id)
     response.status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
-    return service.to_owner_view(user.sub, user.sub, e)
+    return service.to_owner_view(db, user.sub, user.sub, e)
 
 
 @links_router.delete("/{experience_id}", status_code=status.HTTP_204_NO_CONTENT)

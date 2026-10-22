@@ -80,8 +80,10 @@ class Version(Base):
     )
     owner_id: Mapped[str] = owner_fk()
     version_no: Mapped[int] = mapped_column(Integer)
-    # PII 토큰화 상태로 저장한다(part2_guide 4.8). 원문 PII는 B7 매핑 테이블에만.
+    # PII 토큰화 상태로 저장한다(part2_guide 4.8). 원문 PII는 B7 대응표(pii_vaults)에만.
     body: Mapped[str] = mapped_column(Text)
+    # 이 버전의 대응표. 개인정보가 없으면 NULL. 버전은 수정 불가라 대응표도 버전과 수명을 같이한다.
+    vault_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("pii_vaults.id"))
     char_count: Mapped[int] = mapped_column(Integer)
     source: Mapped[str] = mapped_column(String(10))
     # 50개 초과 시 압축된 보관 요약 행 여부(spec 3.1)

@@ -1,6 +1,6 @@
 # 데이터 모델 (B1, B2)
 
-마이그레이션: `0002` B1 핵심 테이블, `0003` B2 문서 등급·공유 컬럼, `0004` B4 복원 출처, `0005` B5 문항↔경험 연결, `0006` B6 다운로드 토큰, `0007` B3 감사 로그 무결성, `0008` B7 PII 대응표·사용자 키, `0009` B11 감사 로그 변조 방지
+마이그레이션: `0002` B1 핵심 테이블, `0003` B2 문서 등급·공유 컬럼, `0004` B4 복원 출처, `0005` B5 문항↔경험 연결, `0006` B6 다운로드 토큰, `0007` B3 감사 로그 무결성, `0008` B7 PII 대응표·사용자 키, `0009` B11 감사 로그 변조 방지, `0010` C4 공고 테이블 취합·공고 FK, `0011` B7 버전·경험 대응표 참조
 소유: B (모델 추가는 B가 취합, tasks.md 디렉터리 소유). **C·D 리뷰 요청 대상.**
 
 ## ERD
@@ -20,6 +20,10 @@ erDiagram
     resumes |o--o{ applications : "SET NULL"
     questions ||--o{ question_experiences : pulls
     experiences ||--o{ question_experiences : "pulled into"
+    job_postings |o--o{ resumes : "RESTRICT"
+    job_postings |o--o{ applications : "RESTRICT"
+    pii_vaults |o--o{ versions : "vault_id"
+    pii_vaults |o--o{ experiences : "vault_id"
 
     users {
         string id PK "Cognito sub"
@@ -30,7 +34,7 @@ erDiagram
         uuid id PK
         string owner_id FK
         string title
-        uuid job_posting_id "C4 공고 내부 ID, FK는 C가 추가"
+        uuid job_posting_id FK "C4 공고, RESTRICT"
         string status "값 미정(제약 없음)"
         string grade "personal"
         jsonb shared_with "[{user_id, expires_at}] (B2)"
@@ -53,6 +57,7 @@ erDiagram
         string source "manual | ai"
         bool compressed
         uuid restored_from "복원 원본 버전(B4), FK 없음"
+        string vault_id FK "대응표(B7), PII 없으면 NULL"
         string grade "personal"
     }
     experiences {
@@ -63,6 +68,7 @@ erDiagram
         string[] tags "GIN"
         text outcome "PII 토큰화 상태"
         text detail "PII 토큰화 상태"
+        string vault_id FK "대응표(B7), PII 없으면 NULL"
         string grade "personal"
     }
     question_experiences {
@@ -101,7 +107,7 @@ erDiagram
     applications {
         uuid id PK
         string owner_id FK
-        uuid job_posting_id
+        uuid job_posting_id FK "C4 공고, RESTRICT"
         uuid resume_id FK
         uuid[] version_ids "지원 시점 문항별 버전"
         string status "applied | document_passed | interview | final | rejected"
@@ -147,6 +153,8 @@ erDiagram
 | 감사 로그 90일 보관 | `features/audit/retention.py` (1회 최대 5,000행, 오래된 순) | spec 10.2 (B3) |
 | PII 대응표는 사용자별 DEK로 암호화, DEK는 KMS 암호화 상태로만 저장 | `user_keys`, `pii_vaults`, `app/app/pii/envelope.py` | spec 8.3, tasks B7 |
 | 저장용 대응표는 만료 없음, LLM용은 만료 후 열람 시·정리 배치로 삭제 | `pii_vaults.expires_at`, `pg_vault_store.cleanup_expired` | part2_guide 4.26, 4.28 |
+| 버전·경험은 자기 대응표를 가리키고, 대응표는 참조 행을 먼저 지운 뒤 삭제(NO ACTION) | `versions.vault_id`, `experiences.vault_id` | part2_guide 4.33 |
+| 참조 중인 공고는 물리 삭제 불가. 계정 삭제 시 본인 입력 공고는 함께 삭제 | `resumes`·`applications.job_posting_id` RESTRICT | part2_guide 4.30 |
 | 공유 대상·멘토별 만료 | `resumes.shared_with` JSONB 배열, 원본은 `shares` (B10에서 동기화) | tasks B2, spec 3.7 |
 | 값 목록이 문서에 정의된 컬럼만 CHECK 제약 | `_common.one_of()` | versions.source, applications.status, audit_logs 등 |
 
@@ -177,11 +185,10 @@ ORM을 거치지 않는 INSERT에도 DB 기본값으로 같은 등급이 붙는�
 | 태스크 | 변경 |
 |---|---|
 | B4 | 버전 압축 시 `applications.version_ids`가 참조하는 버전 제외(배열은 FK 보호 불가) |
-| B7(A1 추가 기능 후) | 버전·경험 행에 대응표 ID 컬럼, pii_hooks를 A1 + 저장소로 교체 |
 | B10 | `shares` ↔ `resumes.shared_with` ↔ 벡터 메타데이터 동기화 |
 | B12·B13 | PDF·면접 연습 테이블 |
 | B20 | 삭제 작업 테이블 |
-| C4 | 공고 테이블 + `resumes.job_posting_id`, `applications.job_posting_id` FK |
+| C3 | 임베딩 모델 등록(C 모델의 `embedding` 컬럼 누락 수정 후, 마이그레이션 0012) |
 
 ## 팀 확정 필요
 

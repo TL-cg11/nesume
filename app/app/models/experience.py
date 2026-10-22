@@ -30,6 +30,8 @@ class Experience(Base):
     outcome: Mapped[str | None] = mapped_column(Text)
     detail: Mapped[str | None] = mapped_column(Text)
     grade: Mapped[str] = grade_column(Grade.PERSONAL)
+    # 문자열 필드 전체를 묶은 대응표(A1 tokenize_fields). 수정 시 새 대응표로 교체, 개인정보 없으면 NULL
+    vault_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("pii_vaults.id"))
     tags: Mapped[list[str]] = mapped_column(ARRAY(String(50)), default=list, server_default="{}")
     created_at: Mapped[CreatedAt]
     updated_at: Mapped[UpdatedAt]
