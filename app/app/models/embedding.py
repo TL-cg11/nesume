@@ -89,6 +89,7 @@ class UserProfileEmbedding(Base):
     model_version: Mapped[str] = mapped_column(
         String(64), default=MODEL_VERSION, server_default=MODEL_VERSION, index=True
     )
+    embedding: Mapped[list[float]] = mapped_column(Vector(EMBED_DIM))  # ix_upe_hnsw 가 인덱싱하는 컬럼
     # 자소서만: 멘토 공유 [{"user_id","expires_at"}] — B resumes.shared_with 복제(B10 동기화)
     shared_with: Mapped[list[dict]] = mapped_column(JSONB, default=list, server_default="[]")
     # 원본(resume/experience) 소프트 삭제 복제 → C6가 deleted_at IS NULL 필터(B 요청)
