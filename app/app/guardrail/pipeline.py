@@ -5,6 +5,7 @@ LLM 을 쓰는 **모든** 기능이 지나는 단 하나의 경로다. A·B·C �
 
     1. validate_input  (A1)  거절 대상이면 LLM 호출 없이 끝
     2. classify        (A3)  탈취 시도면 LLM 호출 없이 끝
+       multiturn       (A12) 이력을 함께 본다 — 턴마다는 정상인 공격을 잡는다
     3. tokenize        (A1)  여기부터 원문은 사라진다
     4. search          (C6)  역할 기반 사전 필터는 C6 가 강제한다
     5. 프롬프트 조립          외부 텍스트는 데이터로 감싼다
@@ -36,6 +37,7 @@ from dataclasses import dataclass, field
 from typing import Awaitable, Callable, Mapping, Protocol, Sequence
 
 from app.guardrail.classifier import PolicyLike, classify
+from app.guardrail.multiturn import TurnStore, check_multiturn, make_turn
 from app.guardrail.llm_client import LlmClient, LlmRequest, LlmResponse, Usage, ZERO_USAGE
 from app.guardrail.output_guard import OutputContext, check_output
 from app.guardrail.schema import Finding, Verdict, allow, worse_decision
@@ -194,6 +196,9 @@ class Guardrail:
     policy: PolicyLike | None = None
     retriever: Retriever | None = None
     audit: AuditSink | None = None
+    #: A12 대화 이력. 주지 않으면 **턴마다 독립**으로 돈다(기존 동작).
+    #: 운영에서 워커가 여러 개면 D7 세션 저장소로 이 포트를 구현해 주입한다
+    history: TurnStore | None = None
     prompt_builder: PromptBuilder = build_prompt
     #: 기밀 문서에 심어둔 표식 (A5 가 검사한다)
     canaries: tuple[str, ...] = ()
@@ -218,6 +223,9 @@ class Guardrail:
             )
             raise
         finally:
+            # ★ 이력은 감사 로그보다 **먼저** 남긴다. 감사 쓰기가 실패해도 다음 턴이
+            #   이 턴을 보고 판단할 수 있어야 한다 — 이력이 끊기면 멀티턴 방어가 쉰다
+            self._record_turn(query, ctx, verdict)
             await self._write_audit(
                 query=query,
                 ctx=ctx,
@@ -227,6 +235,32 @@ class Guardrail:
                 latency_ms=int((time.monotonic() - started) * 1000),
                 suppress=failure is not None,
             )
+
+    def _multiturn(self, query: str, ctx: RequestContext, single_turn: Verdict) -> Verdict:
+        """A12 — 이력을 함께 본 판정. 이력이 없으면 `allow` 다."""
+        if self.history is None or not ctx.session_id:
+            return allow("classifier")
+        return check_multiturn(
+            query,
+            history=self.history.recent(ctx.session_id),
+            single_turn=single_turn,
+            role=ctx.role,
+            policy=self.policy,
+        )
+
+    def _record_turn(self, query: str, ctx: RequestContext, verdict: Verdict) -> None:
+        """이 턴을 이력에 남긴다. 남기는 것은 **마스킹본**뿐이다 (A12 `Turn`).
+
+        ★ 기록이 실패해도 요청을 실패시키지 않는다. 감사 로그와 다른 판단인데,
+          감사 로그는 "기록 없는 처리는 없던 일로 칠 수 없다" 라서 실패시키지만
+          이력은 **다음 턴을 돕는 보조 장치**다 — 없으면 턴마다 독립으로 돌 뿐이다.
+        """
+        if self.history is None or not ctx.session_id:
+            return
+        try:
+            self.history.append(ctx.session_id, make_turn(query, verdict))
+        except Exception:  # noqa: BLE001 - 이력 실패가 사용자 요청을 깨면 안 된다
+            pass
 
     # ------------------------------------------------------------------ 내부
 
@@ -241,9 +275,10 @@ class Guardrail:
                 text="", verdict=Verdict("block", "classifier", findings, query_type="sensitive")
             )
 
-        # 2. 질의 유형 (A3)
+        # 2. 질의 유형 (A3) + 대화 이력 (A12)
         classification = classify(query, role=ctx.role, policy=self.policy)
         verdict = classification.verdict
+        verdict = verdict.merge(self._multiturn(query, ctx, verdict))
         if verdict.decision == "block":
             # 탈취 시도다. LLM 을 부르지 않는다 — 부르면 그 자체가 비용이고 로그다
             return PipelineResult(text="", verdict=verdict)
