@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings
 from sqlalchemy import URL
@@ -7,8 +8,19 @@ from sqlalchemy import URL
 class Settings(BaseSettings):
     """모든 연결 정보는 환경변수로만 주입한다. 기본값을 두지 않아 누락 시 기동 단계에서 실패한다."""
 
-    # 미설정 시 안전한 쪽(문서 비노출 등)으로 동작하도록 기본값은 운영 기준
-    app_env: str = "production"
+    # 미설정 시 안전한 쪽(문서 비노출 등)으로 동작하도록 기본값은 운영 기준.
+    # Literal이라 APP_ENV=prod 같은 오타는 기동 시 바로 실패한다.
+    app_env: Literal["local", "test", "dev", "staging", "production"] = "production"
+    # 이미지 빌드 시 git sha를 넣는다(D4). /health가 돌려주므로 배포 확인에 쓴다.
+    app_version: str = "dev"
+
+    log_level: str = "INFO"
+    log_format: Literal["json", "text"] = "json"
+
+    # 역할 × 등급 매트릭스(D2). C2 로더가 읽는다.
+    # 위치는 C가 둔 app/app/policy/matrix.yaml 유지(merge-review 3-2).
+    # 컨테이너 작업 디렉터리 /srv 기준 경로(/srv/app/policy/matrix.yaml).
+    policy_matrix_path: str = "app/policy/matrix.yaml"
 
     db_host: str
     db_port: int
@@ -27,6 +39,10 @@ class Settings(BaseSettings):
     cognito_client_id: str | None = None
     cognito_issuer: str | None = None
     cognito_jwks_url: str | None = None
+
+    @property
+    def is_local(self) -> bool:
+        return self.app_env in ("local", "test")
 
     @property
     def database_url(self) -> URL:
