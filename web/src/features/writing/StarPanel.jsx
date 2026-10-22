@@ -10,13 +10,13 @@ export default function StarPanel({ star }) {
   if (!star) return null
 
   return (
-    <div className="star-box">
+    <div className="card wr-star">
       <strong>STAR 구성</strong>
-      <div className="star-marks">
+      <div className="wr-star-marks">
         {ORDER.map((e) => (
           <span
             key={e}
-            className={`star-mark${star.present.includes(e) ? ' on' : ''}`}
+            className={star.present.includes(e) ? 'wr-star-mark on' : 'wr-star-mark'}
             title={LABELS[e]}
           >
             {e}
@@ -27,9 +27,7 @@ export default function StarPanel({ star }) {
       {star.missing.length === 0 ? (
         <p className="muted">네 요소가 모두 들어 있습니다.</p>
       ) : (
-        <p className="muted">
-          빠진 요소: {star.missing_names.join(', ')}
-        </p>
+        <p className="muted">빠진 요소: {star.missing_names.join(', ')}</p>
       )}
 
       {!star.can_convert && (
