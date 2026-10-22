@@ -1,50 +1,84 @@
-"""C10 역량 갭 계산 테스트. DB·A11 불필요(순수)."""
+"""C10 학습 갭 정리 테스트. A11 결과 위의 얇은 계층 — DB·A11 import 불필요(순수)."""
+from dataclasses import dataclass
+
 from app.features.skill_gap.gap import (
-    ESSENTIAL_WEIGHT,
-    PREFERRED_WEIGHT,
-    GapItem,
-    RequiredCompetency,
-    compute_gap,
-    importance,
+    IMPORTANCE_RANK,
+    LearningGap,
+    _Match,
+    from_coverage,
+    learning_gaps,
 )
 
 
-def _req(key, essential=True, freq=1):
-    return RequiredCompetency(key=key, label=key.upper(), essential=essential, frequency=freq)
+def _m(key, status="missing", importance="required", fields=("job_content",)):
+    return _Match(key=key, label=key.upper(), importance=importance, status=status, evidence_fields=fields)
 
 
-def test_gap_is_required_minus_held():
-    required = [_req("python"), _req("aws"), _req("docker")]
-    gaps = compute_gap(required, held_keys={"python"})
-    keys = {g.key for g in gaps}
-    assert keys == {"aws", "docker"}  # 보유한 python 제외
+def test_only_missing_is_a_learning_gap():
+    # covered(이미 씀)·in_experience_only(경험엔 있으나 안 씀)는 학습 갭 아님
+    matches = [
+        _m("python", status="missing"),
+        _m("aws", status="covered"),
+        _m("docker", status="in_experience_only"),
+    ]
+    gaps = learning_gaps(matches)
+    assert [g.key for g in gaps] == ["python"]
 
 
-def test_empty_when_all_held():
-    required = [_req("python"), _req("sql")]
-    assert compute_gap(required, held_keys={"python", "sql"}) == []
+def test_required_before_preferred():
+    matches = [
+        _m("우대", importance="preferred"),
+        _m("필수", importance="required"),
+    ]
+    gaps = learning_gaps(matches)
+    assert [g.importance for g in gaps] == ["required", "preferred"]
 
 
-def test_essential_always_outranks_preferred():
-    # 빈도 높은 우대(5)여도 빈도 낮은 필수(1)보다 뒤 — 필수 먼저(must-have 우선)
-    required = [_req("우대역량", essential=False, freq=5), _req("필수역량", essential=True, freq=1)]
-    gaps = compute_gap(required, held_keys=set())
-    assert gaps[0].key == "필수역량"
+def test_mentioned_excluded_by_default_but_optional():
+    matches = [_m("스침", importance="mentioned")]
+    assert learning_gaps(matches) == []                       # 기본 제외
+    assert len(learning_gaps(matches, include_mentioned=True)) == 1  # 켜면 포함
 
 
-def test_importance_formula():
-    assert importance(_req("x", essential=True, freq=3)) == ESSENTIAL_WEIGHT * 3
-    assert importance(_req("x", essential=False, freq=2)) == PREFERRED_WEIGHT * 2
+def test_same_tier_sorted_by_label():
+    matches = [_m("zebra"), _m("alpha")]
+    gaps = learning_gaps(matches)
+    assert [g.label for g in gaps] == ["ALPHA", "ZEBRA"]
 
 
-def test_frequency_breaks_tie_within_same_tier():
-    required = [_req("a", essential=True, freq=1), _req("b", essential=True, freq=4)]
-    gaps = compute_gap(required, held_keys=set())
-    assert [g.key for g in gaps] == ["b", "a"]  # 같은 필수면 빈도 높은 b 먼저
+def test_evidence_fields_preserved():
+    gaps = learning_gaps([_m("k", fields=("certificates", "preferred"))])
+    assert gaps[0].evidence_fields == ("certificates", "preferred")
+    assert isinstance(gaps[0], LearningGap)
 
 
-def test_evidence_preserved():
-    required = [RequiredCompetency(key="k", label="K", essential=True, frequency=1, evidence="본문 3번째 줄")]
-    gaps = compute_gap(required, held_keys=set())
-    assert gaps[0].evidence == "본문 3번째 줄"
-    assert isinstance(gaps[0], GapItem)
+def test_importance_rank_order():
+    assert IMPORTANCE_RANK["required"] < IMPORTANCE_RANK["preferred"] < IMPORTANCE_RANK["mentioned"]
+
+
+def test_from_coverage_adapter_reads_a11_shape():
+    # A11 coverage.Match 모양을 흉내낸 가짜 — import 없이 속성만 맞으면 된다
+    @dataclass
+    class FakeKeyword:
+        text: str
+        importance: str
+        key: str
+        fields: tuple
+
+    @dataclass
+    class FakeMatch:
+        keyword: FakeKeyword
+        status: str
+
+    a11 = [
+        FakeMatch(FakeKeyword("Python", "required", "python", ("job_content",)), "missing"),
+        FakeMatch(FakeKeyword("AWS", "preferred", "aws", ("preferred",)), "covered"),
+    ]
+    flat = from_coverage(a11)
+    assert [(m.key, m.importance, m.status) for m in flat] == [
+        ("python", "required", "missing"),
+        ("aws", "preferred", "covered"),
+    ]
+    # 어댑터 → 학습 갭까지 이어지는지
+    gaps = learning_gaps(flat)
+    assert [g.key for g in gaps] == ["python"]
