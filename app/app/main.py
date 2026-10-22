@@ -16,6 +16,7 @@ from app.features.applications.router import router as applications_router
 from app.features.audit.router import router as audit_router
 from app.features.experiences.router import links_router as experience_links_router
 from app.features.experiences.router import router as experiences_router
+from app.features.recommend.router import router as recommend_router
 from app.features.resumes.router import router as resumes_router
 
 
@@ -43,6 +44,7 @@ def create_app() -> FastAPI:
     application.include_router(downloads_router)
     application.include_router(audit_router)
     application.include_router(applications_router)  # C15 지원 현황
+    application.include_router(recommend_router)  # C8 공고 추천
     return application
 
 
