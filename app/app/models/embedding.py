@@ -73,18 +73,15 @@ class UserProfileEmbedding(Base):
     """개인 인덱스 — 자소서·경험 청크. owner_id 필수, 자소서는 shared_with(JSONB)."""
 
     __tablename__ = "user_profile_embeddings"
-    __table_args__ = (
-        grade_check(),
-        Index("ix_upe_owner", "owner_id"),
-        _hnsw_index("ix_upe_hnsw"),
-    )
+    # owner_id 인덱스는 owner_fk()가 이미 생성(index=True) — 중복 Index 두지 않음(B 지적, 2026-10-22).
+    __table_args__ = (grade_check(), _hnsw_index("ix_upe_hnsw"))
 
     id: Mapped[UuidPk]
     owner_id: Mapped[str] = owner_fk()
     source_type: Mapped[str] = mapped_column(String(20))  # "resume" / "experience"
     source_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     chunk_index: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
-    content: Mapped[str] = mapped_column(Text)  # A1 처리(토큰화 or 마스킹, docs/C3.md 미결정) 텍스트
+    content: Mapped[str] = mapped_column(Text)  # B가 저장 때 토큰화([[PHONE_1]])한 값 → 그대로 임베딩
     grade: Mapped[str] = grade_column(Grade.PERSONAL)
     model_version: Mapped[str] = mapped_column(
         String(64), default=MODEL_VERSION, server_default=MODEL_VERSION, index=True
