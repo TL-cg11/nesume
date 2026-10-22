@@ -16,6 +16,7 @@ from app.features.audit.router import router as audit_router
 from app.features.experiences.router import links_router as experience_links_router
 from app.features.experiences.router import router as experiences_router
 from app.features.matching.router import router as matching_router
+from app.features.profile.router import router as profile_router
 from app.features.resumes.router import router as resumes_router
 from app.features.style.router import router as style_router
 
@@ -43,8 +44,10 @@ def create_app() -> FastAPI:
     application.include_router(experience_links_router)
     application.include_router(downloads_router)
     application.include_router(audit_router)
+    # A 파트 2차 (A11 매칭 · A13 글자수·문체 · A14 말투 프로필) [D 리뷰 요청]
     application.include_router(matching_router)
     application.include_router(style_router)
+    application.include_router(profile_router)
     return application
 
 
