@@ -21,7 +21,14 @@ _policy = Policy.load(default_matrix_path())
 _ITERATIVE_SCAN = "SET LOCAL hnsw.iterative_scan = 'strict_order'"
 
 
-def search_public(session: Session, query_embedding: list[float], *, top_k: int = 20):
+def search_public(
+    session: Session,
+    query_embedding: list[float],
+    *,
+    region_codes: list[str] | None = None,
+    job_codes: list[str] | None = None,
+    top_k: int = 20,
+):
     """공개 인덱스(공고) 검색. grade=public뿐이라 역할 접근 필터는 없다.
 
     단 적대적 패스 결과로 두 가지를 강제한다(docs/C6.md):
@@ -35,9 +42,13 @@ def search_public(session: Session, query_embedding: list[float], *, top_k: int 
         .join(JobPosting, JobPosting.id == JobPostingEmbedding.source_id)
         .where(JobPosting.is_active.is_(True), JobPosting.needs_review.is_(False))
         .where(JobPostingEmbedding.model_version == MODEL_VERSION)
-        .order_by(dist)
-        .limit(top_k)
     )
+    # C8 추천 필터(지역·직무) — 검색 WHERE에 얹어 사전 필터(사후 아님). 값은 사용자 선택(런타임).
+    if region_codes:
+        stmt = stmt.where(JobPosting.region_code.in_(region_codes))
+    if job_codes:
+        stmt = stmt.where(JobPosting.job_code.in_(job_codes))
+    stmt = stmt.order_by(dist).limit(top_k)
     return session.execute(stmt).all()
 
 
