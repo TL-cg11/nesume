@@ -42,7 +42,8 @@ web/
    │  ├─ App.jsx            라우터 생성
    │  ├─ routes.jsx         라우트 등록표 (각 팀이 한 줄씩 추가)
    │  ├─ Layout.jsx         상단 메뉴 + 본문 영역
-   │  ├─ layout.css         색·글꼴 변수(디자인 토큰), 기본 버튼·입력 스타일
+   │  ├─ theme.css          테마: 색·간격·모서리·글꼴 변수(디자인 토큰), 다크 모드
+   │  ├─ layout.css         레이아웃·기본 요소(버튼·입력)·공용 클래스
    │  ├─ api/client.js      공통 API 호출 함수 (모든 화면이 이것만 사용)
    │  ├─ pages/             Home, NotFound
    │  └─ dev/               개발 서버 전용 도구(DevTokenPanel)
@@ -191,6 +192,7 @@ useEffect(() => {
 | 불러오는 중 | `<p className="muted">불러오는 중...</p>` | `ResumeDetailPage` |
 | 비어 있음 | `<li className="muted">자소서가 없습니다.</li>` | `ResumesPage` |
 | 오류 | `<p className="error">불러오지 못했습니다: {메시지}</p>` | `ResumesPage` |
+| 주의 안내 | `<p className="notice">…</p>` | `QuestionEditor`(버전 50개 초과) |
 | 정상 | 데이터 | |
 
 - 404는 "찾을 수 없습니다"로 따로 보여준다. 다른 사용자 데이터도 404가 오므로 "권한이 없습니다"라고 쓰지 않는다(존재 노출 방지).
@@ -213,7 +215,7 @@ useEffect(() => {
 | 앞뒤 공백은 `trim()` 후 전송, 빈 문자열은 `null` | 백엔드 선택 필드 규칙과 맞춤 |
 | 쉼표 목록 입력은 배열로 변환 | 예: `ExperienceForm`의 `split()` |
 | 날짜는 `<input type="date">` → `YYYY-MM-DD` 그대로 전송 | |
-| 삭제는 `window.confirm`으로 한 번 확인, 문구에 "30일 후 완전히 삭제" 명시 | 소프트 삭제 정책 안내(B4·B5) |
+| 삭제는 `className="danger"` 버튼 + `window.confirm`으로 한 번 확인, 문구에 "30일 후 완전히 삭제" 명시 | 소프트 삭제 정책 안내(B4·B5) |
 | 글자 수 표시는 공백 포함 기준 | 백엔드 `char_count`와 같음 |
 
 ### 민감정보 입력 ✅
@@ -222,57 +224,88 @@ useEffect(() => {
 
 ---
 
-## 8. 스타일 규칙
+## 8. 스타일 규칙 ✅
 
-### 디자인 토큰 ✅ (`app/layout.css`)
+### 파일 구성
+
+| 파일 | 내용 | 소유 |
+|---|---|---|
+| `app/theme.css` | **테마(디자인 토큰)**: 색·간격·모서리·글꼴·그림자 변수, 다크 모드 값 | B (변경은 B 리뷰) |
+| `app/layout.css` | 바탕·레이아웃·기본 요소(버튼·입력)·**공용 클래스** | B |
+| `features/<기능>/<기능>.css` | 기능 전용 스타일 | 각 팀 |
+
+`App.jsx`가 `theme.css` → `layout.css` 순서로 불러온다. 기능 CSS는 각 페이지에서 import한다.
+
+### 규칙
+
+1. **색·간격·모서리·글꼴은 `theme.css` 변수만 쓴다.** `#fff`, `12px` 같은 값을 직접 쓰지 않는다(다크 모드 깨짐, 통일 깨짐). 현재 `theme.css` 밖에는 직접 쓴 색이 없다.
+2. 인라인 `style={{...}}`은 쓰지 않는다. 필요한 모양은 공용 클래스나 기능 CSS로.
+3. 기능 전용 클래스에는 **기능 접두사**를 붙인다: `exp-form`, `resume-list`, `job-card`
+4. 전역 요소 선택자(`button {}`, `h1 {}`)는 `layout.css`에서만 쓴다.
+5. 모바일 전환은 **720px 하나**: `@media (max-width: 720px) { ... }` (CSS 변수로 쓸 수 없어 숫자 고정)
+6. 변수가 부족하면 기능 CSS에서 새 색을 만들지 말고 B에 변수 추가를 요청한다.
+
+### 색 변수
 
 | 변수 | 용도 |
 |---|---|
-| `--bg` | 배경 |
-| `--fg` | 본문 글자 |
-| `--muted` | 보조 글자(날짜, 설명) |
-| `--border` | 테두리 |
-| `--accent` | 강조(기본 버튼, 활성 메뉴) |
+| `--bg` / `--surface` | 페이지 바탕 / 카드·패널·비교 영역 바탕 |
+| `--fg` / `--muted` | 본문 글자 / 보조 글자(날짜·설명) |
+| `--border` | 장식용 구분선·카드 테두리 |
+| `--border-input` | 입력칸·보조 버튼·칩 경계(경계 대비 3:1 확보) |
+| `--accent` / `--on-accent` | 기본 버튼 배경 / 그 위 글자 |
+| `--accent-text` / `--accent-soft` | 링크·활성 메뉴 글자 / 선택된 항목 배경 |
+| `--danger`, `--danger-soft` | 오류·삭제 |
+| `--warning`, `--warning-soft` | 주의 안내 |
+| `--success`, `--success-soft` | 완료·추가 |
+| `--focus-ring` | 키보드 포커스 표시 |
 
-- 다크 모드는 운영체제 설정을 따라 자동으로 바뀐다. **색은 반드시 변수로 쓴다.** `#fff` 같은 값을 직접 쓰면 다크 모드에서 깨진다.
-- 글꼴: 시스템 글꼴 + Apple SD Gothic Neo + Noto Sans KR
+**대비 기준**: 라이트·다크 모두 글자 4.5:1, 입력칸 경계 3:1 이상으로 계산해 정했다(값은 `theme.css` 주석). 색을 바꾸면 다시 계산한다.
 
-### 기본 요소 ✅
+### 간격·모서리·글꼴 변수
 
-| 요소 | 사용 |
+| 종류 | 변수 |
 |---|---|
-| `<button>` | 기본 동작(저장, 만들기) — 파란 배경 |
-| `<button className="secondary">` | 보조 동작(취소, 삭제, 비교) — 테두리만 |
-| `input`, `textarea`, `select` | 별도 클래스 없이 기본 스타일 적용 |
-| `.error` | 오류 문구(빨강) |
+| 간격 | `--space-1` 4 · `--space-2` 8 · `--space-3` 12 · `--space-4` 16 · `--space-5` 24 · `--space-6` 32 (px) |
+| 모서리 | `--radius-sm` 6(버튼·입력) · `--radius-md` 10(카드·폼) · `--radius-pill` 999(태그 칩) |
+| 글꼴 크기 | `--text-sm` 13(보조) · `--text-md` 15(본문) · `--text-lg` 18(소제목) · `--text-xl` 22(페이지 제목) |
+| 기타 | `--font-sans`, `--font-mono`, `--leading` 1.6, `--shadow-sm`, `--content-max` 1080px |
 
-### 📝 공용 유틸 클래스를 `app/layout.css`로 이동
+### 기본 요소 (클래스 없이 적용)
 
-지금은 `.row`, `.stack`, `.muted`, `.notice`가 `features/resumes/resumes.css`에 있고, 경험 화면이 그 파일을 가져다 쓴다. 다른 팀도 쓰도록 `app/layout.css`로 옮기자(B 작업).
+| 요소 | 모양 |
+|---|---|
+| `h1` / `h2` / `h3` | 22 / 18 / 15px, 굵게 |
+| `<button>` | **기본 동작**(저장, 만들기): 강조색 배경 |
+| `<button className="secondary">` | **보조 동작**(취소, 비교, 복원): 테두리만 |
+| `<button className="danger">` | **삭제·되돌릴 수 없는 동작**: 빨간 테두리·글자 |
+| `<button className="link">` | 글자만 있는 버튼(목록 항목 선택 등) |
+| `input`, `textarea`, `select` | 테두리·여백 자동, 포커스 시 강조색 테두리 |
+
+한 화면에 기본(강조색) 버튼은 **하나**만 두는 것을 권장한다(주 동작이 분명하게).
+
+### 공용 클래스
 
 | 클래스 | 의미 |
 |---|---|
 | `.row` | 가로 배치, 간격 8px, 줄바꿈 허용 |
-| `.stack` | 세로 배치, 간격 6px |
-| `.muted` | 보조 글자, 13px |
-| `.notice` | 주의 안내(노랑 계열) |
+| `.stack` | 세로 배치, 간격 8px |
+| `.grow` | 남은 폭 채우기(`flex: 1`) |
+| `.muted` | 보조 글자(13px, 회색) |
+| `.card` | 카드 상자(바탕·테두리·모서리·그림자) |
+| `.list` | 목록(점 없음, 항목 사이 구분선) |
+| `.error` / `.notice` / `.success` | 상태 메시지(색 + 옅은 배경). 문구도 함께 써서 색만으로 구분하지 않는다 |
 
-### 📝 클래스 이름 규칙
-
-- 기능 전용 클래스는 **기능 접두사**를 붙인다: `exp-form`, `exp-list`, `resume-list` (다른 팀 CSS와 충돌 방지)
-- 전역 요소 선택자(`button {}`, `p {}`)는 `app/layout.css`에서만 쓴다.
-
-### 📝 간격·크기·반응형
-
-| 항목 | 값 |
-|---|---|
-| 간격 | 4 / 8 / 12 / 16 / 24px 중에서 |
-| 모서리 | 6px(입력·버튼), 8px(카드·폼 박스), 999px(태그 칩) |
-| 본문 최대 폭 | 1080px (`.app-main`) |
-| 모바일 전환 | **720px 하나로 통일** (현재 640px·720px 혼재 → 720px로 맞춤) |
-| 좁은 화면 | 가로 스크롤이 생기지 않게 `flex-wrap: wrap` |
-
----
+```jsx
+<section>
+  <div className="row">
+    <h1 className="grow">공고</h1>
+    <button onClick={create}>새로 만들기</button>
+  </div>
+  {error && <p className="error">불러오지 못했습니다: {error.message}</p>}
+  <ul className="list job-list">...</ul>
+</section>
+```
 
 ## 9. 보안 규칙 (필수)
 
@@ -330,7 +363,7 @@ useEffect(() => {
 1. `features/<기능>/`에 `<기능>Page.jsx`, `api.js`, `<기능>.css` 만들기
 2. `api.js`는 `app/api/client.js`의 `api`만 사용
 3. 네 가지 상태(불러오는 중·비어 있음·오류·정상) 처리
-4. 색은 CSS 변수, 클래스는 기능 접두사
+4. 색·간격은 `theme.css` 변수, 공용 클래스(`.row`·`.list`·`.card`·`.error`) 우선, 기능 클래스는 접두사, 인라인 style 없음
 5. 서버 전용 필드 보내지 않기, `maxLength`는 백엔드와 같게
 6. `dangerouslySetInnerHTML` 없음, 외부 링크 `noopener`
 7. `routes.jsx`에 한 줄 등록 → B 리뷰
@@ -343,10 +376,10 @@ useEffect(() => {
 | # | 제안 | 담당 |
 |---|---|---|
 | 1 | `ApiError`에 `code`·`requestId` 추가 (5절) | B 구현 |
-| 2 | 공용 유틸 클래스를 `app/layout.css`로 이동, 모바일 기준 720px 통일 (8절) | B 구현 |
+| 2 | ~~공용 클래스 이동, 720px 통일~~ → **완료**: `theme.css` 신설, 공용 클래스 `layout.css`로 이동, 직접 쓴 색 제거, 720px 통일 (8절) | B 완료 |
 | 3 | 상태 처리 4종·입력 규칙 (6·7절) | 전원 |
 | 4 | 보안 규칙 중 📝 항목 (9절) | 전원 |
 | 5 | 경로·이름 규칙 (4·12절) | 전원 |
 | 6 | 패키지 추가 규칙 (1절) | 전원 |
 
-합의되면 이 문서의 📝를 ✅로 바꾸고, B는 1·2번을 반영한다.
+합의되면 이 문서의 📝를 ✅로 바꾸고, B는 1번을 반영한다. 8절(스타일)은 이미 코드에 반영되어 ✅이다.
