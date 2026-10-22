@@ -36,8 +36,11 @@ from app.features.writing.star import (
     analyze,
     guidance,
 )
+from app.features.writing.schemas import MAX_TEXT_LEN
 from app.features.writing.suggestions import (
+    Confidence,
     OverlappingSuggestions,
+    StaleSuggestion,
     Suggestion,
     SuggestionKind,
     apply_suggestions,
@@ -46,9 +49,10 @@ from app.features.writing.suggestions import (
 __all__ = [
     "improve", "ImproveResult", "FEATURE", "SEP", "MAX_LLM_SUGGESTIONS",
     "parse_llm_suggestions",
-    "check", "RULES", "MAX_SENTENCE_LEN",
+    "check", "RULES", "MAX_SENTENCE_LEN", "MAX_TEXT_LEN",
     "analyze", "guidance", "StarAnalysis", "StarElement", "STAR_ELEMENTS",
     "ELEMENT_NAMES", "MIN_ELEMENTS_TO_CONVERT",
-    "Suggestion", "SuggestionKind", "apply_suggestions", "OverlappingSuggestions",
+    "Suggestion", "SuggestionKind", "Confidence", "apply_suggestions",
+    "OverlappingSuggestions", "StaleSuggestion",
     "has_final_consonant", "has_rieul_final",
 ]

@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from app.features.writing import proofread, star
 from app.features.writing.star import StarAnalysis
 from app.features.writing.suggestions import Suggestion
-from app.guardrail import Guardrail, RequestContext
+from app.guardrail import Guardrail, LlmUnavailable, RequestContext
 
 FEATURE = "writing.proofread"
 
@@ -58,6 +58,9 @@ class ImproveResult:
     llm_used: bool = False
     #: 가드레일 판정이 차단이면 이유가 담긴다
     blocked_reason: str | None = None
+    #: 모델 제공자가 아직 설정되지 않아 2차를 건너뛰었는가.
+    #: 제공자 확정 전까지는 1차 결과만으로도 쓸 수 있어야 한다
+    llm_unavailable: bool = False
     counts: dict[str, int] = field(default_factory=dict)
 
     @property
@@ -118,6 +121,9 @@ def parse_llm_suggestions(reply: str, text: str, *, taken: list[Suggestion]) -> 
             start=start, end=end,
             original=original, suggested=suggested,
             reason=reason, source="llm",
+            # 모델 제안은 근거를 댈 수 없다. 규칙 제안과 같은 무게로 보여주면
+            # 사용자가 구분 없이 수락하게 된다
+            confidence="medium",
         ))
         blocked.append((start, end))
 
@@ -154,9 +160,16 @@ async def improve(
         user_id=user_id, role=role, feature=FEATURE,
         session_id=session_id, is_test=is_test,
     )
-    result = await guard.run(
-        _PROMPT.format(sep=SEP, limit=MAX_LLM_SUGGESTIONS, text=text), ctx
-    )
+    try:
+        result = await guard.run(
+            _PROMPT.format(sep=SEP, limit=MAX_LLM_SUGGESTIONS, text=text), ctx
+        )
+    except LlmUnavailable:
+        # 제공자 미정(2026-10 현재). 1차 결과만 돌려준다 — 사용자가 빈손으로 끝나지 않는다
+        return ImproveResult(
+            suggestions=rule_found, star=analysis,
+            llm_unavailable=True, counts=_counts(rule_found),
+        )
 
     if result.blocked:
         return ImproveResult(

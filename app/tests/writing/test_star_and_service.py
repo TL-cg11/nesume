@@ -219,3 +219,11 @@ async def test_counts_are_reported() -> None:
 async def test_test_traffic_needs_the_prefix() -> None:
     with pytest.raises(ValueError, match="test-"):
         await improve(FULL, guard=_guard(), user_id="u1", role="user", is_test=True)
+
+
+def test_llm_suggestions_are_medium_confidence() -> None:
+    """모델 제안은 근거를 댈 수 없습니다. 규칙과 같은 무게로 보이면 안 됩니다."""
+    text = "저는 최선을 다했습니다."
+    reply = f"최선을 다했습니다{SEP}병목을 먼저 측정했습니다{SEP}구체적입니다"
+    (s,) = parse_llm_suggestions(reply, text, taken=[])
+    assert s.confidence == "medium"

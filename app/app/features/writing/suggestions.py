@@ -55,6 +55,14 @@ class OverlappingSuggestions(ValueError):
     """같은 자리를 고치는 제안을 동시에 수락했다."""
 
 
+class StaleSuggestion(ValueError):
+    """제안이 가리키는 자리의 글이 그 사이 바뀌었다.
+
+    사용자가 제안을 받은 뒤 본문을 고치면 위치가 어긋난다. 그대로 반영하면
+    **엉뚱한 자리가 덮어써진다.** 조용히 넘기지 않고 멈춘다 — 다시 검사하면 된다.
+    """
+
+
 def apply_suggestions(text: str, suggestions: Sequence[Suggestion], accepted: Iterable[str]) -> str:
     """수락한 제안만 반영한다.
 
@@ -66,6 +74,13 @@ def apply_suggestions(text: str, suggestions: Sequence[Suggestion], accepted: It
     wanted = set(accepted)
     chosen = [s for s in suggestions if s.id in wanted and s.is_replacement]
     chosen.sort(key=lambda s: (s.start, s.end))
+
+    # ★ 위치가 아직 맞는지 먼저 본다. 제안을 받은 뒤 글을 고쳤으면 어긋나 있다
+    for s in chosen:
+        if text[s.start : s.end] != s.original:
+            raise StaleSuggestion(
+                f"{s.rule_id}({s.start}:{s.end}) 자리의 글이 바뀌었습니다. 다시 검사해 주십시오"
+            )
 
     for before, after in zip(chosen, chosen[1:]):
         if after.start < before.end:
