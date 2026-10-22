@@ -17,6 +17,7 @@ from app.features.experiences.router import links_router as experience_links_rou
 from app.features.experiences.router import router as experiences_router
 from app.features.matching.router import router as matching_router
 from app.features.resumes.router import router as resumes_router
+from app.features.style.router import router as style_router
 
 
 def create_app() -> FastAPI:
@@ -43,6 +44,7 @@ def create_app() -> FastAPI:
     application.include_router(downloads_router)
     application.include_router(audit_router)
     application.include_router(matching_router)
+    application.include_router(style_router)
     return application
 
 
