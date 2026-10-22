@@ -1,7 +1,15 @@
-"""C4 서울시 응답 파서 테스트. DB·외부 불필요(순수 파서만)."""
+"""C4 서울시 응답 파서·fetch 테스트. DB·네트워크 불필요(순수 + transport 주입)."""
 from datetime import date
 
-from app.postings.collect import _extract_salary, _parse_date, parse_seoul_row
+import pytest
+
+from app.postings.collect import (
+    _extract_page,
+    _extract_salary,
+    _parse_date,
+    fetch_all_seoul,
+    parse_seoul_row,
+)
 
 SAMPLE = {
     "COMPANY": "㈜네수메",
@@ -78,3 +86,35 @@ def test_extract_salary_single_amount():
 def test_extract_salary_none():
     assert _extract_salary(None) == (None, None)
     assert _extract_salary("회사내규에 따름") == (None, None)
+
+
+# --- fetch 페이지네이션 (transport 주입, 네트워크 없음) ---
+
+def _page(rows: list[dict], total: int) -> dict:
+    return {"recMntList": {"RESULT": {"CODE": "INFO-000"}, "row": rows, "list_total_count": total}}
+
+
+def test_fetch_paginates_until_total():
+    pages = {
+        (1, 1000): _page([{"i": n} for n in range(1000)], 2300),
+        (1001, 2000): _page([{"i": n} for n in range(1000)], 2300),
+        (2001, 3000): _page([{"i": n} for n in range(300)], 2300),
+    }
+    got = fetch_all_seoul(fetch_page=lambda s, e: pages[(s, e)])
+    assert len(got) == 2300  # 세 페이지 합산, 전체 건수 도달 시 종료
+
+
+def test_fetch_stops_on_empty_page():
+    got = fetch_all_seoul(fetch_page=lambda s, e: _page([], 0))
+    assert got == []
+
+
+def test_fetch_respects_max_calls():
+    # 종료 조건이 안 와도 max_calls로 무한루프 방지
+    got = fetch_all_seoul(fetch_page=lambda s, e: _page([{"i": 1}], 10_000_000), max_calls=3)
+    assert len(got) == 3
+
+
+def test_extract_page_raises_on_error_code():
+    with pytest.raises(RuntimeError):
+        _extract_page({"recMntList": {"RESULT": {"CODE": "ERROR-300", "MESSAGE": "bad key"}}})

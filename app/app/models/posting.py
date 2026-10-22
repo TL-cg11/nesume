@@ -139,3 +139,17 @@ class JobPosting(Base):
 
     created_at: Mapped[CreatedAt]
     updated_at: Mapped[UpdatedAt]
+
+
+class CollectionRun(Base):
+    """수집 1회 기록. 건강성 게이트의 기준선(최근 정상 수집 건수의 중앙값)을 소스별로 낸다."""
+
+    __tablename__ = "collection_runs"
+    __table_args__ = (Index("ix_collection_runs_source_ran", "source", "ran_at"),)
+
+    id: Mapped[UuidPk]
+    source: Mapped[str] = mapped_column(String(16), index=True)
+    received: Mapped[int] = mapped_column(Integer)   # 이번에 받은 공고 건수
+    healthy: Mapped[bool] = mapped_column(Boolean)   # 게이트 정상 판정 여부
+    reason: Mapped[str] = mapped_column(String(64))  # 게이트 사유 (ok/below-rel/bootstrap 등)
+    ran_at: Mapped[CreatedAt]
