@@ -10,7 +10,7 @@ from app.auth import CurrentUser, Role, get_current_user
 from app.features.matching import service
 from app.features.matching.coverage import ExperienceRef, UserEvidence, compare
 from app.features.matching.keywords import PostingFields, extract
-from app.features.matching.router import get_guardrail, router
+from app.features.matching.router import get_guardrail, get_posting_lookup, router
 from app.features.matching.service import SEP, analyze, parse_hints, prepare_posting
 from app.guardrail import Guardrail, LlmClient
 from app.pii import InMemoryVaultStore
@@ -184,13 +184,21 @@ async def test_rules_still_work_without_a_provider() -> None:
 
 # ---------------------------------------------------------------- API
 
-def make_client(reply: str = "", *, unconfigured: bool = False) -> TestClient:
+def make_client(
+    reply: str = "",
+    *,
+    unconfigured: bool = False,
+    lookup: object | None = None,
+) -> TestClient:
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[get_current_user] = lambda: CurrentUser(sub="u1", role=Role.USER)
     if not unconfigured:
         guard, _ = guard_with(reply)
         app.dependency_overrides[get_guardrail] = lambda: guard
+    if lookup is not None:
+        # DB 를 쓰지 않는다. C4 창구 자리에 가짜를 끼운다
+        app.dependency_overrides[get_posting_lookup] = lambda: lookup
     return TestClient(app)
 
 
@@ -261,3 +269,97 @@ def test_resume_text_may_be_empty() -> None:
     """쓰기 전에 요건부터 보는 경우가 있다."""
     r = make_client().post("/matching/analyze", json={**BODY, "resume_text": ""})
     assert r.status_code == 200
+
+
+# ---------------------------------------------------------------- posting_id 경로
+#
+# 공고를 읽는 창구는 C 가 연 `postings.read.get_posting_fields` 하나다
+# (C 답변 2026-10-22). A 는 그 함수만 부르고 JobPosting ORM 은 모른다.
+
+POSTING_ID = "3f2a7c9e-1d4b-4a6f-9c88-5e0b7a2d1f33"
+
+#: C 창구가 돌려주는 모양 — 키는 PostingIn 필드와 같다
+C_FIELDS = {
+    "title": "백엔드 개발자",
+    "job_name": None,
+    "job_content": "Django 와 Docker 를 씁니다.",
+    "certificates": "정보처리기사",
+    "preferred": None,
+    "major": None,
+    "computer_skills": "엑셀",
+}
+
+BY_ID = {
+    "posting_id": POSTING_ID,
+    "resume_text": "Django 로 API 를 만들었습니다.",
+    "experiences": [
+        {"label": "배포 자동화", "text": "도커로 배포했습니다", "terms": ["정보처리기사"]}
+    ],
+}
+
+
+def test_analyze_by_posting_id() -> None:
+    seen: list[object] = []
+
+    def lookup(posting_id):
+        seen.append(posting_id)
+        return C_FIELDS
+
+    body = make_client(lookup=lookup).post("/matching/analyze", json=BY_ID).json()
+
+    assert str(seen[0]) == POSTING_ID, "UUID 로 변환해 넘긴다"
+    statuses = {m["text"]: m["status"] for m in body["matches"]}
+    assert statuses["Django"] == "covered"
+    assert statuses["Docker"] == "in_experience_only"
+    assert statuses["엑셀"] == "missing"
+
+
+def test_unknown_posting_id_is_404() -> None:
+    r = make_client(lookup=lambda _: None).post("/matching/analyze", json=BY_ID)
+    assert r.status_code == 404
+
+
+def test_posting_with_nothing_to_analyze_is_422() -> None:
+    """★ 검토대상(needs_review) 공고는 본문·요건이 비어 있을 수 있다.
+
+    C 창구가 그런 공고도 돌려준다(사용자가 보던 공고를 분석할 수 있어야 하므로).
+    500 으로 흘리면 사용자는 고장으로 본다.
+    """
+    empty = dict.fromkeys(C_FIELDS)
+    r = make_client(lookup=lambda _: empty).post("/matching/analyze", json=BY_ID)
+
+    assert r.status_code == 422
+    assert "분석할" in r.json()["detail"]
+
+
+def test_both_posting_and_posting_id_is_rejected() -> None:
+    """★ 어느 쪽이 이기는지 호출자가 알 수 없으면 결과가 조용히 달라진다."""
+    r = make_client().post(
+        "/matching/analyze", json={**BODY, "posting_id": POSTING_ID}
+    )
+    assert r.status_code == 422
+
+
+def test_neither_posting_nor_posting_id_is_rejected() -> None:
+    r = make_client().post("/matching/analyze", json={"resume_text": "글"})
+    assert r.status_code == 422
+
+
+def test_bad_uuid_is_rejected() -> None:
+    r = make_client().post("/matching/analyze", json={**BY_ID, "posting_id": "not-a-uuid"})
+    assert r.status_code == 422
+
+
+def test_c_reader_field_names_match_our_schema() -> None:
+    """★ C 창구의 키와 PostingIn 필드가 같은지 대조한다.
+
+    `PostingIn` 은 `extra="forbid"` 이므로 C 가 키를 더하면 **실행 중에** 터진다.
+    여기서 대조해 두면 C 브랜치가 머지되는 순간 어긋남이 드러난다.
+    (A8 이 B11 상수를 테스트로 대조하는 것과 같은 방식.)
+    """
+    pytest.importorskip("app.postings.read", reason="C 브랜치 머지 전에는 건너뛴다")
+    from app.postings.read import POSTING_FIELDS
+
+    from app.features.matching.schemas import PostingIn as PIn
+
+    assert set(POSTING_FIELDS) == set(PIn.model_fields)

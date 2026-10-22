@@ -2,15 +2,22 @@
 
 ★ 저장하지 않는다. 공고와 글을 받아 분석 결과를 돌려줄 뿐이다.
 
-★ **공고를 `posting_id` 로 받지 않는다** (2026-10-22 현재).
-  공고 조회는 C4 의 `job_postings` 를 읽는 일이고, 경험·자소서 조회는 B 의 테이블을
-  읽는 일이다. 양쪽 모두 남의 소유 경로라, 어느 함수로 읽을지 협의되기 전에
-  제가 SQL 을 쓰면 **접근 통제가 두 곳으로 갈라진다** (C6 가 역할 필터를 강제하는데
-  제가 뒤에서 또 조회하면 그쪽엔 필터가 없다).
-  그래서 1차는 **화면이 이미 들고 있는 값을 보내는 방식**으로 만들었다.
+공고는 두 가지 방법으로 받는다.
+
+    posting      화면이 이미 들고 있는 값을 그대로 보낸다
+    posting_id   C4 가 연 창구(`postings.read.get_posting_fields`)로 읽는다
+
+★ **공고를 읽는 창구는 C 가 하나만 연다** (C 답변 2026-10-22).
+  제가 `job_postings` 를 직접 읽으면 **접근 통제·조회 로직이 두 곳으로 갈라진다**
+  (A8 의 C6 어댑터와 같은 문제). 그래서 A 는 그 함수만 부르고 `JobPosting` ORM 은
+  모른다 — C4 가 컬럼을 바꿔도 그 함수 한 곳만 고치면 된다.
+
+★ 경험·자소서(B 소유)는 **아직 호출자가 넘긴다.** B 답변을 기다리는 중이다.
 """
 
 from __future__ import annotations
+
+import uuid
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -73,12 +80,26 @@ class ExperienceIn(BaseModel):
 class AnalyzeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    posting: PostingIn
+    #: 공고 값을 직접 보내는 경우
+    posting: PostingIn | None = None
+    #: 저장된 공고를 쓰는 경우. C4 창구로 읽는다
+    posting_id: uuid.UUID | None = None
     #: 지금 쓰고 있는 자소서 본문. 비워도 된다 — 쓰기 전에 요건부터 보는 경우가 있다
     resume_text: str = Field(default="", max_length=MAX_TEXT_LEN)
     experiences: list[ExperienceIn] = Field(default_factory=list, max_length=MAX_EXPERIENCES)
     #: false 면 규칙 결과만 돌려준다
     use_llm: bool = True
+
+    @model_validator(mode="after")
+    def _exactly_one_posting_source(self) -> AnalyzeRequest:
+        """``posting`` 과 ``posting_id`` 중 **하나만** 받는다.
+
+        둘 다 받으면 어느 쪽이 이기는지 호출자가 알 수 없다 — 화면에서 고친 값을
+        보냈는데 저장된 원본으로 분석되면 결과가 조용히 달라진다.
+        """
+        if (self.posting is None) == (self.posting_id is None):
+            raise ValueError("posting 과 posting_id 중 하나만 보내야 합니다")
+        return self
 
     def evidence(self) -> UserEvidence:
         return UserEvidence(
