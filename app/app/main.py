@@ -15,6 +15,7 @@ from app.core.storage.router import router as downloads_router
 from app.features.audit.router import router as audit_router
 from app.features.experiences.router import links_router as experience_links_router
 from app.features.experiences.router import router as experiences_router
+from app.features.matching.router import router as matching_router
 from app.features.resumes.router import router as resumes_router
 
 
@@ -41,6 +42,7 @@ def create_app() -> FastAPI:
     application.include_router(experience_links_router)
     application.include_router(downloads_router)
     application.include_router(audit_router)
+    application.include_router(matching_router)
     return application
 
 
