@@ -7,18 +7,15 @@ C2 정책 로더가 만든 WHERE를 벡터 검색에 **강제로** 붙인다. �
 런타임 동작은 `poc/c3_c6_e2e_poc.py`로 검증됨(실 A1 mask + bge-m3(1024) + pgvector + C2 필터, ALL PASS).
 유사도는 코사인(bge-m3 정규화) → `cosine_distance`. 필터+HNSW 조합은 iterative_scan으로 정확도 유지(C1 결론).
 """
-from pathlib import Path
-
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-import app.policy.policy as policy_mod
 from app.models.embedding import MODEL_VERSION, JobPostingEmbedding, UserProfileEmbedding
 from app.models.posting import JobPosting
-from app.policy.policy import build_where
+from app.policy.policy import Policy, build_where, default_matrix_path
 
-#: 정책은 `app/app/policy/matrix.yaml`(D2 공식본 나오면 교체)에서 1회 로드
-_policy = policy_mod.Policy.load(str(Path(policy_mod.__file__).parent / "matrix.yaml"))
+#: 정책 매트릭스 1회 로드. 경로는 env `POLICY_MATRIX_PATH`(D2 공식본) 우선, 없으면 번들.
+_policy = Policy.load(default_matrix_path())
 
 #: 필터와 함께 HNSW를 쓸 때 ANN이 필터를 건너뛰어 누락하는 걸 막는다(C1 결론)
 _ITERATIVE_SCAN = "SET LOCAL hnsw.iterative_scan = 'strict_order'"

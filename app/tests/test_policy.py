@@ -1,9 +1,10 @@
 """C2 정책 로더 테스트. DB 불필요(순수 로직). 등급 값은 B2 `Grade`(영문)."""
 from pathlib import Path
 
-import app.policy.policy as policy_mod
 import pytest
-from app.policy.policy import GradeCond, Policy, build_where
+
+import app.policy.policy as policy_mod
+from app.policy.policy import GradeCond, Policy, build_where, default_matrix_path
 
 MATRIX = str(Path(policy_mod.__file__).parent / "matrix.yaml")
 
@@ -106,3 +107,15 @@ def test_empty_conds_false():
 def test_unknown_scope_raises():
     with pytest.raises(ValueError):
         build_where([GradeCond("personal", "weird")], user_id="u")
+
+
+# --- default_matrix_path (env 우선, 번들 폴백) ---
+
+def test_default_matrix_path_fallback(monkeypatch):
+    monkeypatch.delenv("POLICY_MATRIX_PATH", raising=False)
+    assert default_matrix_path().endswith("matrix.yaml")  # 번들 기본
+
+
+def test_default_matrix_path_env_override(monkeypatch):
+    monkeypatch.setenv("POLICY_MATRIX_PATH", "/official/matrix.yaml")
+    assert default_matrix_path() == "/official/matrix.yaml"  # D2 공식본 경로로 교체 가능

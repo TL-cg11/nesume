@@ -11,12 +11,26 @@ mask 등급도 "검색은 되고 출력 때 A5가 가림"이라 필터엔 포함
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
+from pathlib import Path
 
 import yaml
 
 # 검색 결과에 들어올 수 있는 판정 (block 제외)
 _RETRIEVABLE = {"allow", "mask"}
+
+#: 번들 매트릭스(개발·테스트 기본). D2 공식본은 POLICY_MATRIX_PATH 환경변수로 교체.
+_BUNDLED_MATRIX = Path(__file__).parent / "matrix.yaml"
+
+
+def default_matrix_path() -> str:
+    """정책 매트릭스 경로. 환경변수 `POLICY_MATRIX_PATH` 우선, 없으면 번들 `matrix.yaml`.
+
+    D2 공식 매트릭스가 나오면 배포에서 `POLICY_MATRIX_PATH`만 그 위치로 세팅하면 된다
+    (코드 변경 없이 교체). 공용 `config.py`를 건드리지 않으려고 env로 둔다.
+    """
+    return os.environ.get("POLICY_MATRIX_PATH") or str(_BUNDLED_MATRIX)
 
 
 @dataclass(frozen=True)
