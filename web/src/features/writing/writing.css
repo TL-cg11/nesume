@@ -1,0 +1,56 @@
+/* A7 글 다듬기 화면 */
+
+.writing-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .writing-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+.writing-grid textarea {
+  width: 100%;
+  min-height: 340px;
+  line-height: 1.7;
+  font-size: 15px;
+  padding: 12px;
+  resize: vertical;
+}
+
+.char-count { font-size: 13px; color: #666; }
+.char-count.over { color: #b03030; font-weight: 600; }
+
+/* STAR 요약 */
+.star-box { border: 1px solid #d7dde5; border-radius: 6px; padding: 12px 14px; margin-bottom: 14px; }
+.star-marks { display: flex; gap: 8px; margin: 8px 0; }
+.star-mark {
+  width: 34px; height: 34px; border-radius: 50%;
+  display: grid; place-items: center;
+  font-weight: 700; font-size: 14px;
+  border: 1px solid #d7dde5; color: #999; background: #fafbfc;
+}
+.star-mark.on { background: #2e7d4f; border-color: #2e7d4f; color: #fff; }
+
+/* 제안 목록 */
+.suggestion-list { list-style: none; margin: 0; padding: 0; }
+.suggestion {
+  border: 1px solid #e2e7ee; border-radius: 6px;
+  padding: 10px 12px; margin-bottom: 8px;
+}
+.suggestion.guidance { background: #fbfaf5; border-color: #e6ddc4; }
+.suggestion-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.suggestion-body { margin: 6px 0 0; font-size: 14px; line-height: 1.6; }
+.suggestion-reason { margin: 4px 0 0; font-size: 13px; color: #666; }
+
+.badge {
+  font-size: 11px; padding: 2px 6px; border-radius: 3px;
+  border: 1px solid #d7dde5; color: #555; background: #f6f8fa;
+}
+.badge.llm { border-color: #c9b8e0; background: #f5f0fb; color: #5b3f8a; }
+.badge.medium { border-color: #e0c89a; background: #fdf6e8; color: #8a6013; }
+
+.from { text-decoration: line-through; color: #a33; }
+.to { color: #2e7d4f; font-weight: 600; }
