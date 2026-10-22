@@ -5,7 +5,12 @@ A11(`features/matching`)은 공고 글이 필요하지만 **C4 모델을 직접 
 그래서 공고를 읽는 창구는 **C가 하나만 연다**. A는 이 함수만 호출하고 `JobPosting` ORM은 모른다
 → C4가 컬럼을 바꿔도 A 코드는 안 깨지고, 변경은 이 함수 한 곳만 고치면 된다.
 
-공고는 `grade=public`이라 **역할 필터 없이 단순 조회**면 충분하다(개인 문서인 자소서·경험과 다름).
+대부분(`source` seoul/saramin/work24_open)은 `grade=public`이라 누구나 조회 가능하지만,
+**`source='user'`(사용자 직접 입력) 공고는 `owner_user_id` 본인만 조회**가 규약이다
+(`models/posting.py` SOURCES). 창구를 하나로 모은 이상 **권한 검사도 여기서** 한다 — 그래서
+호출자의 `user_id`를 받아 **남의 비공개 공고는 `None`**으로 막는다(A 지적, 2026-10-22). UUID를
+알아야 조회되니 열거는 원래 안 되지만, 소유자 확인이 없으면 UUID를 아는 제3자가 읽을 수 있었다.
+
 PII 마스킹·C5 전처리는 **호출자(A11 `prepare_posting`)가 직접** 하므로 여기선 **원문 그대로** 돌려준다
 (이중 마스킹 금지).
 """
@@ -29,8 +34,14 @@ POSTING_FIELDS = (
 )
 
 
-def get_posting_fields(session: Session, posting_id: uuid.UUID) -> dict[str, str | None] | None:
-    """공고 1건의 분석용 필드를 돌려준다. 없으면 None.
+def get_posting_fields(
+    session: Session, posting_id: uuid.UUID, *, user_id: str
+) -> dict[str, str | None] | None:
+    """공고 1건의 분석용 필드를 돌려준다. 없거나 **볼 권한이 없으면** None.
+
+    `user_id`는 호출자(A11 라우터의 `user.sub`)다 — 키워드 전용·필수로 둬서 **신원 없이 호출 불가**
+    (fail-closed). `owner_user_id`가 있는 비공개 공고(`source='user'`)는 **소유자 본인일 때만** 반환,
+    남의 것이면 "없음"과 구분 없이 `None`(존재 노출 안 함). 공개 출처는 `owner_user_id`가 없어 통과.
 
     반환은 평범한 dict(`POSTING_FIELDS` 키) — A11을 import하지 않아 양쪽이 서로 독립이다.
     A는 받은 dict으로 `PostingIn(**fields)`를 만든다(필드명을 C4 모델과 같게 맞춰 둠).
@@ -39,5 +50,8 @@ def get_posting_fields(session: Session, posting_id: uuid.UUID) -> dict[str, str
     """
     posting = session.get(JobPosting, posting_id)
     if posting is None:
+        return None
+    # 비공개(사용자 입력) 공고는 소유자만. 공개 출처는 owner_user_id가 None이라 통과.
+    if posting.owner_user_id is not None and posting.owner_user_id != user_id:
         return None
     return {name: getattr(posting, name) for name in POSTING_FIELDS}
