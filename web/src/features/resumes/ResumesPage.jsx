@@ -47,7 +47,7 @@ export default function ResumesPage() {
         </button>
       </form>
       {error && <p className="error">불러오지 못했습니다: {error}</p>}
-      <ul className="resume-list">
+      <ul className="list resume-list">
         {items.map((r) => (
           <li key={r.id}>
             <Link to={`/resumes/${r.id}`}>{r.title}</Link>

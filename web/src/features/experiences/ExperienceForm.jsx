@@ -35,7 +35,7 @@ export default function ExperienceForm({ initial, onSubmit, onCancel }) {
   }
 
   return (
-    <form className="exp-form" onSubmit={submit}>
+    <form className="exp-form card" onSubmit={submit}>
       <label className="full">
         제목
         <input value={f.title} onChange={set('title')} maxLength={200} required />

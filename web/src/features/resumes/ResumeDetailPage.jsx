@@ -83,7 +83,7 @@ export default function ResumeDetailPage() {
           onBlur={(e) => e.target.value !== (resume.status ?? '') && saveMeta('status', e.target.value.trim())}
           aria-label="상태"
         />
-        <button className="secondary" onClick={removeResume}>
+        <button className="danger" onClick={removeResume}>
           삭제
         </button>
       </div>

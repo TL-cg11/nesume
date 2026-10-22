@@ -108,7 +108,7 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete }
     <div className="editor">
       <div className="row">
         <h2>{question.title}</h2>
-        <button className="secondary" onClick={onDelete}>
+        <button className="danger" onClick={onDelete}>
           문항 삭제
         </button>
       </div>
@@ -144,7 +144,7 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete }
         <ul className="timeline">
           {linked.map((e) => (
             <li key={e.id}>
-              <span style={{ flex: 1 }}>{e.title}</span>
+              <span className="grow">{e.title}</span>
               <button className="secondary" onClick={() => unlinkExperience(e.id)}>
                 연결 해제
               </button>
