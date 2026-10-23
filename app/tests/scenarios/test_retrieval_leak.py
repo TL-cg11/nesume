@@ -17,10 +17,16 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from app.models.embedding import EMBED_DIM, MODEL_VERSION, UserProfileEmbedding
+from app.models.embedding import (
+    EMBED_DIM,
+    MODEL_VERSION,
+    JobPostingEmbedding,
+    UserProfileEmbedding,
+)
+from app.models.posting import JobPosting
 from app.models.resume import Resume
 from app.models.share import Share
-from app.retrieval.search import search_personal
+from app.retrieval.search import search_personal, search_public
 
 # 모든 문서·쿼리를 같은 벡터로 → 유사도는 동일, 필터만이 결과를 가른다(가장 가까운데도 빠지는가).
 QUERY = [1.0] + [0.0] * (EMBED_DIM - 1)
@@ -71,6 +77,28 @@ def _share(session, resume_id, owner, mentor, *, expired=False, revoked=False) -
     session.add(s)
     session.flush()
     return s
+
+
+def _posting(session, *, active: bool = True, review: bool = False) -> JobPosting:
+    p = JobPosting(
+        source="seoul",
+        link_key=str(uuid.uuid4()),
+        content_hash=str(uuid.uuid4()),
+        is_active=active,
+        needs_review=review,
+    )
+    session.add(p)
+    session.flush()
+    return p
+
+
+def _posting_emb(session, posting_id: uuid.UUID) -> JobPostingEmbedding:
+    e = JobPostingEmbedding(
+        source_id=posting_id, content="공고 본문", model_version=MODEL_VERSION, embedding=QUERY
+    )
+    session.add(e)
+    session.flush()
+    return e
 
 
 def _ids(rows) -> set:
@@ -152,6 +180,37 @@ def test_mentor_not_shared_blocked(db_session):
     r = _resume(db_session, owner)
     _emb(db_session, owner, r.id)  # shared_with 비어있음
     assert r.id not in _ids(search_personal(db_session, QUERY, role="mentor", user_id=mentor))
+
+
+# --------------------------------------------------------------------------
+# S-IDX — 인덱스 분리: 공개 검색은 공고만(개인 안 섞임)·비활성/검토대기 제외
+# --------------------------------------------------------------------------
+
+def test_public_excludes_personal_index(db_session):
+    """S-IDX-1: 개인 임베딩과 공고 임베딩을 같은 벡터로 심어도 `search_public`엔 공고만."""
+    a = _uid()
+    r = _resume(db_session, a)
+    _emb(db_session, a, r.id)        # 개인 인덱스
+    p = _posting(db_session)
+    _posting_emb(db_session, p.id)   # 공개 인덱스
+    got = _ids(search_public(db_session, QUERY))
+    assert p.id in got
+    assert r.id not in got  # 개인 문서는 공개 검색에 절대 안 뜸
+
+
+def test_public_excludes_inactive_and_review(db_session):
+    """S-IDX-2: 비활성·검토대기 공고는 추천 풀에서 빠진다(활성 정상만)."""
+    active = _posting(db_session)
+    _posting_emb(db_session, active.id)
+    inactive = _posting(db_session, active=False)
+    _posting_emb(db_session, inactive.id)
+    review = _posting(db_session, review=True)
+    _posting_emb(db_session, review.id)
+
+    got = _ids(search_public(db_session, QUERY))
+    assert active.id in got
+    assert inactive.id not in got
+    assert review.id not in got
 
 
 # --------------------------------------------------------------------------
