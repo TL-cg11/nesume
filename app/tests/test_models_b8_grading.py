@@ -14,7 +14,7 @@ WRONG = Grade.PUBLIC.value
 
 def test_grade_table_matches_spec():
     by_table = {m.__tablename__: g for m, g in GRADE_BY_MODEL.items()}
-    assert by_table == {**EXPECTED_DEFAULT, "pii_vaults": Grade.SENSITIVE}
+    assert by_table == {**EXPECTED_DEFAULT, "pii_vaults": Grade.SENSITIVE, "writing_profiles": Grade.PERSONAL}
 
 
 @pytest.mark.parametrize("table", sorted(EXPECTED_DEFAULT))

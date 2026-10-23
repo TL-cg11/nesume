@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.features.resumes import pii_hooks
 from app.features.resumes import repository as repo
 from app.models import Question, Resume, User, Version
+from app.retrieval import indexing
 
 # spec 3.1 "버전은 문항당 최대 50개". 초과 시 압축 방식은 팀 확인 후 구현(part2_guide 4.14).
 MAX_VERSIONS_PER_QUESTION = 50
@@ -41,9 +42,10 @@ def update_resume(db: Session, resume: Resume, **fields) -> Resume:
 
 
 def soft_delete_resume(db: Session, resume: Resume) -> None:
-    # 물리 삭제·임베딩 삭제는 30일 후 B20(part2_guide 4.3)
+    # 물리 삭제·임베딩 삭제는 30일 후 B20(part2_guide 4.3). 검색 제외는 같은 트랜잭션에서 C3에 반영(4.39)
     resume.deleted_at = datetime.now(UTC)
     db.flush()
+    indexing.mark_personal_deleted(db, source_id=resume.id, deleted_at=resume.deleted_at)
 
 
 def create_question(db: Session, resume: Resume, title: str, char_limit: int | None,

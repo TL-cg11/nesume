@@ -11,6 +11,7 @@ from app.models.resume import Question, Resume, Version
 from app.models.share import Share
 from app.models.template import PromptTemplate
 from app.models.user import User
+from app.models.writing_profile import WritingProfile
 
 # 등급 자동 부여 훅 등록(B8). 모델 import 뒤에 둔다.
 from app.models import grading  # noqa: E402,F401
@@ -36,4 +37,5 @@ __all__ = [
     "UserKey",
     "UserProfileEmbedding",
     "Version",
+    "WritingProfile",
 ]

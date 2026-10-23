@@ -13,6 +13,7 @@ from app.features.experiences import repository as repo
 from app.features.resumes import pii_hooks
 from app.features.resumes.service import ensure_user
 from app.models import Experience, QuestionExperience
+from app.retrieval import indexing
 
 # PII가 들어갈 수 있는 문자열 필드 전부(part2_guide 4.20)
 TEXT_FIELDS = ("title", "type", "role", "outcome", "detail")
@@ -84,9 +85,10 @@ def update_experience(db: Session, owner_id: str, e: Experience, fields: dict) -
 
 
 def soft_delete_experience(db: Session, e: Experience) -> None:
-    # 물리 삭제·임베딩 삭제는 30일 후 B20(part2_guide 4.19)
+    # 물리 삭제·임베딩 삭제는 30일 후 B20(part2_guide 4.19). 검색 제외는 같은 트랜잭션에서 C3에 반영(4.39)
     e.deleted_at = datetime.now(UTC)
     db.flush()
+    indexing.mark_personal_deleted(db, source_id=e.id, deleted_at=e.deleted_at)
 
 
 def link(db: Session, owner_id: str, question_id: uuid.UUID, experience_id: uuid.UUID) -> bool:

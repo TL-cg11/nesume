@@ -8,7 +8,7 @@
 - 일괄 INSERT·UPDATE 문(session.execute)에 등급표와 다른 값: GradeChangeForbidden
 
 ORM을 거치지 않는 SQL은 DB 기본값(server_default)과 CHECK(5등급)까지만 보장된다.
-대상은 tasks B8에 나열된 테이블. 말투 프로필(A14)은 모델 취합 후, 면접 연습은 B13에서 추가한다.
+대상은 tasks B8에 나열된 테이블. 면접 연습은 B13에서 추가한다.
 """
 from sqlalchemy import event, inspect
 from sqlalchemy.orm import ORMExecuteState, Session
@@ -20,6 +20,7 @@ from app.models.experience import Experience
 from app.models.pii import PiiVault
 from app.models.resume import Question, Resume, Version
 from app.models.template import PromptTemplate
+from app.models.writing_profile import WritingProfile
 
 # spec 6.4 기능별 등급
 GRADE_BY_MODEL: dict[type, Grade] = {
@@ -31,6 +32,7 @@ GRADE_BY_MODEL: dict[type, Grade] = {
     PromptTemplate: Grade.INTERNAL,
     PiiVault: Grade.SENSITIVE,   # PII 토큰화 전 원문
     AuditLog: Grade.SENSITIVE,
+    WritingProfile: Grade.PERSONAL,  # A14 말투 프로필
 }
 
 
