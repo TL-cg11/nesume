@@ -7,9 +7,18 @@ CI에서 잡는다. 이 종류는 ruff·순수로직 테스트로 안 잡힌다
 from sqlalchemy.orm import configure_mappers
 
 from app.models.embedding import JobPostingEmbedding, UserProfileEmbedding
+from app.models.learning import LearningContent, LearningRoadmap, LearningRoadmapItem
 from app.models.posting import CollectionRun, JobPosting
 
-C_MODELS = (JobPosting, CollectionRun, JobPostingEmbedding, UserProfileEmbedding)
+C_MODELS = (
+    JobPosting,
+    CollectionRun,
+    JobPostingEmbedding,
+    UserProfileEmbedding,
+    LearningContent,
+    LearningRoadmap,
+    LearningRoadmapItem,
+)
 
 
 def test_c_models_configure():

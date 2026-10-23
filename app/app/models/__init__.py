@@ -4,6 +4,7 @@ from app.models.audit import AuditLog
 from app.models.download import DownloadToken
 from app.models.embedding import JobPostingEmbedding, UserProfileEmbedding
 from app.models.experience import Experience, QuestionExperience
+from app.models.learning import LearningContent, LearningRoadmap, LearningRoadmapItem
 from app.models.pii import PiiVault, UserKey
 from app.models.posting import CollectionRun, JobPosting
 from app.models.resume import Question, Resume, Version
@@ -19,6 +20,9 @@ __all__ = [
     "Experience",
     "JobPosting",
     "JobPostingEmbedding",
+    "LearningContent",
+    "LearningRoadmap",
+    "LearningRoadmapItem",
     "PiiVault",
     "PromptTemplate",
     "QuestionExperience",
