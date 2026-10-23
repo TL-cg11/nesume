@@ -299,23 +299,33 @@ BY_ID = {
 
 
 def test_analyze_by_posting_id() -> None:
-    seen: list[object] = []
+    seen: list[tuple[object, str]] = []
 
-    def lookup(posting_id):
-        seen.append(posting_id)
+    def lookup(posting_id, user_id):
+        seen.append((posting_id, user_id))
         return C_FIELDS
 
     body = make_client(lookup=lookup).post("/matching/analyze", json=BY_ID).json()
 
-    assert str(seen[0]) == POSTING_ID, "UUID 로 변환해 넘긴다"
+    assert str(seen[0][0]) == POSTING_ID, "UUID 로 변환해 넘긴다"
+    assert seen[0][1] == "u1", "★ 호출자 신원을 함께 넘긴다 — C 창구가 소유자를 검사한다"
     statuses = {m["text"]: m["status"] for m in body["matches"]}
     assert statuses["Django"] == "covered"
     assert statuses["Docker"] == "in_experience_only"
     assert statuses["엑셀"] == "missing"
 
 
+def test_private_posting_of_another_user_is_404_not_403() -> None:
+    """★ C 창구가 남의 비공개 공고에 None 을 돌려준다 (2026-10-23 보안 패치).
+
+    403 으로 구분하면 **"그 UUID 의 공고는 있다"** 는 사실이 새어 나간다.
+    """
+    r = make_client(lookup=lambda _pid, _uid: None).post("/matching/analyze", json=BY_ID)
+    assert r.status_code == 404
+
+
 def test_unknown_posting_id_is_404() -> None:
-    r = make_client(lookup=lambda _: None).post("/matching/analyze", json=BY_ID)
+    r = make_client(lookup=lambda _pid, _uid: None).post("/matching/analyze", json=BY_ID)
     assert r.status_code == 404
 
 
@@ -326,7 +336,7 @@ def test_posting_with_nothing_to_analyze_is_422() -> None:
     500 으로 흘리면 사용자는 고장으로 본다.
     """
     empty = dict.fromkeys(C_FIELDS)
-    r = make_client(lookup=lambda _: empty).post("/matching/analyze", json=BY_ID)
+    r = make_client(lookup=lambda _pid, _uid: empty).post("/matching/analyze", json=BY_ID)
 
     assert r.status_code == 422
     assert "분석할" in r.json()["detail"]

@@ -30,11 +30,15 @@ from app.guardrail import Guardrail
 router = APIRouter(prefix="/matching", tags=["matching"])
 
 #: 공고 한 건을 읽는 함수. 없으면 None.
-PostingLookup = Callable[[uuid.UUID], dict[str, str | None] | None]
+#: (공고 id, 호출자 user_id) → 공고 필드. 볼 권한이 없으면 None.
+PostingLookup = Callable[[uuid.UUID, str], dict[str, str | None] | None]
 
 
-def read_posting_fields(posting_id: uuid.UUID) -> dict[str, str | None] | None:
+def read_posting_fields(posting_id: uuid.UUID, user_id: str) -> dict[str, str | None] | None:
     """C4 창구를 **짧은 세션**으로 호출한다.
+
+    ★ ``user_id`` 는 C 창구가 **키워드 전용·필수**로 요구한다 — 신원 없이 부를 수 없다
+      (fail-closed). 비공개 공고(``source='user'``)는 소유자 본인일 때만 돌아온다.
 
     ★ 다른 라우터처럼 ``Depends(get_db)`` 를 쓰지 않는 이유가 있다.
       이 엔드포인트는 LLM 을 불러 **응답이 최대 30초**다. 요청 단위 세션을 받으면
@@ -50,7 +54,7 @@ def read_posting_fields(posting_id: uuid.UUID) -> dict[str, str | None] | None:
     from app.postings.read import get_posting_fields
 
     with SessionLocal() as session:
-        return get_posting_fields(session, posting_id)
+        return get_posting_fields(session, posting_id, user_id=user_id)
 
 
 def get_posting_lookup() -> PostingLookup:
@@ -73,17 +77,20 @@ def get_guardrail() -> Guardrail:
     return _default_guardrail()
 
 
-def _posting_from(payload: AnalyzeRequest, lookup: PostingLookup) -> PostingIn:
+def _posting_from(
+    payload: AnalyzeRequest, lookup: PostingLookup, user_id: str
+) -> PostingIn:
     """요청에서 공고를 꺼낸다. `posting_id` 면 C4 창구로 읽는다."""
     if payload.posting is not None:
         return payload.posting
 
-    # ★ 미결 — 사용자가 직접 입력한 공고(`source='user'`, `owner_user_id` 있음)는
-    #   "해당 사용자만 조회" 가 규약인데, C 창구는 소유자로 걸러 주지 않는다.
-    #   UUID 를 알아야 하므로 열거는 안 되지만 **권한 검사가 없는 것은 사실**이다.
-    #   C 에 `user_id` 를 받아 남의 비공개 공고면 None 을 돌려달라고 요청해 두었다.
-    #   제가 여기서 `owner_user_id` 를 직접 보면 조회 경로를 하나로 모은 합의가 깨진다.
-    fields = lookup(payload.posting_id)  # type: ignore[arg-type]
+    # ★ 권한 검사는 **C 창구 안에서** 한다 (2026-10-23 C 보안 패치).
+    #   비공개 공고(`source='user'`)는 소유자 본인이 아니면 None 이 돌아온다.
+    #   여기서 `owner_user_id` 를 직접 보면 조회 경로를 하나로 모은 합의가 깨진다.
+    #
+    #   없는 공고와 **볼 권한이 없는 공고를 똑같이 404** 로 답한다 — 403 으로 구분하면
+    #   "그 UUID 의 공고는 있다"는 사실이 새어 나간다.
+    fields = lookup(payload.posting_id, user_id)  # type: ignore[arg-type]
     if fields is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "공고를 찾을 수 없습니다")
 
@@ -111,7 +118,7 @@ async def analyze(
     빠진 요건에는 **문장을 제안하지 않고 질문을 돌려준다.** 경험엔 있는데 자소서에
     안 쓴 요건만 문장을 만든다 — 지어낼 필요가 없는 쪽이다.
     """
-    posting = _posting_from(payload, lookup)
+    posting = _posting_from(payload, lookup, user.sub)
 
     result = await service.analyze(
         posting.to_domain(),
