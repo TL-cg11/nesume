@@ -1,0 +1,35 @@
+/* 글 다듬기 화면 전용. 값은 theme.css 변수만 사용 (프론트 가이드 8절) */
+
+.wr-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 420px); gap: var(--space-4); align-items: start; }
+@media (max-width: 720px) { .wr-grid { grid-template-columns: 1fr; } }
+
+.wr-input { width: 100%; min-height: 340px; line-height: var(--leading); resize: vertical; }
+.wr-count { color: var(--muted); font-size: var(--text-sm); }
+.wr-count.over { color: var(--danger); font-weight: 600; }
+
+/* STAR 요약 */
+.wr-star { margin-bottom: var(--space-3); }
+.wr-star-marks { display: flex; gap: var(--space-2); margin: var(--space-2) 0; }
+.wr-star-mark {
+  width: 34px; height: 34px; border-radius: var(--radius-pill);
+  display: grid; place-items: center; font-weight: 700; font-size: var(--text-sm);
+  border: 1px solid var(--border-input); color: var(--muted); background: var(--surface);
+}
+.wr-star-mark.on { background: var(--success); border-color: var(--success); color: var(--on-accent); }
+
+/* 제안 목록 */
+.wr-item .head { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
+.wr-item p { margin: var(--space-1) 0 0; }
+.wr-item .reason { color: var(--muted); font-size: var(--text-sm); }
+.wr-item.guidance { background: var(--warning-soft); border-radius: var(--radius-sm); padding: var(--space-2); }
+
+.wr-badge {
+  font-size: var(--text-sm); padding: 0 var(--space-2); border-radius: var(--radius-pill);
+  border: 1px solid var(--border-input); color: var(--muted); background: var(--surface);
+}
+.wr-badge.llm { border-color: var(--accent); color: var(--accent-text); background: var(--accent-soft); }
+.wr-badge.check { border-color: var(--warning); color: var(--warning); background: var(--warning-soft); }
+
+/* 바뀌는 부분 — 색만으로 구분하지 않도록 취소선·굵기도 함께 준다 (가이드 10절) */
+.wr-from { text-decoration: line-through; color: var(--danger); }
+.wr-to { color: var(--success); font-weight: 600; }

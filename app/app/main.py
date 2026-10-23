@@ -22,6 +22,7 @@ from app.features.recommend.router import router as recommend_router
 from app.features.resumes.router import router as resumes_router
 from app.features.roadmap.router import router as roadmap_router
 from app.features.style.router import router as style_router
+from app.features.writing.router import router as writing_router
 
 
 def create_app() -> FastAPI:
@@ -54,6 +55,7 @@ def create_app() -> FastAPI:
     application.include_router(matching_router)
     application.include_router(style_router)
     application.include_router(profile_router)
+    application.include_router(writing_router)  # A7 글 다듬기
     return application
 
 
