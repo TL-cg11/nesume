@@ -20,6 +20,18 @@ _policy = Policy.load(default_matrix_path())
 #: 필터와 함께 HNSW를 쓸 때 ANN이 필터를 건너뛰어 누락하는 걸 막는다(C1 결론)
 _ITERATIVE_SCAN = "SET LOCAL hnsw.iterative_scan = 'strict_order'"
 
+#: 공유(멘토) 경로 심층 방어(B 확정 2026-10-23). 벡터 행의 복제 shared_with(B10 동기화분)만 믿지 않고
+#: 원본 `shares`+`resumes`로 재확인한다 — 동기화 실패·지연 시 끊긴 공유가 벡터 행에 남아 새는 걸 막는다.
+#: 본인 소유(owner_id)는 shares 불필요. 경험(source_type='experience')은 shares가 없어 EXISTS가 안 맞아
+#: 자연히 owner만 통과(멘토는 공유 자소서만 봄). ※ `:dd_uid`는 C2 WHERE의 `:uid`와 겹치지 않게 분리.
+_SHARES_RECHECK = (
+    "(owner_id = :dd_uid OR EXISTS ("
+    " SELECT 1 FROM shares s JOIN resumes r ON r.id = s.resume_id"
+    " WHERE s.resume_id = user_profile_embeddings.source_id"
+    " AND s.shared_with = :dd_uid AND s.revoked_at IS NULL"
+    " AND s.expires_at > now() AND r.deleted_at IS NULL))"
+)
+
 
 def search_public(
     session: Session,
@@ -83,12 +95,10 @@ def search_personal(
         .where(text(where_sql).bindparams(**params))
         .where(UserProfileEmbedding.deleted_at.is_(None))  # 소프트 삭제 제외(B 요청, 30일 전까지)
         .where(UserProfileEmbedding.model_version == MODEL_VERSION)  # 버전 혼재 방지(적대적 패스)
-        .order_by(dist)
-        .limit(top_k)
     )
-    # TODO(B 통합): 공유(멘토) 경로 심층 방어 — 벡터 행의 복제된 shared_with만 믿지 말고 원본 `shares`로
-    #   EXISTS 재확인(B 확정 2026-10-23): shares.resume_id=자소서 AND shared_with=요청자
-    #   AND revoked_at IS NULL AND expires_at > now(), 그리고 resumes.deleted_at IS NULL.
-    #   ※ 등급 기반 아님 — B8 이후 resumes는 전부 personal(고등급 부재)이라 등급 게이트는 死코드.
-    #   멘토가 공유로 접근한 결과를 shares로 재확인. B `shares`/`resumes` 모델 확정 후 추가(docs/C6.md).
+    # 심층 방어: 공유(멘토) 경로가 있을 때만 원본 shares/resumes로 재확인(운영자 scope=all엔 적용 안 함 —
+    # 전체 열람이 정당하고 PII는 A1 mask로 가린다). 본인 소유는 shares 불필요.
+    if any(c.scope == "shared" for c in conds):
+        stmt = stmt.where(text(_SHARES_RECHECK).bindparams(dd_uid=user_id))
+    stmt = stmt.order_by(dist).limit(top_k)
     return session.execute(stmt).all()
