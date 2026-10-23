@@ -1,0 +1,8 @@
+apiVersion: v2
+name: nesume
+description: nesume application (FastAPI app + nginx web + migrate/batch jobs)
+type: application
+# 차트 버전. 템플릿·values 구조가 바뀔 때 올린다.
+version: 0.1.0
+# 앱 버전은 비워 둔다. 이미지 태그(= git sha)는 --set image.app.tag / image.web.tag 로만 준다(D4 태그 규칙).
+appVersion: ""

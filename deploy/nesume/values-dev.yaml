@@ -1,0 +1,43 @@
+# dev (EKS). 값은 D8·D9 에서 채운다.
+image:
+  registry: ""                       # <account>.dkr.ecr.ap-northeast-2.amazonaws.com
+  pullPolicy: IfNotPresent
+
+app:
+  replicas: 1
+
+web:
+  replicas: 1
+
+config:
+  APP_ENV: dev
+  LOG_LEVEL: DEBUG
+  DB_HOST: ""                        # RDS endpoint
+  S3_BUCKET_NAME: ""
+  KMS_KEY_ALIAS: ""
+  APP_SECRET_NAME: ""
+  COGNITO_USER_POOL_ID: ""
+  COGNITO_CLIENT_ID: ""
+  COGNITO_ISSUER: ""
+  COGNITO_JWKS_URL: ""
+
+externalSecrets:
+  enabled: true
+  remoteKey: nesume/dev/app
+
+ingress:
+  enabled: true
+  host: ""                           # dev.<domain>
+  certificateArn: ""
+
+serviceAccount:
+  app:
+    annotations: {}                  # eks.amazonaws.com/role-arn: arn:aws:iam::<account>:role/nesume-dev-app
+  batch:
+    annotations: {}                  # eks.amazonaws.com/role-arn: arn:aws:iam::<account>:role/nesume-dev-batch
+
+hpa:
+  enabled: false
+
+pdb:
+  enabled: false

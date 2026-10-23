@@ -1,0 +1,43 @@
+# staging (EKS). 시드 Job(D6)은 staging 에서만 켠다.
+image:
+  registry: ""
+
+app:
+  replicas: 2
+
+web:
+  replicas: 2
+
+config:
+  APP_ENV: staging
+  DB_HOST: ""
+  S3_BUCKET_NAME: ""
+  KMS_KEY_ALIAS: ""
+  APP_SECRET_NAME: ""
+  COGNITO_USER_POOL_ID: ""
+  COGNITO_CLIENT_ID: ""
+  COGNITO_ISSUER: ""
+  COGNITO_JWKS_URL: ""
+
+externalSecrets:
+  enabled: true
+  remoteKey: nesume/staging/app
+
+seed:
+  enabled: true
+
+ingress:
+  enabled: true
+  host: ""
+  certificateArn: ""
+
+serviceAccount:
+  app:
+    annotations: {}
+  batch:
+    annotations: {}
+
+hpa:
+  enabled: true
+  min: 2
+  max: 4

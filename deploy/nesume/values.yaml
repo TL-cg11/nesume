@@ -1,0 +1,126 @@
+# nesume Helm chart 기본 values.
+# 기본값은 운영(production) 기준이다. 환경별 차이는 values-<env>.yaml 로 덮어쓴다.
+# 환경변수 키 이름은 app/app/config.py 의 Settings 필드와 1:1로 맞춘다.
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  registry: ""                       # 예: 123456789012.dkr.ecr.ap-northeast-2.amazonaws.com. kind는 ""
+  app:
+    repository: nesume/app
+    tag: ""                          # 필수. git sha(D4 태그 규칙). kind는 "local"
+  web:
+    repository: nesume/web
+    tag: ""
+  pullPolicy: IfNotPresent           # kind: Never
+
+app:
+  replicas: 2
+  resources:
+    requests: { cpu: 250m, memory: 256Mi }
+    limits: { cpu: "1", memory: 512Mi }
+  readinessPath: /ready              # DB+vector+S3 확인. kind는 /health (S3 없음)
+  livenessPath: /health
+  startupPath: /health
+  terminationGracePeriodSeconds: 30
+
+web:
+  replicas: 2
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 200m, memory: 128Mi }
+
+# ConfigMap으로 가는 비밀 아닌 설정. 값은 전부 문자열.
+config:
+  APP_ENV: production                # local|test|dev|staging|production 만 허용
+  LOG_FORMAT: json
+  LOG_LEVEL: INFO
+  AWS_REGION: ap-northeast-2
+  S3_BUCKET_NAME: ""
+  KMS_KEY_ALIAS: ""
+  APP_SECRET_NAME: ""
+  COGNITO_USER_POOL_ID: ""
+  COGNITO_CLIENT_ID: ""
+  COGNITO_ISSUER: ""
+  COGNITO_JWKS_URL: ""
+  DB_HOST: ""
+  DB_PORT: "5432"
+  DB_NAME: nesume
+  DB_USER: nesume
+
+# 비밀값. externalSecrets.enabled=true 면 Secrets Manager에서 가져오고 이 맵은 무시된다.
+# false(kind)일 때만 secret.yaml 이 이 값으로 Secret을 만든다. 운영 values에 값을 적지 않는다.
+secrets:
+  DB_PASSWORD: ""
+  BATCH_USERNAME: ""                 # D6 시스템 계정(배치용)
+  BATCH_PASSWORD: ""
+
+externalSecrets:
+  enabled: true
+  secretStoreRef:
+    name: aws-secretsmanager
+    kind: ClusterSecretStore
+  remoteKey: nesume/production/app   # Secrets Manager 키. JSON 필드명 = secrets.* 키
+  refreshInterval: 1h
+
+migrate:
+  enabled: true
+  hook: true                         # true: pre-install/pre-upgrade hook. false(kind): 일반 Job + wait-for-db
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 600
+
+cronjobs:
+  jobsCollector:                     # C4 공고 수집
+    enabled: false
+    schedule: "0 18 * * *"           # UTC. 한국 03:00
+    command: ["python", "-m", "app.batch.jobs_collector"]
+    suspend: false
+  purge:                             # B20 삭제 배치
+    enabled: false
+    schedule: "30 18 * * *"
+    command: ["python", "-m", "app.batch.purge"]
+    suspend: false
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+
+seed:                                # D6. staging 만 true
+  enabled: false
+  command: ["python", "-m", "app.auth.seed"]
+
+ingress:
+  enabled: true
+  className: alb
+  host: ""
+  certificateArn: ""
+  annotations: {}
+
+serviceAccount:
+  app:
+    create: true
+    annotations: {}                  # IRSA: eks.amazonaws.com/role-arn 은 values-<env> 에서
+  batch:
+    create: true
+    annotations: {}
+
+hpa:
+  enabled: true
+  min: 2
+  max: 6
+  cpu: 70
+
+pdb:
+  enabled: true
+  minAvailable: 1
+
+networkPolicy:                       # D17. 규칙은 그때 작성
+  enabled: false
+
+postgres:                            # kind 전용 내장 DB
+  enabled: false
+  image: pgvector/pgvector:0.8.7-pg16-bookworm
+  waitImage: busybox:1.37
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 512Mi }

@@ -1,0 +1,51 @@
+{{- /* B20 삭제 배치. app 이미지 재사용, 명령만 다르다. 모듈이 생기면 values-<env> 에서 enabled: true */ -}}
+{{- $cj := .Values.cronjobs.purge }}
+{{- if $cj.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "nesume.fullname" . }}-purge
+  labels:
+    {{- include "nesume.labels" . | nindent 4 }}
+    app.kubernetes.io/component: batch
+spec:
+  schedule: {{ $cj.schedule | quote }}
+  timeZone: Etc/UTC
+  suspend: {{ $cj.suspend }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  startingDeadlineSeconds: 600
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 3600
+      template:
+        metadata:
+          labels:
+            {{- include "nesume.selectorLabels" (dict "root" . "component" "batch") | nindent 12 }}
+            app.kubernetes.io/job: purge
+        spec:
+          restartPolicy: Never
+          serviceAccountName: {{ include "nesume.batchServiceAccountName" . }}
+          securityContext:
+            {{- include "nesume.appPodSecurityContext" . | nindent 12 }}
+          containers:
+            - name: purge
+              image: {{ include "nesume.appImage" . }}
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              command:
+                {{- toYaml $cj.command | nindent 16 }}
+              envFrom:
+                {{- include "nesume.envFrom" . | nindent 16 }}
+              securityContext:
+                {{- include "nesume.containerSecurityContext" . | nindent 16 }}
+              resources:
+                {{- toYaml .Values.cronjobs.resources | nindent 16 }}
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}
+{{- end }}
