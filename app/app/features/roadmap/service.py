@@ -20,6 +20,9 @@ from app.features.roadmap.schedule import WeeklyPlan, build_schedule
 from app.features.skill_gap.gap import LearningGap
 from app.models.learning import LearningContent, LearningRoadmap, LearningRoadmapItem
 
+#: 로드맵 항목 1행 = (항목, 딸린 콘텐츠 or None). 조회·설명 생성이 공유하는 모양.
+RoadmapRow = tuple[LearningRoadmapItem, LearningContent | None]
+
 
 @dataclass(frozen=True)
 class RoadmapPlan:
@@ -173,7 +176,7 @@ def get_roadmap(session: Session, *, roadmap_id: uuid.UUID, owner_id: str) -> Le
 
 def get_items(
     session: Session, *, roadmap_id: uuid.UUID, owner_id: str
-) -> list[tuple[LearningRoadmapItem, LearningContent | None]]:
+) -> list[RoadmapRow]:
     """로드맵 항목 + 딸린 콘텐츠(시스템 항목만, 사용자 항목은 None). 주차·순서순.
 
     콘텐츠가 비활성/삭제돼도(`content_id` SET NULL) 항목은 남는다(outer join).
@@ -201,6 +204,15 @@ def update_weekly_hours(
 def delete_roadmap(session: Session, *, roadmap_id: uuid.UUID, owner_id: str) -> None:
     """로드맵 삭제(항목 CASCADE). 본인 것만."""
     session.delete(_owned(session, roadmap_id, owner_id))
+
+
+def set_explanation(
+    session: Session, *, roadmap_id: uuid.UUID, owner_id: str, text: str
+) -> LearningRoadmap:
+    """A8이 생성한 "왜 이 순서" 설명을 저장(재조회 시 LLM 재호출 없이 표시). 본인 것만."""
+    rm = _owned(session, roadmap_id, owner_id)
+    rm.explanation = text
+    return rm
 
 
 def add_user_item(

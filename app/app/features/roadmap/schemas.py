@@ -116,6 +116,8 @@ class RoadmapOut(BaseModel):
     job_posting_id: uuid.UUID | None
     weekly_hours: int
     grade: str
+    #: "왜 이 순서인지" LLM 설명(A8 경유). 아직 생성 안 했으면 null.
+    explanation: str | None = None
     created_at: datetime
     updated_at: datetime
     items: list[RoadmapItemOut] = Field(default_factory=list)

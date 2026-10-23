@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.auth import AuthenticatedUser
 from app.db import get_db
 from app.features.roadmap import service
+from app.features.roadmap.explain import explain
 from app.features.roadmap.schemas import (
     ItemUpdate,
     RoadmapCreate,
@@ -25,10 +26,23 @@ from app.features.roadmap.schemas import (
     RoadmapUpdate,
     UserItemCreate,
 )
+from app.guardrail import Guardrail, LlmUnavailable
 from app.models.learning import LearningContent, LearningRoadmap, LearningRoadmapItem
 
 router = APIRouter(prefix="/roadmaps", tags=["roadmaps"])
 Db = Annotated[Session, Depends(get_db)]
+
+
+def get_guardrail() -> Guardrail:
+    """A8 파이프라인(기능은 이것만 호출, llm_client 직접 import 금지). 프로바이더 배선은 D 통합 시.
+
+    A `matching`/`style` 라우터와 같은 패턴 — 기본 생성자는 `NotConfiguredProvider`라
+    실제 호출 시 `LlmUnavailable`. 테스트·import는 되고 런타임 LLM만 막힌다.
+    """
+    return Guardrail()
+
+
+GuardrailDep = Annotated[Guardrail, Depends(get_guardrail)]
 
 _NOT_FOUND = HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
 
@@ -92,6 +106,26 @@ def create_roadmap(payload: RoadmapCreate, user: AuthenticatedUser, db: Db):
     )
     db.flush()
     return _roadmap_out(db, roadmap, user.sub)
+
+
+@router.post("/{roadmap_id}/explain", response_model=RoadmapOut)
+async def explain_roadmap(roadmap_id: uuid.UUID, user: AuthenticatedUser, db: Db, guard: GuardrailDep):
+    """"왜 이 순서인지" 설명을 A8 경유로 생성·저장. 로드맵은 데이터로 펜싱(LLM이 못 지어냄).
+
+    LLM 프로바이더 미배선(D 통합 전)이면 503 — 로드맵 자체는 설명 없이도 동작한다.
+    """
+    try:
+        service.get_roadmap(db, roadmap_id=roadmap_id, owner_id=user.sub)  # 소유 확인
+    except service.RoadmapNotFound:
+        raise _NOT_FOUND from None
+    rows = service.get_items(db, roadmap_id=roadmap_id, owner_id=user.sub)
+    try:
+        text = await explain(guard, rows, user_id=user.sub, role=user.role.value)
+    except LlmUnavailable:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "LLM 미배선") from None
+    rm = service.set_explanation(db, roadmap_id=roadmap_id, owner_id=user.sub, text=text)
+    db.flush()
+    return _roadmap_out(db, rm, user.sub)
 
 
 @router.get("", response_model=list[RoadmapOut])
