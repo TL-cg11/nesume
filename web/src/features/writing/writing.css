@@ -1,11 +1,28 @@
-/* 글 다듬기 화면 전용. 값은 theme.css 변수만 사용 (프론트 가이드 8절) */
+/* 글 다듬기 화면 전용 (A7·A13·A14). 값은 theme.css 변수만 사용 (프론트 가이드 8절) */
 
-.wr-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 420px); gap: var(--space-4); align-items: start; }
-@media (max-width: 720px) { .wr-grid { grid-template-columns: 1fr; } }
+.wr-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 480px); gap: var(--space-4); align-items: start; }
+@media (max-width: 720px) {
+  .wr-grid { grid-template-columns: 1fr; }
+  /* 좁은 화면에서는 입력창을 줄인다 — 420px 면 탭이 화면 밖으로 밀려 한참 내려야 보인다 */
+  .wr-input { min-height: 220px; }
+  .wr-tab-hint { display: none; }
+}
 
-.wr-input { width: 100%; min-height: 340px; line-height: var(--leading); resize: vertical; }
+.wr-input { width: 100%; min-height: 420px; line-height: var(--leading); resize: vertical; }
 .wr-count { color: var(--muted); font-size: var(--text-sm); }
 .wr-count.over { color: var(--danger); font-weight: 600; }
+
+/* 탭 — 같은 글을 보는 세 가지 검사 */
+.wr-tabs { display: flex; gap: var(--space-1); border-bottom: 1px solid var(--border); }
+.wr-tab {
+  flex: 1; display: flex; flex-direction: column; gap: 2px; align-items: flex-start;
+  background: transparent; border: 0; border-bottom: 2px solid transparent;
+  border-radius: 0; padding: var(--space-2); color: var(--muted);
+  font-weight: 600; text-align: left; cursor: pointer;
+}
+.wr-tab:hover { color: var(--fg); background: var(--surface); }
+.wr-tab.on { color: var(--accent-text); border-bottom-color: var(--accent); background: transparent; }
+.wr-tab-hint { font-size: var(--text-sm); font-weight: 400; color: var(--muted); }
 
 /* STAR 요약 */
 .wr-star { margin-bottom: var(--space-3); }
@@ -33,3 +50,23 @@
 /* 바뀌는 부분 — 색만으로 구분하지 않도록 취소선·굵기도 함께 준다 (가이드 10절) */
 .wr-from { text-decoration: line-through; color: var(--danger); }
 .wr-to { color: var(--success); font-weight: 600; }
+
+/* 글자 수·말투 요약 카드 */
+.wr-metric { padding: var(--space-3); }
+.wr-metric .list > li { padding: var(--space-2) 0; }
+
+/* AI 가 다시 쓴 글 */
+.wr-rewrite { padding: var(--space-3); border-color: var(--accent); }
+.wr-rewrite p { margin: var(--space-2) 0 0; line-height: var(--leading); }
+
+/* 입력 한 쌍 (제한·문체) */
+.wr-field { display: flex; flex-direction: column; gap: 2px; }
+.wr-field input { width: 110px; }
+
+/* 프롬프트에 들어가는 문단 — 무엇이 모델에 가는지 그대로 보여준다 */
+.wr-fragment summary { cursor: pointer; color: var(--accent-text); font-size: var(--text-sm); }
+.wr-fragment pre {
+  margin: var(--space-2) 0 0; padding: var(--space-3);
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  white-space: pre-wrap; font-family: inherit; font-size: var(--text-sm); line-height: var(--leading);
+}
