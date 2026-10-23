@@ -86,7 +86,9 @@ def search_personal(
         .order_by(dist)
         .limit(top_k)
     )
-    # TODO(B 통합): 고등급(sensitive·confidential) 심층 방어 — 벡터 행의 복제된 shared_with만
-    #   믿지 말고 원본 `resumes`(shared_with·deleted_at)와 EXISTS 조인으로 재확인(docs/C3.md #1 ③).
-    #   B의 resumes 모델(컬럼·관계) 확정 후 추가. 추측 SQL은 접근통제 사고 위험이라 지금은 미구현.
+    # TODO(B 통합): 공유(멘토) 경로 심층 방어 — 벡터 행의 복제된 shared_with만 믿지 말고 원본 `shares`로
+    #   EXISTS 재확인(B 확정 2026-10-23): shares.resume_id=자소서 AND shared_with=요청자
+    #   AND revoked_at IS NULL AND expires_at > now(), 그리고 resumes.deleted_at IS NULL.
+    #   ※ 등급 기반 아님 — B8 이후 resumes는 전부 personal(고등급 부재)이라 등급 게이트는 死코드.
+    #   멘토가 공유로 접근한 결과를 shares로 재확인. B `shares`/`resumes` 모델 확정 후 추가(docs/C6.md).
     return session.execute(stmt).all()
