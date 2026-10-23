@@ -7,24 +7,40 @@ C2 정책 로더가 만든 WHERE를 벡터 검색에 **강제로** 붙인다. �
 런타임 동작은 `poc/c3_c6_e2e_poc.py`로 검증됨(실 A1 mask + bge-m3(1024) + pgvector + C2 필터, ALL PASS).
 유사도는 코사인(bge-m3 정규화) → `cosine_distance`. 필터+HNSW 조합은 iterative_scan으로 정확도 유지(C1 결론).
 """
-from pathlib import Path
-
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-import app.policy.policy as policy_mod
 from app.models.embedding import MODEL_VERSION, JobPostingEmbedding, UserProfileEmbedding
 from app.models.posting import JobPosting
-from app.policy.policy import build_where
+from app.policy.policy import Policy, build_where, default_matrix_path
 
-#: 정책은 `app/app/policy/matrix.yaml`(D2 공식본 나오면 교체)에서 1회 로드
-_policy = policy_mod.Policy.load(str(Path(policy_mod.__file__).parent / "matrix.yaml"))
+#: 정책 매트릭스 1회 로드. 경로는 env `POLICY_MATRIX_PATH`(D2 공식본) 우선, 없으면 번들.
+_policy = Policy.load(default_matrix_path())
 
 #: 필터와 함께 HNSW를 쓸 때 ANN이 필터를 건너뛰어 누락하는 걸 막는다(C1 결론)
 _ITERATIVE_SCAN = "SET LOCAL hnsw.iterative_scan = 'strict_order'"
 
+#: 공유(멘토) 경로 심층 방어(B 확정 2026-10-23). 벡터 행의 복제 shared_with(B10 동기화분)만 믿지 않고
+#: 원본 `shares`+`resumes`로 재확인한다 — 동기화 실패·지연 시 끊긴 공유가 벡터 행에 남아 새는 걸 막는다.
+#: 본인 소유(owner_id)는 shares 불필요. 경험(source_type='experience')은 shares가 없어 EXISTS가 안 맞아
+#: 자연히 owner만 통과(멘토는 공유 자소서만 봄). ※ `:dd_uid`는 C2 WHERE의 `:uid`와 겹치지 않게 분리.
+_SHARES_RECHECK = (
+    "(owner_id = :dd_uid OR EXISTS ("
+    " SELECT 1 FROM shares s JOIN resumes r ON r.id = s.resume_id"
+    " WHERE s.resume_id = user_profile_embeddings.source_id"
+    " AND s.shared_with = :dd_uid AND s.revoked_at IS NULL"
+    " AND s.expires_at > now() AND r.deleted_at IS NULL))"
+)
 
-def search_public(session: Session, query_embedding: list[float], *, top_k: int = 20):
+
+def search_public(
+    session: Session,
+    query_embedding: list[float],
+    *,
+    region_codes: list[str] | None = None,
+    job_codes: list[str] | None = None,
+    top_k: int = 20,
+):
     """공개 인덱스(공고) 검색. grade=public뿐이라 역할 접근 필터는 없다.
 
     단 적대적 패스 결과로 두 가지를 강제한다(docs/C6.md):
@@ -38,9 +54,13 @@ def search_public(session: Session, query_embedding: list[float], *, top_k: int 
         .join(JobPosting, JobPosting.id == JobPostingEmbedding.source_id)
         .where(JobPosting.is_active.is_(True), JobPosting.needs_review.is_(False))
         .where(JobPostingEmbedding.model_version == MODEL_VERSION)
-        .order_by(dist)
-        .limit(top_k)
     )
+    # C8 추천 필터(지역·직무) — 검색 WHERE에 얹어 사전 필터(사후 아님). 값은 사용자 선택(런타임).
+    if region_codes:
+        stmt = stmt.where(JobPosting.region_code.in_(region_codes))
+    if job_codes:
+        stmt = stmt.where(JobPosting.job_code.in_(job_codes))
+    stmt = stmt.order_by(dist).limit(top_k)
     return session.execute(stmt).all()
 
 
@@ -75,10 +95,10 @@ def search_personal(
         .where(text(where_sql).bindparams(**params))
         .where(UserProfileEmbedding.deleted_at.is_(None))  # 소프트 삭제 제외(B 요청, 30일 전까지)
         .where(UserProfileEmbedding.model_version == MODEL_VERSION)  # 버전 혼재 방지(적대적 패스)
-        .order_by(dist)
-        .limit(top_k)
     )
-    # TODO(B 통합): 고등급(sensitive·confidential) 심층 방어 — 벡터 행의 복제된 shared_with만
-    #   믿지 말고 원본 `resumes`(shared_with·deleted_at)와 EXISTS 조인으로 재확인(docs/C3.md #1 ③).
-    #   B의 resumes 모델(컬럼·관계) 확정 후 추가. 추측 SQL은 접근통제 사고 위험이라 지금은 미구현.
+    # 심층 방어: 공유(멘토) 경로가 있을 때만 원본 shares/resumes로 재확인(운영자 scope=all엔 적용 안 함 —
+    # 전체 열람이 정당하고 PII는 A1 mask로 가린다). 본인 소유는 shares 불필요.
+    if any(c.scope == "shared" for c in conds):
+        stmt = stmt.where(text(_SHARES_RECHECK).bindparams(dd_uid=user_id))
+    stmt = stmt.order_by(dist).limit(top_k)
     return session.execute(stmt).all()

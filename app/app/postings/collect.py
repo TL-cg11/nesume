@@ -1,22 +1,30 @@
 """C4 — 서울 열린데이터광장 공고 수집 (파서 + 오케스트레이션).
 
 파서 `parse_seoul_row`는 순수(stdlib만) — 응답 1건 dict를 모델 필드 dict로 변환한다.
-`run_collection`은 건강성 게이트 → upsert → 사라짐 처리를 묶는다(DB·A1 mask 필요).
-실제 호출(httpx)·스케줄(하루 1회 CronJob)은 D5 인프라. 여기선 로직만.
+`fetch_all_seoul`은 stdlib(urllib)로 전량 조회(주소·키는 env, D가 Secrets로 주입).
+`run_collection`은 건강성 게이트 → upsert → 사라짐 처리 → 이력 기록을 묶는다(DB·A1 mask 필요).
+스케줄(하루 1회 CronJob)·Secrets 주입은 D5 인프라.
 
 저장 제외(Plan.md 1-6): CONTACT_TELNO·EMP_CHARGER_DPT(연락처)·CORP_ADDR·STRTNM_CD 등.
 `job_content`엔 연락처가 섞일 수 있어 upsert 전에 A1 mask를 거친다(spec 공개 등급 마스킹).
 """
 from __future__ import annotations
 
+import json
+import os
 import re
+from collections.abc import Callable
 from datetime import date
 from typing import TYPE_CHECKING, Any
+from urllib.request import urlopen
 
 if TYPE_CHECKING:  # 타입만 — 런타임 DB/의존 import는 함수 안에서 지연 로드
     from sqlalchemy.orm import Session
 
 SOURCE_SEOUL = "seoul"
+
+#: 서울시 recMntList는 1회 최대 1,000건(Plan.md 1-6). 전량(~4만)은 여러 번 나눠 받는다.
+SEOUL_PAGE_SIZE = 1000
 
 _DATE_RE = re.compile(r"(\d{2}|\d{4})-(\d{1,2})-(\d{1,2})")
 _NUM_RE = re.compile(r"\d[\d,]*")
@@ -106,25 +114,76 @@ def parse_seoul_row(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# ---- fetch (서울시 recMntList) ----
+# transport(fetch_page)를 주입 가능하게 해, 네트워크 없이 페이지네이션 로직을 단위 테스트한다.
+
+def _extract_page(payload: dict[str, Any]) -> tuple[list[dict[str, Any]], int]:
+    """응답 1페이지에서 (행 목록, 전체 건수) 추출. 오류는 HTTP 200 + 본문 코드로 옴(Plan.md 1-5)."""
+    svc = payload.get("recMntList") or {}
+    result = svc.get("RESULT") or {}
+    code = result.get("CODE", "")
+    if code and not code.startswith("INFO-0"):  # INFO-000 = 성공
+        raise RuntimeError(f"Seoul API error: {code} {result.get('MESSAGE', '')}")
+    return (svc.get("row") or []), int(svc.get("list_total_count") or 0)
+
+
+def _default_fetch_page(start: int, end: int, *, timeout: int = 30) -> dict[str, Any]:
+    """env의 서울시 주소·키로 한 페이지 조회(https만). 키·주소는 D가 Secrets로 주입."""
+    base = os.environ.get("SEOUL_OPENAPI_BASE_URL")
+    key = os.environ.get("SEOUL_OPENAPI_KEY")
+    if not base or not key:
+        raise RuntimeError("SEOUL_OPENAPI_BASE_URL/SEOUL_OPENAPI_KEY env 필요 (D 주입)")
+    url = f"{base.rstrip('/')}/{key}/json/recMntList/{start}/{end}/"
+    if not url.startswith("https://"):
+        raise ValueError("https URL만 허용")
+    with urlopen(url, timeout=timeout) as resp:  # 신뢰된 고정 API(env 기반) — 사용자 입력 아님
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def fetch_all_seoul(
+    *,
+    fetch_page: Callable[[int, int], dict[str, Any]] | None = None,
+    page_size: int = SEOUL_PAGE_SIZE,
+    max_calls: int = 100,
+) -> list[dict[str, Any]]:
+    """서울시 공고 전량 조회(1,000건씩 페이지네이션). `fetch_page` 주입 시 테스트용.
+
+    `max_calls`로 무한 루프 방지(전량 ~40회). 전체 건수 도달 또는 빈 페이지면 종료.
+    """
+    fetch_page = fetch_page or _default_fetch_page
+    rows: list[dict[str, Any]] = []
+    start, calls = 1, 0
+    while calls < max_calls:
+        page_rows, total = _extract_page(fetch_page(start, start + page_size - 1))
+        rows.extend(page_rows)
+        calls += 1
+        if not page_rows or len(rows) >= total:
+            break
+        start += page_size
+    return rows
+
+
 def run_collection(
     session: Session,
     rows: list[dict[str, Any]],
     *,
-    recent_counts: list[int],
+    recent: list[int] | None = None,
     source: str = SOURCE_SEOUL,
 ) -> dict[str, Any]:
-    """전량 재수집분 1회 처리: 건강성 게이트 → 파싱·mask·upsert → 사라짐 처리.
+    """전량 재수집분 1회 처리: 건강성 게이트 → 파싱·mask·upsert → 사라짐 처리 → 이력 기록.
 
-    `recent_counts`: 최근 정상 수집 건수 이력(게이트 기준선). 호출측(수집 이력 저장, D)에서 공급.
-    반환: 처리 요약(gate reason·upsert 액션 집계·비활성 건수).
+    `recent`(기준선용 최근 정상 건수)를 안 주면 `collection_runs`에서 읽는다. 처리 끝에
+    이번 수집을 기록해 다음 게이트의 기준선이 된다. 반환: 요약(gate·액션 집계·비활성 수).
     """
     # 지연 import — 파서를 쓰는 쪽(테스트)이 DB/A1 없이도 모듈을 import할 수 있게.
     from app.pii import mask
     from app.postings.health import evaluate_health
     from app.postings.identity import Action, link_key
-    from app.postings.upsert import apply_absences, upsert_posting
+    from app.postings.upsert import apply_absences, recent_counts, record_run, upsert_posting
 
-    gate = evaluate_health(len(rows), recent_counts)
+    if recent is None:
+        recent = recent_counts(session, source=source)
+    gate = evaluate_health(len(rows), recent)
 
     counts = {a: 0 for a in Action}
     seen: list[str] = []
@@ -146,6 +205,7 @@ def run_collection(
         counts[action] += 1
 
     deactivated = apply_absences(session, source=source, seen_link_keys=seen, gate=gate)
+    record_run(session, source=source, received=len(rows), healthy=gate.healthy, reason=gate.reason)
     return {
         "gate": gate.reason,
         "healthy": gate.healthy,

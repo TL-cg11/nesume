@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.posting import JobPosting
+from app.models.posting import CollectionRun, JobPosting
 from app.postings.health import DELETE_CANDIDATE_STREAK, GateDecision
 from app.postings.identity import (
     Action,
@@ -165,3 +165,22 @@ def delete_candidates(session: Session, *, source: str) -> list[JobPosting]:
             )
         ).scalars()
     )
+
+
+# ---- 수집 이력 (건강성 게이트 기준선) ----
+
+def recent_counts(session: Session, *, source: str, n: int = 7) -> list[int]:
+    """최근 '정상(healthy)' 수집 건수 n개(최신순). 게이트 기준선(중앙값) 입력."""
+    return list(
+        session.execute(
+            select(CollectionRun.received)
+            .where(CollectionRun.source == source, CollectionRun.healthy.is_(True))
+            .order_by(CollectionRun.ran_at.desc())
+            .limit(n)
+        ).scalars()
+    )
+
+
+def record_run(session: Session, *, source: str, received: int, healthy: bool, reason: str) -> None:
+    """이번 수집 1회를 기록(다음 게이트의 기준선 재료)."""
+    session.add(CollectionRun(source=source, received=received, healthy=healthy, reason=reason))

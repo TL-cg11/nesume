@@ -12,10 +12,13 @@ from app.core.errors import register_exception_handlers
 from app.core.logging import setup_logging
 from app.core.request_id import RequestIdMiddleware
 from app.core.storage.router import router as downloads_router
+from app.features.applications.router import router as applications_router
 from app.features.audit.router import router as audit_router
 from app.features.experiences.router import links_router as experience_links_router
 from app.features.experiences.router import router as experiences_router
+from app.features.recommend.router import router as recommend_router
 from app.features.resumes.router import router as resumes_router
+from app.features.roadmap.router import router as roadmap_router
 
 
 def create_app() -> FastAPI:
@@ -41,6 +44,9 @@ def create_app() -> FastAPI:
     application.include_router(experience_links_router)
     application.include_router(downloads_router)
     application.include_router(audit_router)
+    application.include_router(applications_router)  # C15 지원 현황
+    application.include_router(recommend_router)  # C8 공고 추천
+    application.include_router(roadmap_router)  # C14 학습 로드맵
     return application
 
 
