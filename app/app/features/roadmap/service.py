@@ -10,6 +10,7 @@ LLM은 여기 없다 — 이 배치 결과 위에 "왜 이 순서인지" 설명�
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 from sqlalchemy import select
@@ -48,6 +49,50 @@ def _to_ref(row: LearningContent) -> ContentRef:
         certificate=row.certificate,
         provider=row.provider,
     )
+
+
+def upsert_contents(session: Session, courses: Iterable[object]) -> dict[str, int]:
+    """K-MOOC 수집 결과(`KmoocCourse`)를 `LearningContent`로 upsert((source, external_id) 기준).
+
+    메타(제목·URL·시간·분류·수료증 등)만 갱신하고 **`competency_keys`는 건드리지 않는다** —
+    역량 매칭 키는 별도 색인 단계가 채운다(docs/C14.md). external_id·title·url 없는 건 건너뛴다.
+    반환: {inserted, updated, skipped}. 배치(`app.batch.jobs_collector`)가 호출.
+    """
+    from app.features.roadmap.kmooc import KMOOC_SOURCE  # 지연 import(순환·망구성 분리)
+
+    counts = {"inserted": 0, "updated": 0, "skipped": 0}
+    for c in courses:
+        external_id = getattr(c, "external_id", "")
+        if not external_id or not getattr(c, "title", "") or not getattr(c, "url", ""):
+            counts["skipped"] += 1
+            continue
+        values = {
+            "title": c.title,
+            "url": c.url,
+            "provider": c.provider,
+            "est_hours": c.est_hours,
+            "weeks": c.weeks,
+            "summary": c.summary,
+            "classfy": c.classfy,
+            "rating": c.rating,
+            "certificate": c.certificate,
+            "mode": "online",
+            "is_active": True,
+        }
+        existing = session.execute(
+            select(LearningContent).where(
+                LearningContent.source == KMOOC_SOURCE,
+                LearningContent.external_id == external_id,
+            )
+        ).scalars().first()
+        if existing is None:
+            session.add(LearningContent(source=KMOOC_SOURCE, external_id=external_id, **values))
+            counts["inserted"] += 1
+        else:
+            for k, v in values.items():
+                setattr(existing, k, v)
+            counts["updated"] += 1
+    return counts
 
 
 def fetch_contents(
