@@ -1,0 +1,14 @@
+{{- if .Values.pdb.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "nesume.fullname" . }}-app
+  labels:
+    {{- include "nesume.labels" . | nindent 4 }}
+    app.kubernetes.io/component: app
+spec:
+  minAvailable: {{ .Values.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "nesume.selectorLabels" (dict "root" . "component" "app") | nindent 6 }}
+{{- end }}

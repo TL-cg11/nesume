@@ -1,0 +1,44 @@
+{{- /* D6 자리. 시드 Job(시스템 계정 등). staging values 만 enabled: true. 내용·env 는 D6 문서에서 정한다. */ -}}
+{{- if .Values.seed.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "nesume.fullname" . }}-seed
+  labels:
+    {{- include "nesume.labels" . | nindent 4 }}
+    app.kubernetes.io/component: seed
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "5"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        {{- include "nesume.selectorLabels" (dict "root" . "component" "seed") | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "nesume.appServiceAccountName" . }}
+      securityContext:
+        {{- include "nesume.appPodSecurityContext" . | nindent 8 }}
+      containers:
+        - name: seed
+          image: {{ include "nesume.appImage" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            {{- toYaml .Values.seed.command | nindent 12 }}
+          envFrom:
+            {{- include "nesume.envFrom" . | nindent 12 }}
+          securityContext:
+            {{- include "nesume.containerSecurityContext" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.app.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+{{- end }}

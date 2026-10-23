@@ -1,0 +1,78 @@
+{{- /*
+alembic upgrade head.
+  migrate.hook=true  (dev/staging/prod): pre-install/pre-upgrade hook. 앱 파드보다 먼저 완료된다.
+  migrate.hook=false (kind): 일반 Job. 내장 Postgres 가 같은 릴리스 안에 있어 hook 으로는 DB 보다 먼저 돌아 실패한다.
+*/ -}}
+{{- if .Values.migrate.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "nesume.fullname" . }}-migrate
+  labels:
+    {{- include "nesume.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrate
+  {{- if .Values.migrate.hook }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-5"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+  {{- end }}
+spec:
+  backoffLimit: {{ .Values.migrate.backoffLimit }}
+  ttlSecondsAfterFinished: {{ .Values.migrate.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        {{- include "nesume.selectorLabels" (dict "root" . "component" "migrate") | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "nesume.appServiceAccountName" . }}
+      securityContext:
+        {{- include "nesume.appPodSecurityContext" . | nindent 8 }}
+      {{- with (include "nesume.waitForDb" . | trim) }}
+      initContainers:
+        {{- . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: migrate
+          image: {{ include "nesume.appImage" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["alembic", "upgrade", "head"]
+          # DB_* 만 필요. ConfigMap/Secret 을 그대로 재사용한다.
+          env:
+            - name: DB_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "nesume.configMapName" . }}
+                  key: DB_HOST
+            - name: DB_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "nesume.configMapName" . }}
+                  key: DB_PORT
+            - name: DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "nesume.configMapName" . }}
+                  key: DB_NAME
+            - name: DB_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "nesume.configMapName" . }}
+                  key: DB_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "nesume.secretName" . }}
+                  key: DB_PASSWORD
+          securityContext:
+            {{- include "nesume.containerSecurityContext" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.app.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+{{- end }}

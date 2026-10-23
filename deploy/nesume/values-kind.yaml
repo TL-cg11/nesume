@@ -1,0 +1,55 @@
+# kind 로컬 검증용. 인증·S3·Ingress 없이 기동·마이그레이션·health 까지만 본다.
+image:
+  registry: ""
+  app: { tag: local }
+  web: { tag: local }
+  pullPolicy: Never                  # kind load docker-image 로 넣은 이미지만 사용
+
+app:
+  replicas: 1
+  readinessPath: /health             # /ready 는 S3 head_bucket 을 포함해 kind 에서는 503
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+
+web:
+  replicas: 1
+
+config:
+  APP_ENV: dev
+  LOG_FORMAT: text
+  LOG_LEVEL: DEBUG
+  DB_HOST: nesume-postgres           # postgres.yaml 의 Service 이름(release=nesume)
+  COGNITO_USER_POOL_ID: ""
+  COGNITO_CLIENT_ID: ""
+  COGNITO_ISSUER: ""
+  COGNITO_JWKS_URL: ""
+
+# kind 에서만 values 에 비밀번호를 적는다.
+secrets:
+  DB_PASSWORD: kind-local-password
+  BATCH_USERNAME: batch@nesume.local
+  BATCH_PASSWORD: kind-batch-password
+  SEED_PASSWORD: kind-seed-password
+
+externalSecrets:
+  enabled: false
+
+migrate:
+  hook: false                        # 내장 Postgres 보다 먼저 돌면 실패하므로 일반 Job + wait-for-db
+
+cronjobs:
+  jobsCollector: { suspend: true }
+  purge: { suspend: true }
+
+ingress:
+  enabled: false
+
+hpa:
+  enabled: false
+
+pdb:
+  enabled: false
+
+postgres:
+  enabled: true

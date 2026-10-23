@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "nesume.fullname" . }}-app
+  labels:
+    {{- include "nesume.labels" . | nindent 4 }}
+    app.kubernetes.io/component: app
+spec:
+  replicas: {{ .Values.app.replicas }}
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "nesume.selectorLabels" (dict "root" . "component" "app") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "nesume.selectorLabels" (dict "root" . "component" "app") | nindent 8 }}
+      annotations:
+        # ConfigMap/Secret 이 바뀌면 파드를 재시작한다.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- if not .Values.externalSecrets.enabled }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "nesume.appServiceAccountName" . }}
+      terminationGracePeriodSeconds: {{ .Values.app.terminationGracePeriodSeconds }}
+      securityContext:
+        {{- include "nesume.appPodSecurityContext" . | nindent 8 }}
+      {{- with (include "nesume.waitForDb" . | trim) }}
+      initContainers:
+        {{- . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: app
+          image: {{ include "nesume.appImage" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8000
+          # APP_VERSION 은 이미지 ENV 에 이미 있다. 여기서 넣으면 이미지 값이 가려진다.
+          envFrom:
+            {{- include "nesume.envFrom" . | nindent 12 }}
+          startupProbe:
+            httpGet:
+              path: {{ .Values.app.startupPath }}
+              port: http
+            periodSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.app.livenessPath }}
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.app.readinessPath }}
+              port: http
+            periodSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            {{- include "nesume.containerSecurityContext" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.app.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

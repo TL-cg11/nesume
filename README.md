@@ -200,7 +200,9 @@ AWS 전환 시 처리할 항목:
 
 - `USER_PASSWORD_AUTH`만 지원 → AWS에서는 `USER_SRP_AUTH`로 전환
 - MFA는 SMS만 지원, TOTP 일부 구현 → TOTP MFA는 AWS 전환 후 검증
-- `GlobalSignOut` 미지원 → 계정 삭제 후 토큰 무효화는 AWS에서 검증
+- `GlobalSignOut`·`AdminUserGlobalSignOut` 미지원 → 역할 변경(D6 `PUT /admin/users/{id}/role`)·계정 삭제 후 무효화는 로컬에서 `users.token_not_before`로만 동작. AWS에서 검증
+- `client_credentials`(M2M) 미지원 → 시스템 토큰은 그룹 `system`의 서비스 계정(`svc-batch@`)이 USER_PASSWORD_AUTH로 받는다
+- 역할 그룹(`mentor`/`operator`/`system`)과 `test` 그룹, 시드 계정 5개는 `init/cognito/db/`가 아니라 시드 스크립트가 만든다: `docker compose run --rm -e SEED_PASSWORD='<pw>' test python -m app.auth.seed` (볼륨 초기화 후 재실행)
 - 확인 코드(가입·MFA)는 메일 대신 `docker compose logs cognito`에 출력됨
 - 백엔드는 `COGNITO_ISSUER`(iss 검증)와 `COGNITO_JWKS_URL`(키 조회)을 분리해서 사용. `openid-configuration`은 주소가 고정되어 있어 사용하지 않는다.
 

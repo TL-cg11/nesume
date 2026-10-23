@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "nesume.appServiceName" . }}
+  labels:
+    {{- include "nesume.labels" . | nindent 4 }}
+    app.kubernetes.io/component: app
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "nesume.selectorLabels" (dict "root" . "component" "app") | nindent 4 }}
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http

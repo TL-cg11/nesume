@@ -6,6 +6,7 @@
 """
 from fastapi import FastAPI
 
+from app.auth.admin_router import router as admin_router
 from app.config import get_settings
 from app.core import health
 from app.core.errors import register_exception_handlers
@@ -56,6 +57,7 @@ def create_app() -> FastAPI:
     application.include_router(style_router)
     application.include_router(profile_router)
     application.include_router(writing_router)  # A7 글 다듬기
+    application.include_router(admin_router)  # D6 운영자 역할 변경
     return application
 
 

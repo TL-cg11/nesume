@@ -37,8 +37,22 @@ class Settings(BaseSettings):
 
     cognito_user_pool_id: str | None = None
     cognito_client_id: str | None = None
+    # D6/D7: 앱 클라이언트가 web·runner 둘이라 복수 허용(쉼표 구분). 비어 있으면 cognito_client_id 하나.
+    cognito_client_ids: str = ""
     cognito_issuer: str | None = None
     cognito_jwks_url: str | None = None
+    # 로컬(cognito-local) 전용 엔드포인트. AWS 에서는 미설정. 시드·admin API 의 cognito-idp 호출에만 쓴다.
+    cognito_local_endpoint: str | None = None
+    # D7: 운영자 보호 API 는 TOTP 등록 + 최근 N분 내 로그인(auth_time)을 요구한다.
+    operator_mfa_required: bool = True
+    mfa_session_minutes: int = 15
+
+    @property
+    def cognito_client_id_set(self) -> frozenset[str]:
+        ids = {c.strip() for c in self.cognito_client_ids.split(",") if c.strip()}
+        if not ids and self.cognito_client_id:
+            ids = {self.cognito_client_id}
+        return frozenset(ids)
 
     @property
     def is_local(self) -> bool:

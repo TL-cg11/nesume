@@ -1,0 +1,19 @@
+{{ include "nesume.fullname" . }} installed in namespace {{ .Release.Namespace }}.
+
+  app image : {{ include "nesume.appImage" . }}
+  web image : {{ include "nesume.webImage" . }}
+  APP_ENV   : {{ .Values.config.APP_ENV }}
+
+Check rollout:
+  kubectl -n {{ .Release.Namespace }} rollout status deploy/{{ include "nesume.fullname" . }}-app
+  kubectl -n {{ .Release.Namespace }} rollout status deploy/{{ include "nesume.fullname" . }}-web
+
+{{- if not .Values.ingress.enabled }}
+
+Ingress is disabled. Port-forward the web service:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "nesume.webServiceName" . }} 8080:8080
+  curl -i http://localhost:8080/api/health
+{{- else }}
+
+Ingress host: https://{{ .Values.ingress.host }}
+{{- end }}
