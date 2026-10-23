@@ -55,6 +55,7 @@ secrets:
   DB_PASSWORD: ""
   BATCH_USERNAME: ""                 # D6 시스템 계정(배치용)
   BATCH_PASSWORD: ""
+  SEED_PASSWORD: ""               # D6 시드 계정 공통 비밀번호(seed.enabled 환경만)
 
 externalSecrets:
   enabled: true

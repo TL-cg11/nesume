@@ -110,6 +110,8 @@ services:
       # iss 검증 값(브라우저가 보는 주소)과 JWKS 조회 주소(컨테이너 내부 주소)를 분리
       COGNITO_ISSUER: ${COGNITO_ISSUER_DOMAIN}/${COGNITO_USER_POOL_ID}
       COGNITO_JWKS_URL: http://cognito:9229/${COGNITO_USER_POOL_ID}/.well-known/jwks.json
+      # D6 admin API(역할 변경)·시드가 cognito-idp 를 호출할 때 쓰는 로컬 엔드포인트. AWS 에서는 미설정.
+      COGNITO_LOCAL_ENDPOINT: http://cognito:9229
     ports:
       - "${HOST_BIND_IP}:${APP_PORT:?APP_PORT is required}:8000"
     depends_on:
@@ -137,12 +139,11 @@ services:
     environment:
       <<: *app-env
       APP_ENV: test
-      # 테스트에서 cognito-local에 사용자 생성·로그인할 때 사용
-      COGNITO_LOCAL_ENDPOINT: http://cognito:9229
       # 소스가 읽기 전용(:ro)이라 ruff가 /srv/.ruff_cache를 만들 수 없다. 캐시 없이 실행한다.
       RUFF_NO_CACHE: "true"
     volumes:
       - ./app:/srv:ro
+      - ./eval:/eval:ro
     depends_on:
       db:
         condition: service_healthy

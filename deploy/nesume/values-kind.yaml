@@ -30,6 +30,7 @@ secrets:
   DB_PASSWORD: kind-local-password
   BATCH_USERNAME: batch@nesume.local
   BATCH_PASSWORD: kind-batch-password
+  SEED_PASSWORD: kind-seed-password
 
 externalSecrets:
   enabled: false
