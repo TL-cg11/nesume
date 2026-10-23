@@ -9,6 +9,7 @@
 런타임 동작은 poc/c3_c6_e2e_poc.py로 검증.
 """
 import uuid
+from datetime import datetime
 
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import update as sa_update
@@ -100,8 +101,23 @@ def reconcile_shared_with(
     return len(authoritative)
 
 
+def mark_personal_deleted(
+    session: Session, *, source_id: uuid.UUID, deleted_at: datetime | None
+) -> None:
+    """원본(자소서·경험) **소프트 삭제**를 임베딩에 반영한다(B4·B5 삭제와 같은 트랜잭션, B 요청 2026-10-23).
+
+    C6 검색은 `deleted_at IS NULL`만 보므로, 소프트 삭제가 임베딩에 반영 안 되면 물리 삭제(30일) 전까지
+    지운 자소서·경험이 **검색에 계속 뜬다**(유출·오노출). `deleted_at=None`을 주면 복원(재노출)도 된다. 멱등.
+    """
+    session.execute(
+        sa_update(UserProfileEmbedding)
+        .where(UserProfileEmbedding.source_id == source_id)
+        .values(deleted_at=deleted_at)
+    )
+
+
 def delete_personal(session: Session, *, source_id: uuid.UUID) -> None:
-    """원본(자소서·경험) 삭제 시 해당 임베딩 제거(B5 삭제 / B20 물리삭제 연계)."""
+    """원본(자소서·경험) **물리 삭제** 시 해당 임베딩 제거(B20 물리삭제 / 수정 시 재인덱싱 연계)."""
     session.execute(sa_delete(UserProfileEmbedding).where(UserProfileEmbedding.source_id == source_id))
 
 
