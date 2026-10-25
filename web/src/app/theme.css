@@ -2,6 +2,10 @@
  * 테마 (디자인 토큰) — B 소유. 모든 화면은 색·간격·모서리·글꼴을 이 변수로만 쓴다.
  * 값을 바꾸거나 변수를 추가할 때는 B 리뷰. 가이드: docs/dev/frontend-guide.md 8절
  *
+ * 2026-10-25(D7): "쿨 그레이 데스크톱 툴" 테마로 값 교체(발표 시안 jasoseo-mate cool-gray 기준).
+ *   바탕은 옅은 회색, 카드·입력은 흰색, 상단 바는 짙은 남회색, 강조는 청록 계열.
+ *   추가 변수: --header-* (상단 바 전용 4개). 변수 이름·용도는 기존과 같다.
+ *
  * 대비 기준(WCAG AA): 글자 4.5:1 이상, 입력칸 경계 3:1 이상. 값을 바꾸면 다시 계산한다.
  * 다크 모드는 운영체제 설정(prefers-color-scheme)을 따른다.
  * 반응형 기준은 CSS 변수로 쓸 수 없어 숫자로 고정한다: 모바일 전환 720px.
@@ -9,31 +13,37 @@
 
 :root {
   /* --- 색: 바탕 --- */
-  --bg: #ffffff;              /* 페이지 바탕 */
-  --surface: #f6f7f9;         /* 카드·패널·코드 영역 */
+  --bg: #eaf0f2;              /* 페이지 바탕 (쿨 그레이) */
+  --surface: #ffffff;         /* 카드·패널·입력칸 */
 
   /* --- 색: 글자 --- */
-  --fg: #1a1d23;              /* 본문 (bg 대비 16.9) */
-  --muted: #5c6370;           /* 보조 글자: 날짜, 설명 (bg 대비 6.1) */
+  --fg: #1b2032;              /* 본문 (bg 대비 14.0) */
+  --muted: #5f6e7a;           /* 보조 글자: 날짜, 설명 (bg 대비 4.6) */
 
   /* --- 색: 테두리 --- */
-  --border: #e4e7ec;          /* 장식용 구분선·카드 테두리 */
-  --border-input: #868e99;    /* 입력칸·보조 버튼 경계 (bg 대비 3.3) */
+  --border: #dce3e7;          /* 장식용 구분선·카드 테두리 */
+  --border-input: #75848f;    /* 입력칸·보조 버튼 경계 (surface 대비 3.6, bg 대비 3.2) */
 
   /* --- 색: 강조 --- */
-  --accent: #2558d9;          /* 기본 버튼 배경, 링크, 활성 메뉴 (bg 대비 6.0) */
-  --accent-text: #2558d9;     /* 강조색 글자 */
-  --accent-soft: #edf2fd;     /* 선택된 항목 배경 */
-  --on-accent: #ffffff;       /* 강조 배경 위 글자 (accent 대비 6.0) */
+  --accent: #116f98;          /* 기본 버튼 배경 (on-accent 대비 5.6) */
+  --accent-text: #0f6589;     /* 링크·활성 메뉴 글자 (bg 대비 5.6) */
+  --accent-soft: #dceff6;     /* 선택된 항목 배경 */
+  --on-accent: #ffffff;       /* 강조 배경 위 글자 */
   --focus-ring: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent);
 
+  /* --- 색: 상단 바 (짙은 남회색) --- */
+  --header-bg: #30364f;
+  --header-fg: #f8fafc;       /* header-bg 대비 11.4 */
+  --header-muted: #b9c2d0;    /* header-bg 대비 6.8 */
+  --header-active-bg: rgb(255 255 255 / 14%);
+
   /* --- 색: 상태 --- */
-  --danger: #c22a2a;          /* 오류, 삭제 (bg 대비 5.7) */
-  --danger-soft: #fdecec;
-  --warning: #8a5300;         /* 주의 안내 (bg 대비 6.3) */
-  --warning-soft: #fdf4e3;
-  --success: #1d7a3e;         /* 완료, 추가 (bg 대비 5.4) */
-  --success-soft: #e8f5ed;
+  --danger: #b3261e;          /* 오류, 삭제 (bg 대비 5.7) */
+  --danger-soft: #fbe9e7;
+  --warning: #8a5300;         /* 주의 안내 (bg 대비 5.5) */
+  --warning-soft: #fbf1e0;
+  --success: #1d7a3e;         /* 완료, 추가 (bg 대비 4.7) */
+  --success-soft: #e4f4ea;
 
   /* --- 간격 --- */
   --space-1: 4px;
@@ -44,12 +54,12 @@
   --space-6: 32px;
 
   /* --- 모서리 --- */
-  --radius-sm: 6px;           /* 버튼·입력칸 */
-  --radius-md: 10px;          /* 카드·폼 박스 */
+  --radius-sm: 8px;           /* 버튼·입력칸 */
+  --radius-md: 14px;          /* 카드·폼 박스 */
   --radius-pill: 999px;       /* 태그 칩 */
 
   /* --- 글꼴 --- */
-  --font-sans: system-ui, -apple-system, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
+  --font-sans: 'Pretendard', 'Inter', system-ui, -apple-system, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
   --font-mono: ui-monospace, 'SFMono-Regular', Menlo, monospace;
   --text-sm: 13px;            /* 보조 정보 */
   --text-md: 15px;            /* 본문 */
@@ -58,28 +68,32 @@
   --leading: 1.6;
 
   /* --- 그림자·폭 --- */
-  --shadow-sm: 0 1px 2px rgb(16 24 40 / 6%);
+  --shadow-sm: 0 2px 5px rgb(38 55 70 / 5%);
   --content-max: 1080px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0f1115;
-    --surface: #171a20;
-    --fg: #e6e8ec;
-    --muted: #9aa2ad;
-    --border: #262a32;
-    --border-input: #666e7a;
-    --accent: #2f6fe0;
-    --accent-text: #7aa4f5;
-    --accent-soft: #1a2742;
+    --bg: #14181f;
+    --surface: #1c212b;
+    --fg: #e6e9ee;              /* bg 대비 14.6 */
+    --muted: #a1acb8;           /* bg 대비 7.7 */
+    --border: #2a303b;
+    --border-input: #6f7b87;    /* bg 대비 4.1 */
+    --accent: #1684b5;          /* on-accent 대비 4.2 (버튼 글자는 굵게) */
+    --accent-text: #6cc0e6;     /* bg 대비 8.7 */
+    --accent-soft: #15303d;
     --on-accent: #ffffff;
-    --danger: #f07171;
-    --danger-soft: #3a1d1f;
-    --warning: #e0a84a;
-    --warning-soft: #352915;
-    --success: #58c27d;
+    --header-bg: #1c212b;
+    --header-fg: #f1f4f8;
+    --header-muted: #a1acb8;
+    --header-active-bg: rgb(255 255 255 / 10%);
+    --danger: #f28b82;          /* bg 대비 7.5 */
+    --danger-soft: #3a1f1d;
+    --warning: #e3b04b;         /* bg 대비 9.0 */
+    --warning-soft: #352a14;
+    --success: #5fc98a;         /* bg 대비 8.7 */
     --success-soft: #16301f;
-    --shadow-sm: 0 1px 2px rgb(0 0 0 / 40%);
+    --shadow-sm: 0 2px 5px rgb(0 0 0 / 40%);
   }
 }

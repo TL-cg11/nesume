@@ -14,6 +14,10 @@ app:
 
 web:
   replicas: 1
+  auth:
+    flow: USER_PASSWORD_AUTH
+    cognitoEndpoint: ""                # kind 에는 Cognito 가 없다. 로그인 화면은 뜨지만 인증은 확인하지 않는다
+    connectSrc: "'none'"
 
 config:
   APP_ENV: dev
@@ -22,8 +26,11 @@ config:
   DB_HOST: nesume-postgres           # postgres.yaml 의 Service 이름(release=nesume)
   COGNITO_USER_POOL_ID: ""
   COGNITO_CLIENT_ID: ""
+  COGNITO_CLIENT_IDS: ""
+  COGNITO_WEB_CLIENT_ID: ""
   COGNITO_ISSUER: ""
   COGNITO_JWKS_URL: ""
+  OPERATOR_MFA_REQUIRED: "false"
 
 # kind 에서만 values 에 비밀번호를 적는다.
 secrets:

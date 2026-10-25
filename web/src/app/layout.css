@@ -22,25 +22,32 @@ p { margin: 0 0 var(--space-3); }
 a { color: var(--accent-text); }
 
 /* --- 레이아웃 --- */
+/* 상단 바: 짙은 남회색(--header-*). 아래 본문은 옅은 회색 바탕 위에 흰 카드. */
 .app-header {
   display: flex;
   align-items: center;
   gap: var(--space-5);
   padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--border);
-  background: var(--bg);
+  border-bottom: 1px solid var(--header-bg);
+  background: var(--header-bg);
+  color: var(--header-fg);
   flex-wrap: wrap;
+  position: sticky;
+  top: 0;
+  z-index: 20;
 }
-.app-brand { font-weight: 800; font-size: var(--text-lg); color: var(--fg); text-decoration: none; letter-spacing: -0.02em; }
+.app-brand { font-weight: 800; font-size: var(--text-lg); color: var(--header-fg); text-decoration: none; letter-spacing: -0.02em; }
 .app-nav { display: flex; gap: var(--space-1); flex-wrap: wrap; }
 .app-nav a {
-  color: var(--muted);
+  color: var(--header-muted);
   text-decoration: none;
   padding: var(--space-1) var(--space-3);
   border-radius: var(--radius-sm);
 }
-.app-nav a:hover { color: var(--fg); background: var(--surface); }
-.app-nav a.active { color: var(--accent-text); background: var(--accent-soft); font-weight: 600; }
+.app-nav a:hover { color: var(--header-fg); background: var(--header-active-bg); }
+.app-nav a.active { color: var(--header-fg); background: var(--header-active-bg); font-weight: 600; }
+.app-header button.secondary { background: transparent; color: var(--header-fg); border-color: var(--header-muted); }
+.app-header button.secondary:hover:not(:disabled) { background: var(--header-active-bg); }
 .app-main { max-width: var(--content-max); margin: 0 auto; padding: var(--space-5) var(--space-4); }
 
 /* --- 기본 요소: 버튼 --- */
@@ -56,16 +63,16 @@ button {
   font-weight: 600;
 }
 button:hover:not(:disabled) { filter: brightness(1.08); }
-button.secondary { background: var(--bg); color: var(--fg); border-color: var(--border-input); font-weight: 500; }
-button.secondary:hover:not(:disabled) { background: var(--surface); filter: none; }
-button.danger { background: var(--bg); color: var(--danger); border-color: var(--danger); font-weight: 500; }
+button.secondary { background: var(--surface); color: var(--fg); border-color: var(--border-input); font-weight: 500; }
+button.secondary:hover:not(:disabled) { background: var(--accent-soft); filter: none; }
+button.danger { background: var(--surface); color: var(--danger); border-color: var(--danger); font-weight: 500; }
 button.danger:hover:not(:disabled) { background: var(--danger-soft); filter: none; }
 button.link { background: none; border: 0; color: var(--fg); padding: 0; min-height: 0; font-weight: 500; text-align: left; }
 button:disabled { opacity: 0.45; cursor: default; }
 
 /* --- 기본 요소: 입력 --- */
 input, textarea, select {
-  background: var(--bg);
+  background: var(--surface);
   border: 1px solid var(--border-input);
   border-radius: var(--radius-sm);
   padding: var(--space-2) var(--space-3);
@@ -80,7 +87,7 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .stack { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-3); }
 .grow { flex: 1; }
 .muted { color: var(--muted); font-size: var(--text-sm); }
-.card { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-4); box-shadow: var(--shadow-sm); }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-4); box-shadow: var(--shadow-sm); }
 .list { list-style: none; padding: 0; margin: 0; }
 .list > li { padding: var(--space-3) 0; border-bottom: 1px solid var(--border); }
 .list > li:last-child { border-bottom: 0; }
@@ -95,8 +102,4 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .notice { color: var(--warning); background: var(--warning-soft); }
 .success { color: var(--success); background: var(--success-soft); }
 
-/* --- 개발 서버 전용 (운영 빌드에서 DevTokenPanel이 렌더링되지 않음) --- */
-.dev-token { margin-left: auto; display: flex; gap: var(--space-2); align-items: center; font-size: var(--text-sm); }
-.dev-token-label { font-weight: 700; color: var(--warning); }
-.dev-token input { width: 220px; min-height: 30px; }
-.dev-token-state { color: var(--muted); }
+/* 상단 사용자 영역(이메일·역할·로그아웃)은 features/auth/auth.css 의 .auth-user (D7) */

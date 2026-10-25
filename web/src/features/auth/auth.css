@@ -1,0 +1,89 @@
+/* 인증 화면(D7). 값은 theme.css 변수만 쓴다. 접두사 auth- */
+.auth-wrap {
+  min-height: calc(100vh - 120px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: var(--space-6) 0;
+}
+.auth-card {
+  width: 100%;
+  max-width: 420px;
+  padding: var(--space-6);
+  background: var(--surface);
+}
+.auth-eyebrow {
+  margin: 0 0 var(--space-2);
+  color: var(--accent-text);
+  font-size: var(--text-sm);
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.auth-title { margin-bottom: var(--space-2); }
+.auth-subtitle { color: var(--muted); font-size: var(--text-sm); margin-bottom: var(--space-4); }
+
+.auth-form { display: flex; flex-direction: column; gap: var(--space-3); margin-top: var(--space-3); }
+.auth-field { display: flex; flex-direction: column; gap: var(--space-1); }
+.auth-field label { font-size: var(--text-sm); font-weight: 650; color: var(--fg); }
+.auth-field input { width: 100%; }
+.auth-hint { color: var(--muted); font-size: var(--text-sm); }
+.auth-submit { width: 100%; min-height: 40px; margin-top: var(--space-2); }
+
+.auth-footer {
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+/* TOTP 등록 */
+.auth-qr {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  margin: var(--space-3) 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.auth-qr img { width: 180px; height: 180px; border-radius: var(--radius-sm); background: #fff; }
+.auth-secret {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  word-break: break-all;
+  text-align: center;
+  color: var(--muted);
+}
+.auth-code input { letter-spacing: 0.3em; font-family: var(--font-mono); font-size: var(--text-lg); text-align: center; }
+
+/* 상단 사용자 영역(Layout) */
+.auth-user {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--header-muted);
+}
+.auth-user-email { color: var(--header-fg); font-weight: 600; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.auth-role {
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--header-active-bg);
+  color: var(--header-fg);
+  font-weight: 700;
+  font-size: var(--text-sm);
+}
+.auth-user a { color: var(--header-fg); }
+
+@media (max-width: 720px) {
+  .auth-card { padding: var(--space-4); }
+  .auth-user-email { display: none; }
+}

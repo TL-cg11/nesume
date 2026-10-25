@@ -107,6 +107,9 @@ services:
       APP_SECRET_NAME: ${APP_SECRET_NAME}
       COGNITO_USER_POOL_ID: ${COGNITO_USER_POOL_ID:?COGNITO_USER_POOL_ID is required}
       COGNITO_CLIENT_ID: ${COGNITO_CLIENT_ID:?COGNITO_CLIENT_ID is required}
+      # D7: 허용 클라이언트 복수(쉼표). 로컬은 1개. 운영자 MFA 강제는 로컬에서 false 권장(.env)
+      COGNITO_CLIENT_IDS: ${COGNITO_CLIENT_ID}
+      OPERATOR_MFA_REQUIRED: ${OPERATOR_MFA_REQUIRED:-true}
       # iss 검증 값(브라우저가 보는 주소)과 JWKS 조회 주소(컨테이너 내부 주소)를 분리
       COGNITO_ISSUER: ${COGNITO_ISSUER_DOMAIN}/${COGNITO_USER_POOL_ID}
       COGNITO_JWKS_URL: http://cognito:9229/${COGNITO_USER_POOL_ID}/.well-known/jwks.json
@@ -159,6 +162,13 @@ services:
     environment:
       # nginx 템플릿에서 /api/ 요청을 프록시할 대상
       APP_UPSTREAM: app:8000
+      # D7: 기동 시 /config.json 으로 치환되어 브라우저가 읽는 Cognito 설정.
+      # 로컬은 cognito-local 의 "브라우저가 접근하는" 호스트 주소(COGNITO_ISSUER_DOMAIN = http://localhost:9229).
+      COGNITO_USER_POOL_ID: ${COGNITO_USER_POOL_ID}
+      COGNITO_WEB_CLIENT_ID: ${COGNITO_CLIENT_ID}
+      COGNITO_ENDPOINT: ${COGNITO_ISSUER_DOMAIN}
+      AUTH_FLOW: USER_PASSWORD_AUTH
+      COGNITO_CONNECT_SRC: ${COGNITO_ISSUER_DOMAIN}
     ports:
       - "${HOST_BIND_IP}:${WEB_PORT:?WEB_PORT is required}:8080"
     depends_on:

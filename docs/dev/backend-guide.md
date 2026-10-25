@@ -84,9 +84,36 @@ log.info("resume_created", extra={"fields": {"resume_id": str(resume.id)}})
 
 ## 7. 인증
 
-- `from app.auth import AuthenticatedUser`를 핸들러 파라미터로 받는다(B 초안). `user.sub`, `user.role`을 쓴다.
-- D7에서 `require_role`, 운영자 MFA 세션 확인, system 토큰을 추가한다. `CurrentUser`·`get_current_user` 인터페이스는 유지된다.
-- 인증 실패 응답은 FastAPI 기본 `{"detail": "Not authenticated"}`를 유지한다.
+- `from app.auth import AuthenticatedUser`를 핸들러 파라미터로 받는다. `user.sub`, `user.role`, `user.is_test`를 쓴다.
+- 역할은 매 요청 액세스 토큰의 `cognito:groups`에서만 읽는다(DB에 저장하지 않음). 계약은 `docs/D-deliverables/roles-grades.md` 8장.
+- 인증 실패(401) 응답은 FastAPI 기본 `{"detail": "Not authenticated"}`를 유지한다. 권한 부족(403)은 D3 `AppError` 형식(`{"detail","code","request_id"}`).
+
+### 권한 의존성 (D7)
+
+`app/app/auth/dependencies.py`에서 가져와 `Depends(...)`로 건다. 엔드포인트를 만드는 팀(A·B·C·D)이 직접 붙인다.
+
+```python
+from fastapi import Depends
+from app.auth import Role, require_interactive, require_operator_mfa, require_role
+from app.auth.cognito import CurrentUser
+
+@router.post("/rewrite")                                                   # 대화형 LLM: system 계정 차단
+def rewrite(user: CurrentUser = Depends(require_interactive)): ...         # system → 403 interactive_only
+
+@router.get("/shared")                                                     # 특정 역할만
+def shared(user: CurrentUser = Depends(require_role(Role.MENTOR))): ...    # 그 외 → 403 forbidden
+
+@router.put("/templates/{id}/activate")                                    # 운영자 전용
+def activate(user: CurrentUser = Depends(require_operator_mfa)): ...       # operator + TOTP 등록 + 최근 로그인
+```
+
+- **대화형 LLM 엔드포인트**(리라이팅·면접 등)에는 `require_interactive`를 붙인다. `matrix.yaml`의 "system 대화형 불가"를 코드로 막는다.
+- **운영자 전용**(B9 템플릿 활성화, D6 role 변경, B11 감사 로그 조회, D15)에는 `require_operator_mfa`.
+- 로그인/가입/비밀번호 재설정은 Cognito가 처리한다. 백엔드는 토큰 검증과 `GET /auth/me`(role·is_test 반환)만 둔다.
+- `require_operator_mfa`는 액세스 토큰에 `amr`가 없어 MFA 통과 여부를 모르므로, TOTP 등록 여부(`AdminGetUser`, 5분 캐시)와 로그인 시각(`auth_time`, 없으면 `iat`)으로 판단한다. 로컬은 `OPERATOR_MFA_REQUIRED=false`로 끈다.
+- `is_test`(그룹 `test`)는 C7 Rate Limit 예외 등에서 쓴다. `request.state.is_test`도 같은 값.
+- 접근 로그 한 줄에 `user_id`·`role`·`is_test`가 붙는다(토큰·이메일은 남기지 않음).
+- 설정: `COGNITO_CLIENT_IDS`(web·runner 복수, 쉼표), `OPERATOR_MFA_REQUIRED`, `MFA_SESSION_MINUTES`.
 
 ## 8. LLM 호출 규칙
 

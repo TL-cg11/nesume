@@ -39,6 +39,23 @@ spec:
             # nginx.conf.template 의 ${APP_UPSTREAM}. app Service 이름:포트 와 일치해야 한다.
             - name: APP_UPSTREAM
               value: {{ include "nesume.appServiceName" . }}:8000
+            # D7: 기동 스크립트가 /config.json 으로 치환. 풀·클라이언트 ID 는 app 과 같은 ConfigMap 값을 쓴다.
+            - name: COGNITO_USER_POOL_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "nesume.configMapName" . }}
+                  key: COGNITO_USER_POOL_ID
+            - name: COGNITO_WEB_CLIENT_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "nesume.configMapName" . }}
+                  key: COGNITO_WEB_CLIENT_ID
+            - name: COGNITO_ENDPOINT
+              value: {{ .Values.web.auth.cognitoEndpoint | quote }}
+            - name: AUTH_FLOW
+              value: {{ .Values.web.auth.flow | quote }}
+            - name: COGNITO_CONNECT_SRC
+              value: {{ .Values.web.auth.connectSrc | quote }}
           livenessProbe:
             httpGet:
               path: /

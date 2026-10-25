@@ -1,0 +1,6 @@
+{
+  "userPoolId": "${COGNITO_USER_POOL_ID}",
+  "clientId": "${COGNITO_WEB_CLIENT_ID}",
+  "endpoint": "${COGNITO_ENDPOINT}",
+  "authFlow": "${AUTH_FLOW}"
+}
