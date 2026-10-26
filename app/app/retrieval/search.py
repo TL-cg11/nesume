@@ -92,7 +92,8 @@ def search_personal(
             UserProfileEmbedding.source_id,
             dist.label("distance"),
         )
-        .where(text(where_sql).bindparams(**params))
+        # 정책 조건은 OR 묶음이라 괄호로 감싼다. 없으면 뒤의 AND 조건이 마지막 OR 항에만 걸린다
+        .where(text(f"({where_sql})").bindparams(**params))
         .where(UserProfileEmbedding.deleted_at.is_(None))  # 소프트 삭제 제외(B 요청, 30일 전까지)
         .where(UserProfileEmbedding.model_version == MODEL_VERSION)  # 버전 혼재 방지(적대적 패스)
     )
