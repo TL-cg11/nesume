@@ -28,9 +28,34 @@ VEC = [1.0] + [0.0] * (EMBED_DIM - 1)
 NOW = datetime.now(UTC)
 
 
+class FakeIdp:
+    """cognito-idp 흉내(AWS 모드: username == sub). 삭제된 사용자를 기록한다."""
+
+    def __init__(self):
+        self.deleted, self.fail = [], False
+
+    def admin_get_user(self, UserPoolId, Username):
+        if Username in self.deleted:
+            raise ClientError({"Error": {"Code": "UserNotFoundException"}}, "AdminGetUser")
+        return {"Username": Username}
+
+    def list_users(self, UserPoolId, Filter, Limit):
+        return {"Users": []}  # sub로 찾아도 없음
+
+    def admin_delete_user(self, UserPoolId, Username):
+        if self.fail:
+            raise ClientError({"Error": {"Code": "InternalErrorException"}}, "AdminDeleteUser")
+        self.deleted.append(Username)
+
+
 @pytest.fixture(autouse=True)
-def _no_live_index(monkeypatch):
+def idp(monkeypatch):
     monkeypatch.setattr(exp_index, "index_experience", lambda *a, **k: None)
+    fake = FakeIdp()
+    monkeypatch.setattr(deletion.admin_router, "get_cognito_client", lambda: fake)
+    monkeypatch.setattr(deletion, "get_settings",
+                        lambda: get_settings().model_copy(update={"cognito_user_pool_id": "pool-test"}))
+    return fake
 
 
 def _uid(p="b20"):
@@ -177,7 +202,7 @@ def test_request_cancel_and_pending():
 
 
 @pytest.mark.parametrize("days,purged", [(29, False), (30, True)])
-def test_account_purge_after_grace(days, purged):
+def test_account_purge_after_grace(idp, days, purged):
     uid, other = _uid(), _uid()
     with SessionLocal.begin() as db:
         r, _ = _resume(db, uid)
@@ -192,8 +217,10 @@ def test_account_purge_after_grace(days, purged):
     res = _run()
     if not purged:
         assert res.accounts == 0 and _count(User, User.id == uid) == 1 and _exists(key)
+        assert idp.deleted == []
         return
     assert res.accounts == 1 and not res.failed
+    assert idp.deleted == [uid]  # Cognito는 마지막에 삭제
     # 잔존 0건: 사용자·문서·대응표·키·임베딩·파일
     for model, col in ((User, User.id), (Resume, Resume.owner_id), (Experience, Experience.owner_id),
                        (PiiVault, PiiVault.owner_id), (UserKey, UserKey.user_id),
@@ -234,3 +261,25 @@ def test_cancelled_account_not_purged():
 def test_delete_user_objects_rejects_bad_id():
     with pytest.raises(ValueError):
         objects.delete_user_objects("../x")
+
+
+def test_cognito_failure_rolls_back_db_and_retries(idp):
+    uid = _uid()
+    with SessionLocal.begin() as db:
+        exp_service.create_experience(db, uid, {"title": "t", "type": "x"})
+        deletion.request_account_deletion(db, uid, now=NOW - timedelta(days=30))
+    idp.fail = True
+    res = _run()
+    assert f"account:{uid}" in res.failed
+    assert _count(User, User.id == uid) == 1 and _count(Experience, Experience.owner_id == uid) == 1  # DB 되돌림
+    idp.fail = False
+    assert _run().accounts == 1 and idp.deleted == [uid] and _count(User, User.id == uid) == 0
+
+
+def test_cognito_already_deleted_is_ok(idp):
+    uid = _uid()
+    idp.deleted.append(uid)  # Cognito에는 이미 없음
+    with SessionLocal.begin() as db:
+        deletion.request_account_deletion(db, uid, now=NOW - timedelta(days=30))
+    res = _run()
+    assert res.accounts == 1 and not res.failed and _count(User, User.id == uid) == 0

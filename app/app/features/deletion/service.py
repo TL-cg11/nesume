@@ -6,9 +6,11 @@
   경험   → 문항 연결(DB 연쇄) + 검색 임베딩 + 대응표
 계정 삭제: 요청 시 users.deleted_at에 기록(30일 유예, 이 기간에 철회 가능). 30일 뒤 배치가
   감사 로그 user_id 익명화 → S3 users/{id}/ 삭제 → 데이터 키 폐기 → 사용자 행 삭제(소유 데이터 DB 연쇄)
-  → 이 사용자가 멘토로 받은 공유가 사라졌으므로 작성자 자소서의 공유 복제본·검색 메타 재동기화.
+  → 이 사용자가 멘토로 받은 공유가 사라졌으므로 작성자 자소서의 공유 복제본·검색 메타 재동기화
+  → 마지막에 Cognito 사용자 삭제(AdminDeleteUser, D 요청 10/26). Cognito가 실패하면 DB 삭제도 되돌려
+    다음 배치가 다시 시도한다. 이미 없는 사용자는 삭제된 것으로 본다(멱등).
 
-B는 함수만 제공한다. 요청·철회 API와 유예 중 로그인 차단, Cognito 사용자 삭제는 D(D7) 영역.
+B는 함수만 제공한다. 요청·철회 API와 유예 중 로그인 차단은 D(D7) 영역. Cognito 삭제는 배치 마지막 단계(B).
 배치는 종류별 1회 최대 100건, 오래된 순. 건마다 커밋해 한 건 실패가 나머지를 막지 않는다.
 """
 import logging
@@ -17,9 +19,13 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
+from botocore.exceptions import ClientError
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
+from app.auth import admin_router
+from app.config import get_settings
+from app.core.errors import NotFoundError
 from app.core.storage import objects
 from app.features.share import service as share_service
 from app.models import AuditLog, Experience, Question, Resume, Share, ShareComment, User, Version
@@ -140,6 +146,24 @@ def purge_account(db: Session, user_id: str) -> None:
         r = db.get(Resume, rid)
         if r is not None:
             share_service.sync_resume(db, r, now)
+    # 6) 마지막에 Cognito 사용자 삭제. 실패하면 예외로 이 계정의 DB 삭제가 되돌려진다(커밋 전)
+    delete_cognito_user(user_id)
+
+
+def delete_cognito_user(user_id: str) -> None:
+    """Cognito 사용자 삭제(AdminDeleteUser). D의 클라이언트·username 조회를 그대로 쓴다(admin_router)."""
+    pool_id = get_settings().cognito_user_pool_id
+    if not pool_id:
+        raise RuntimeError("COGNITO_USER_POOL_ID is not configured")
+    idp = admin_router.get_cognito_client()
+    try:
+        username = admin_router._resolve_username(idp, pool_id, user_id)
+        idp.admin_delete_user(UserPoolId=pool_id, Username=username)
+    except NotFoundError:
+        return  # 이미 없음
+    except ClientError as e:
+        if admin_router._code(e) != "UserNotFoundException":
+            raise
 
 
 # --- 배치 -------------------------------------------------------------------
