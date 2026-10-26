@@ -1,14 +1,15 @@
 """C11 ② 통합 계층 — 실 pgvector에서 개인 인덱스 누출 0 (DB·pgvector 필요 → CI/통합).
 
-① 순수(test_policy_where)가 "정책이 맞는 WHERE를 만드는가"면, 여기선 "그 WHERE + C6 심층방어가
-실제 검색에서 금지 문서를 정말 빼는가"를 본다. 금지 문서를 **쿼리와 동일한 벡터**(가장 가까움)로
-심어, 필터가 없다면 반드시 top_k에 들어올 상황에서 **0건**이어야 통과하게 만든다(C6 PoC 방식).
+① 순수(test_policy_where)가 "정책이 맞는 WHERE를 만드는가"면, 여기선 "그 WHERE가 실제 검색에서
+금지 문서를 정말 빼는가"를 본다. 금지 문서를 **쿼리와 동일한 벡터**(가장 가까움)로 심어, 필터가
+없다면 반드시 top_k에 들어올 상황에서 **0건**이어야 통과하게 만든다(C6 PoC 방식).
 
-핵심은 **공유 심층방어**(search.py `_SHARES_RECHECK`): 벡터 행의 복제 shared_with가 남아 있어도
-원본 `shares`가 끊겼으면(취소·부재) 빠져야 한다. B `shares`/`resumes` 모델 위에서 검증.
+**멘토 공유 경로**(B 결정 2026-10-23): 공유는 '공유 시점 버전'만 보여줘야 하나 개인 인덱스는 최신본으로
+갱신된다 → 검색이 공유 이후 수정본을 돌려줄 위험. 그래서 C6가 shared scope를 검색에서 **제외**(자소서
+열람은 B10 고정버전 전용). 아래 S-SHARE는 "유효 공유여도 검색엔 0건"을 검증한다.
 
-실행: 테스트 DB + Alembic head(마이그레이션에 C 임베딩·B shares/resumes 포함) + pgvector 필요.
-로컬 순수 실행(`--noconftest`) 대상 아님 — conftest의 `db_session`을 쓴다.
+실행: 테스트 DB + Alembic head(C 임베딩·B users/shares/resumes 포함) + pgvector. conftest `db_session` 사용.
+owner_id·shared_with는 `users.id` FK라 시드에서 User 행을 먼저 만든다.
 """
 from __future__ import annotations
 
@@ -26,14 +27,19 @@ from app.models.embedding import (
 from app.models.posting import JobPosting
 from app.models.resume import Resume
 from app.models.share import Share
+from app.models.user import User
 from app.retrieval.search import search_personal, search_public
 
 # 모든 문서·쿼리를 같은 벡터로 → 유사도는 동일, 필터만이 결과를 가른다(가장 가까운데도 빠지는가).
 QUERY = [1.0] + [0.0] * (EMBED_DIM - 1)
 
 
-def _uid() -> str:
-    return str(uuid.uuid4())
+def _user(session) -> str:
+    """User 행 생성 후 id 반환. owner_id·shared_with가 users.id FK라 먼저 있어야 한다."""
+    uid = str(uuid.uuid4())
+    session.add(User(id=uid))
+    session.flush()
+    return uid
 
 
 def _resume(session, owner: str, *, deleted: bool = False) -> Resume:
@@ -61,18 +67,13 @@ def _emb(session, owner: str, resume_id: uuid.UUID, *, shared_with=None, deleted
     return e
 
 
-def _share(session, resume_id, owner, mentor, *, expired=False, revoked=False) -> Share:
-    now = datetime.now(UTC)
-    # CHECK expires_at > created_at 때문에 만료본은 created_at을 과거로 당겨 표현한다.
-    created = now - timedelta(days=2)
-    expires = (now - timedelta(days=1)) if expired else (now + timedelta(days=7))
+def _share(session, resume_id, owner: str, mentor: str) -> Share:
+    """유효 공유 1건(만료 전·미취소). CHECK expires_at>created_at 충족."""
     s = Share(
         resume_id=resume_id,
         owner_id=owner,
         shared_with=mentor,
-        expires_at=expires,
-        revoked_at=now if revoked else None,
-        created_at=created,
+        expires_at=datetime.now(UTC) + timedelta(days=7),
     )
     session.add(s)
     session.flush()
@@ -111,7 +112,7 @@ def _ids(rows) -> set:
 
 def test_own_sees_self_not_others(db_session):
     """S-OWN-1·2: user는 본인 자소서만. 타인 것은 가장 가까운 벡터여도 0건."""
-    a, b = _uid(), _uid()
+    a, b = _user(db_session), _user(db_session)
     ra, rb = _resume(db_session, a), _resume(db_session, b)
     _emb(db_session, a, ra.id)
     _emb(db_session, b, rb.id)
@@ -123,63 +124,36 @@ def test_own_sees_self_not_others(db_session):
 
 def test_soft_deleted_excluded(db_session):
     """S-DEL-1: 소프트 삭제된 임베딩은 본인 것이어도 빠진다."""
-    a = _uid()
+    a = _user(db_session)
     r = _resume(db_session, a)
     _emb(db_session, a, r.id, deleted=True)
     assert r.id not in _ids(search_personal(db_session, QUERY, role="user", user_id=a))
 
 
 # --------------------------------------------------------------------------
-# S-SHARE / S-DEEP — 공유 경계 + 심층방어
+# S-SHARE — 멘토 공유 경로는 검색에서 제외 (B 결정: 자소서는 B10 고정버전 전용)
 # --------------------------------------------------------------------------
 
-def test_mentor_valid_share_sees(db_session):
-    """S-SHARE-1: 유효 공유(복제본 + 원본 shares 둘 다 유효)면 멘토가 본다."""
-    owner, mentor = _uid(), _uid()
+def test_mentor_shared_resume_excluded_from_search(db_session):
+    """S-SHARE(개정): **유효 공유 + 복제본 멀쩡 + 최신(수정)본**이어도 멘토 검색엔 0건.
+
+    공유 경로를 검색에서 아예 빼므로(scope=shared 제외), '공유 이후 수정본'이 AI로 새지 않는다.
+    멘토의 자소서 열람은 B10(고정 버전)으로만.
+    """
+    owner, mentor = _user(db_session), _user(db_session)
     r = _resume(db_session, owner)
     future = (datetime.now(UTC) + timedelta(days=7)).isoformat()
     _emb(db_session, owner, r.id, shared_with=[{"user_id": mentor, "expires_at": future}])
-    _share(db_session, r.id, owner, mentor)
-    assert r.id in _ids(search_personal(db_session, QUERY, role="mentor", user_id=mentor))
+    _share(db_session, r.id, owner, mentor)  # 유효 공유여도
+    assert r.id not in _ids(search_personal(db_session, QUERY, role="mentor", user_id=mentor))
 
 
-def test_mentor_revoked_share_blocked_by_deep_defense(db_session):
-    """S-DEEP-1: 벡터 행 복제 shared_with는 남아 있으나 원본 shares가 **취소**면 빠진다(심층방어 핵심)."""
-    owner, mentor = _uid(), _uid()
+def test_mentor_gets_no_personal_in_search(db_session):
+    """멘토는 개인 인덱스에서 아무것도 못 가져온다(공유든 아니든 검색 경로엔 자소서 없음)."""
+    owner, mentor = _user(db_session), _user(db_session)
     r = _resume(db_session, owner)
-    future = (datetime.now(UTC) + timedelta(days=7)).isoformat()
-    # 복제본은 유효한 척(동기화 지연·실패 가정) — C2 WHERE만 보면 통과할 상황
-    _emb(db_session, owner, r.id, shared_with=[{"user_id": mentor, "expires_at": future}])
-    _share(db_session, r.id, owner, mentor, revoked=True)  # 원본은 취소됨
-    assert r.id not in _ids(search_personal(db_session, QUERY, role="mentor", user_id=mentor))
-
-
-def test_mentor_no_share_row_blocked(db_session):
-    """S-DEEP-1 변형: 복제본만 있고 원본 shares가 아예 없으면 빠진다."""
-    owner, mentor = _uid(), _uid()
-    r = _resume(db_session, owner)
-    future = (datetime.now(UTC) + timedelta(days=7)).isoformat()
-    _emb(db_session, owner, r.id, shared_with=[{"user_id": mentor, "expires_at": future}])
-    # shares 행 없음
-    assert r.id not in _ids(search_personal(db_session, QUERY, role="mentor", user_id=mentor))
-
-
-def test_mentor_resume_deleted_blocked(db_session):
-    """S-DEEP-1 변형: 공유는 유효해도 원본 자소서가 삭제(resumes.deleted_at)면 빠진다."""
-    owner, mentor = _uid(), _uid()
-    r = _resume(db_session, owner, deleted=True)
-    future = (datetime.now(UTC) + timedelta(days=7)).isoformat()
-    _emb(db_session, owner, r.id, shared_with=[{"user_id": mentor, "expires_at": future}])
-    _share(db_session, r.id, owner, mentor)
-    assert r.id not in _ids(search_personal(db_session, QUERY, role="mentor", user_id=mentor))
-
-
-def test_mentor_not_shared_blocked(db_session):
-    """S-SHARE-4: 공유된 적 없는 자소서는 멘토가 못 본다(복제본도 shares도 없음)."""
-    owner, mentor = _uid(), _uid()
-    r = _resume(db_session, owner)
-    _emb(db_session, owner, r.id)  # shared_with 비어있음
-    assert r.id not in _ids(search_personal(db_session, QUERY, role="mentor", user_id=mentor))
+    _emb(db_session, owner, r.id)  # 공유 안 함
+    assert search_personal(db_session, QUERY, role="mentor", user_id=mentor) == []
 
 
 # --------------------------------------------------------------------------
@@ -188,7 +162,7 @@ def test_mentor_not_shared_blocked(db_session):
 
 def test_public_excludes_personal_index(db_session):
     """S-IDX-1: 개인 임베딩과 공고 임베딩을 같은 벡터로 심어도 `search_public`엔 공고만."""
-    a = _uid()
+    a = _user(db_session)
     r = _resume(db_session, a)
     _emb(db_session, a, r.id)        # 개인 인덱스
     p = _posting(db_session)
@@ -219,6 +193,6 @@ def test_public_excludes_inactive_and_review(db_session):
 
 @pytest.mark.parametrize(("role", "uid"), [("", "u"), ("user", "")])
 def test_search_personal_requires_role_and_user(db_session, role, uid):
-    """S-NOFILTER-1: role·user_id 없이는 검색 자체가 거부된다."""
+    """S-NOFILTER-1: role·user_id 없이는 검색 자체가 거부된다(DB 접근 전)."""
     with pytest.raises(ValueError):
         search_personal(db_session, QUERY, role=role, user_id=uid)

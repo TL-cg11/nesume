@@ -20,18 +20,6 @@ _policy = Policy.load(default_matrix_path())
 #: 필터와 함께 HNSW를 쓸 때 ANN이 필터를 건너뛰어 누락하는 걸 막는다(C1 결론)
 _ITERATIVE_SCAN = "SET LOCAL hnsw.iterative_scan = 'strict_order'"
 
-#: 공유(멘토) 경로 심층 방어(B 확정 2026-10-23). 벡터 행의 복제 shared_with(B10 동기화분)만 믿지 않고
-#: 원본 `shares`+`resumes`로 재확인한다 — 동기화 실패·지연 시 끊긴 공유가 벡터 행에 남아 새는 걸 막는다.
-#: 본인 소유(owner_id)는 shares 불필요. 경험(source_type='experience')은 shares가 없어 EXISTS가 안 맞아
-#: 자연히 owner만 통과(멘토는 공유 자소서만 봄). ※ `:dd_uid`는 C2 WHERE의 `:uid`와 겹치지 않게 분리.
-_SHARES_RECHECK = (
-    "(owner_id = :dd_uid OR EXISTS ("
-    " SELECT 1 FROM shares s JOIN resumes r ON r.id = s.resume_id"
-    " WHERE s.resume_id = user_profile_embeddings.source_id"
-    " AND s.shared_with = :dd_uid AND s.revoked_at IS NULL"
-    " AND s.expires_at > now() AND r.deleted_at IS NULL))"
-)
-
 
 def search_public(
     session: Session,
@@ -74,13 +62,20 @@ def search_personal(
 ):
     """개인 인덱스(자소서·경험) 검색. role·user_id 필수(필터 없는 경로 차단).
 
-    C2가 생성한 권한 WHERE(본인 소유 / 멘토 유효 공유 / 운영자 mask-all 등) + `deleted_at IS NULL`.
+    C2가 생성한 권한 WHERE(본인 소유 / 운영자 mask-all 등) + `deleted_at IS NULL`.
+
+    **공유(멘토) 경로는 검색에서 제외한다(B 결정 2026-10-23).** 공유는 자소서의 '공유 시점 버전'만
+    보여줘야 하는데 개인 인덱스는 최신본으로 갱신돼 검색이 **공유 이후 수정본**을 돌려준다(버전 고정 불가).
+    그래서 `scope=shared` 조건을 WHERE에서 빼고, 멘토의 자소서 열람은 **B10 API(고정 버전)로만** 한다
+    (B10이 공유 시점 버전을 고정). 멘토용 AI 검색이 생기면 '공유 시점 버전 청크'를 따로 인덱싱해 재설계.
     """
     if not role or not user_id:
         raise ValueError("role and user_id are required")
 
-    conds = _policy.retrieval_filter(role, user_id)
-    where_sql, params = build_where(conds, user_id=user_id)  # grade/owner_id/shared_with(JSONB)
+    # 공유 경로 제외: shared scope는 버전 고정이 안 돼 검색으로 안 돌려준다(위 docstring). 현재 shared는
+    # 멘토뿐 → 멘토는 개인 인덱스에서 0건(자소서는 B10 전용). 다른 scope(own/all)만 WHERE로.
+    conds = [c for c in _policy.retrieval_filter(role, user_id) if c.scope != "shared"]
+    where_sql, params = build_where(conds, user_id=user_id)  # grade/owner_id (shared 제외)
 
     session.execute(text(_ITERATIVE_SCAN))
 
@@ -92,14 +87,11 @@ def search_personal(
             UserProfileEmbedding.source_id,
             dist.label("distance"),
         )
-        # 정책 조건은 OR 묶음이라 괄호로 감싼다. 없으면 뒤의 AND 조건이 마지막 OR 항에만 걸린다
+        # 정책 조건은 OR 묶음이라 괄호로 감싼다. 없으면 뒤의 AND가 마지막 OR 항에만 걸린다(C6 괄호 수정)
         .where(text(f"({where_sql})").bindparams(**params))
         .where(UserProfileEmbedding.deleted_at.is_(None))  # 소프트 삭제 제외(B 요청, 30일 전까지)
         .where(UserProfileEmbedding.model_version == MODEL_VERSION)  # 버전 혼재 방지(적대적 패스)
+        .order_by(dist)
+        .limit(top_k)
     )
-    # 심층 방어: 공유(멘토) 경로가 있을 때만 원본 shares/resumes로 재확인(운영자 scope=all엔 적용 안 함 —
-    # 전체 열람이 정당하고 PII는 A1 mask로 가린다). 본인 소유는 shares 불필요.
-    if any(c.scope == "shared" for c in conds):
-        stmt = stmt.where(text(_SHARES_RECHECK).bindparams(dd_uid=user_id))
-    stmt = stmt.order_by(dist).limit(top_k)
     return session.execute(stmt).all()
