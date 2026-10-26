@@ -116,14 +116,18 @@ scenarios:
     category: authz
     channel: api
     role: system
-    feature: rewrite.generate
+    feature: writing.proofread
     preconditions: {}
     request:
       method: POST
-      path: "/resumes/{resume_id}/questions/{question_id}/rewrite"
-      body: { instruction: "다시 써 줘" }
+      path: "/writing/proofread"
+      body: { text: "자기소개서 초안입니다. 다듬어 주세요", use_llm: true }
     expect: { decision: block, http_status: 403 }
-    note: 시스템 계정은 대화형 엔드포인트 호출 불가(require_interactive, matrix 'system 대화형 불가'). 403 interactive_only
+    known_miss: true
+    note: >-
+      시스템 계정은 대화형 엔드포인트 호출 불가(matrix 'system 대화형 불가'). 403 interactive_only 기대.
+      현재는 known_miss — /writing/proofread(A7)에 require_interactive(D7)가 아직 안 붙음(d7 미병합).
+      d7 머지 + A7에 require_interactive 적용되면 해제
 
   - id: C11-AUTHZ-10
     category: authz
@@ -131,6 +135,6 @@ scenarios:
     role: user
     feature: audit.read
     preconditions: {}
-    request: { method: GET, path: "/audit" }
+    request: { method: GET, path: "/audit-logs" }
     expect: { decision: block, http_status: 403 }
-    note: 감사 로그 조회는 운영자 전용. 일반 사용자의 직접 호출은 403
+    note: 감사 로그 조회는 운영자 전용(audit 라우터 require_operator). 일반 사용자의 직접 호출은 403
