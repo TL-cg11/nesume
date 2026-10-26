@@ -50,7 +50,11 @@ async def run_scenario(s: dict) -> dict:
     그 한계가 A10-MULTI-04 가 실패하는 이유다.
     """
     guard, provider = _guard()
-    ctx = RequestContext(user_id="u-a10", role=s["role"], feature="eval.a10", session_id="s")
+    # feature 는 YAML 이 정한다 (B15 취합 요청, 2026-10-26) — 평가 러너가 어느 API 로
+    # 보낼지와 같은 값이어야 해서 시나리오 파일을 단일 출처로 둔다.
+    ctx = RequestContext(
+        user_id="u-a10", role=s["role"], feature=s["feature"], session_id="s"
+    )
     last = None
     for turn in s["turns"]:
         last = await guard.run(turn, ctx)
