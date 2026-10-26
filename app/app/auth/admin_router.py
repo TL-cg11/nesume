@@ -10,7 +10,7 @@ PUT /admin/users/{user_id}/role  body {"role": "user" | "mentor" | "operator"}
      → B 가 컬럼을 추가하기 전까지는 건너뛴다(TODO).
   5. 로그 role_changed. 감사 로그 테이블 기록은 B11 API 확정 뒤 교체.
 
-운영자 판정은 지금은 토큰 역할만 본다. D7 의 require_operator_mfa 로 교체한다.
+운영자 판정은 D7 require_operator_mfa(operator + TOTP 등록 + 최근 로그인).
 IAM(D9 메모): 앱 IRSA 에 cognito-idp:AdminListGroupsForUser, AdminAddUserToGroup,
 AdminRemoveUserFromGroup, AdminUserGlobalSignOut, AdminGetUser, ListUsers.
 """
@@ -25,7 +25,8 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.auth.cognito import AuthenticatedUser, CurrentUser, Role
+from app.auth.cognito import CurrentUser, Role
+from app.auth.dependencies import require_operator_mfa
 from app.config import get_settings
 from app.core.errors import AppError, ForbiddenError, NotFoundError
 from app.db import get_db
@@ -47,13 +48,6 @@ class RoleChangeOut(BaseModel):
     user_id: str
     previous_role: str
     role: str
-
-
-def require_operator(user: AuthenticatedUser) -> CurrentUser:
-    """D7 의 require_operator_mfa 로 교체 예정. 지금은 토큰 역할만 확인한다."""
-    if user.role != Role.OPERATOR:
-        raise ForbiddenError("운영자만 사용할 수 있습니다.")
-    return user
 
 
 def get_cognito_client():
@@ -93,7 +87,7 @@ def _resolve_username(idp, pool_id: str, sub: str) -> str:
 def change_user_role(
     user_id: str,
     body: RoleChangeIn,
-    actor: Annotated[CurrentUser, Depends(require_operator)],
+    actor: Annotated[CurrentUser, Depends(require_operator_mfa)],
     db: Annotated[Session, Depends(get_db)],
     idp: Annotated[object, Depends(get_cognito_client)],
 ) -> RoleChangeOut:

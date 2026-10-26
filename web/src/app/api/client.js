@@ -16,11 +16,13 @@ export function setUnauthorizedHandler(fn) {
 }
 
 export class ApiError extends Error {
-  constructor(status, detail) {
+  constructor(status, detail, { code, requestId } = {}) {
     super(typeof detail === 'string' ? detail : `HTTP ${status}`)
     this.name = 'ApiError'
     this.status = status
     this.detail = detail
+    this.code = code ?? null // D3 에러 코드(not_found, forbidden, mfa_required ...). 문구 대신 이 값으로 분기
+    this.requestId = requestId ?? null // X-Request-ID. 오류 신고 시 함께 받는다
   }
 }
 
@@ -45,7 +47,12 @@ export async function apiFetch(path, { method = 'GET', body, headers = {}, signa
 
   const isJson = res.headers.get('content-type')?.includes('application/json')
   const data = res.status === 204 ? null : isJson ? await res.json() : await res.text()
-  if (!res.ok) throw new ApiError(res.status, isJson ? data?.detail : data)
+  if (!res.ok) {
+    throw new ApiError(res.status, isJson ? data?.detail : data, {
+      code: isJson ? data?.code : undefined,
+      requestId: res.headers.get('X-Request-ID') ?? (isJson ? data?.request_id : undefined),
+    })
+  }
   return data
 }
 

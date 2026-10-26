@@ -115,8 +115,10 @@ API_PROXY_TARGET=http://localhost:8080 npm run dev   # http://localhost:5173, /a
 ```
 
 - `docker compose up -d`로 백엔드가 떠 있어야 한다.
-- 로그인 화면(D7) 추합 전까지 상단 **DEV 토큰** 입력란에 cognito-local Access Token을 넣어 API를 호출한다. 이 입력란은 개발 서버에서만 보이며 운영 빌드(`npm run build`, Docker 이미지)에는 포함되지 않는다.
-- 토큰 발급 예시(cognito-local):
+- 로그인 화면(D7)이 들어왔다. `http://localhost:8080/login`에서 시드 계정으로 로그인한다(아래). DEV 토큰 입력란은 제거됐다.
+- 시드 계정: `test-user1@example.com`(일반)·`test-mentor1@`(멘토)·`test-operator1@`(운영자)·`svc-batch@`(시스템). 비밀번호는 시드 시 준 `SEED_PASSWORD`. 그룹·계정은 시드 스크립트가 만든다: `docker compose run --rm -e SEED_PASSWORD='<pw>' test python -m app.auth.seed`
+- web은 Cognito 설정을 빌드가 아니라 기동 시 `/config.json`(nginx가 치환)에서 읽는다. 로컬 로그인은 cognito-local 제약으로 `USER_PASSWORD_AUTH`, 운영은 SRP.
+- 운영자 TOTP 강제(`OPERATOR_MFA_REQUIRED`)는 로컬에서 `false`(cognito-local TOTP 불완전). 토큰을 직접 발급해 API를 부르는 예:
 
 ```bash
 H='Content-Type: application/x-amz-json-1.1'; C=nesumelocalclient00000001; E=dev@example.com; P='Dev!Passw0rd1'

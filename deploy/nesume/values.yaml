@@ -30,6 +30,11 @@ web:
   resources:
     requests: { cpu: 50m, memory: 64Mi }
     limits: { cpu: 200m, memory: 128Mi }
+  # D7: 기동 시 /config.json 으로 치환되는 브라우저용 Cognito 설정. 풀·웹 클라이언트 ID는 config.* 에서 가져온다.
+  auth:
+    flow: USER_SRP_AUTH                # 로컬(cognito-local)만 USER_PASSWORD_AUTH
+    cognitoEndpoint: ""                # AWS 는 비움(기본 엔드포인트). 로컬은 브라우저가 접근하는 cognito-local 주소
+    connectSrc: https://cognito-idp.ap-northeast-2.amazonaws.com   # CSP connect-src
 
 # ConfigMap으로 가는 비밀 아닌 설정. 값은 전부 문자열.
 config:
@@ -41,9 +46,13 @@ config:
   KMS_KEY_ALIAS: ""
   APP_SECRET_NAME: ""
   COGNITO_USER_POOL_ID: ""
-  COGNITO_CLIENT_ID: ""
+  COGNITO_CLIENT_ID: ""              # 하위 호환. 비면 COGNITO_CLIENT_IDS 만 본다
+  COGNITO_CLIENT_IDS: ""             # D7: "web,runner" 두 클라이언트 ID(쉼표). Terraform output client_ids
+  COGNITO_WEB_CLIENT_ID: ""          # D7: web 이 /config.json 으로 받는 웹 클라이언트 ID
   COGNITO_ISSUER: ""
   COGNITO_JWKS_URL: ""
+  OPERATOR_MFA_REQUIRED: "true"      # D7: 운영자 보호 API 에 TOTP 등록 + 최근 로그인 요구
+  MFA_SESSION_MINUTES: "15"
   DB_HOST: ""
   DB_PORT: "5432"
   DB_NAME: nesume

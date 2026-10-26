@@ -12,6 +12,13 @@ import ExperiencesPage from '../features/experiences/ExperiencesPage.jsx'
 import InterviewPage from '../features/interview/InterviewPage.jsx'
 import GithubPage from '../features/github/GithubPage.jsx'
 import WritingPage from '../features/writing/WritingPage.jsx'
+import { AuthProvider } from '../features/auth/useAuth.jsx'
+import LoginPage from '../features/auth/LoginPage.jsx'
+import SignUpPage from '../features/auth/SignUpPage.jsx'
+import ConfirmSignUpPage from '../features/auth/ConfirmSignUpPage.jsx'
+import ForgotPasswordPage from '../features/auth/ForgotPasswordPage.jsx'
+import MfaChallengePage from '../features/auth/MfaChallengePage.jsx'
+import MfaSetupPage from '../features/auth/MfaSetupPage.jsx'
 
 // nav: 상단 메뉴 노출 여부와 라벨
 export const featureRoutes = [
@@ -21,12 +28,24 @@ export const featureRoutes = [
   { path: 'interview', element: <InterviewPage />, nav: '면접 연습' },
   { path: 'github', element: <GithubPage />, nav: 'GitHub 소개' },
   { path: 'writing', element: <WritingPage />, nav: '글 다듬기' },
+  // D7 인증 화면 (nav 없음). 보호 화면은 <RequireAuth> 로 감싼다(features/auth/RequireAuth.jsx).
+  { path: 'login', element: <LoginPage /> },
+  { path: 'signup', element: <SignUpPage /> },
+  { path: 'confirm', element: <ConfirmSignUpPage /> },
+  { path: 'forgot', element: <ForgotPasswordPage /> },
+  { path: 'mfa/challenge', element: <MfaChallengePage /> },
+  { path: 'mfa/setup', element: <MfaSetupPage /> },
 ]
 
 export const routes = [
   {
     path: '/',
-    element: <Layout navItems={featureRoutes.filter((r) => r.nav)} />,
+    // AuthProvider 가 Layout 을 감싼다: 토큰 공급·401 처리·/auth/me. 각 기능 페이지는 그대로 둔다(D7).
+    element: (
+      <AuthProvider>
+        <Layout navItems={featureRoutes.filter((r) => r.nav)} />
+      </AuthProvider>
+    ),
     children: [
       { index: true, element: <Home /> },
       ...featureRoutes.map(({ path, element }) => ({ path, element })),
