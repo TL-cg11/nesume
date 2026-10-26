@@ -4,12 +4,16 @@
 인터페이스(`RateLimitStore`) 뒤에 두어 교체 가능하게 한다(docs/C7.md 결정).
 
 - `InMemoryStore` — 개발·단위 테스트용. **프로세스 메모리**라 HPA 다중 파드에선 공유 안 됨 → 운영 금지.
-- `PostgresStore` — 운영용. **카운터 테이블 + 원자적 upsert 증가**가 필요(모델·마이그레이션 B 취합 대기).
-  ※ 운영 배선 시 추가. 지금은 로직을 InMemoryStore로 검증한다.
+- `PostgresStore` — 운영용. `rate_limit_counters` 테이블에 **원자적 upsert**(INSERT … ON CONFLICT
+  DO UPDATE)로 창 리셋/증가. 다중 파드가 같은 행을 보므로 한도가 정확. 세션은 요청별 주입.
+  ※ 테이블 모델 등록·마이그레이션은 B 취합 대기. 실행 검증은 Docker(pgvector).
 """
 from __future__ import annotations
 
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 
 class RateLimitStore(Protocol):
@@ -45,3 +49,40 @@ class InMemoryStore:
             self._windows[key] = (now, amount)  # 새 창
         else:
             self._windows[key] = (entry[0], entry[1] + amount)
+
+
+class PostgresStore:
+    """운영용. `rate_limit_counters` 행을 요청별 세션으로 읽고/원자적 upsert한다.
+
+    다중 파드가 같은 행을 보므로 한도가 정확. `add`는 창 만료면 리셋, 아니면 증가를 **한 문장**으로
+    처리(ON CONFLICT DO UPDATE + CASE) — 두 파드가 동시에 와도 DB가 직렬화한다.
+    """
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def get(self, key: str, *, window_seconds: int, now: float) -> tuple[int, float]:
+        from app.models.ratelimit import RateLimitCounter
+
+        row = self.session.get(RateLimitCounter, key)
+        if row is None or now - row.window_start >= window_seconds:
+            return (0, 0.0)  # 없거나 창 만료 → 리셋된 것으로 본다
+        return (row.count, now - row.window_start)
+
+    def add(self, key: str, amount: int, *, window_seconds: int, now: float) -> None:
+        from sqlalchemy import case
+        from sqlalchemy.dialects.postgresql import insert
+
+        from app.models.ratelimit import RateLimitCounter
+
+        table = RateLimitCounter.__table__
+        expired = (now - table.c.window_start) >= window_seconds  # 기존 행의 창이 지났나
+        stmt = insert(table).values(key=key, window_start=now, count=amount)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["key"],
+            set_={
+                "window_start": case((expired, now), else_=table.c.window_start),
+                "count": case((expired, amount), else_=table.c.count + amount),
+            },
+        )
+        self.session.execute(stmt)

@@ -7,6 +7,7 @@ from app.models.experience import Experience, QuestionExperience
 from app.models.learning import LearningContent, LearningRoadmap, LearningRoadmapItem
 from app.models.pii import PiiVault, UserKey
 from app.models.posting import CollectionRun, JobPosting
+from app.models.ratelimit import RateLimitCounter
 from app.models.resume import Question, Resume, Version
 from app.models.share import Share
 from app.models.template import PromptTemplate
@@ -31,6 +32,7 @@ __all__ = [
     "PromptTemplate",
     "QuestionExperience",
     "Question",
+    "RateLimitCounter",
     "Resume",
     "Share",
     "User",
