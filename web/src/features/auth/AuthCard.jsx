@@ -1,11 +1,17 @@
-// 인증 화면 공통 틀: 가운데 카드 + 제목 + 설명 + 상태 메시지.
+// 인증 화면 공통 틀: 가운데 카드 + 브랜드 마크 + 제목 + 설명 + 상태 메시지.
+import Icon from '../../app/Icons.jsx'
 import './auth.css'
 
 export default function AuthCard({ title, subtitle, error, notice, children, footer }) {
   return (
     <section className="auth-wrap">
       <div className="auth-card card">
-        <p className="auth-eyebrow">nesume</p>
+        <div className="auth-brand">
+          <span className="auth-brand-mark">
+            <Icon name="file" />
+          </span>
+          <span className="auth-brand-name">nesume</span>
+        </div>
         <h1 className="auth-title">{title}</h1>
         {subtitle && <p className="auth-subtitle">{subtitle}</p>}
         {error && (
