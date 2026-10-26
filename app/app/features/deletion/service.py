@@ -4,7 +4,8 @@
   자소서 → 문항·버전·공유·코멘트(DB 연쇄) + 검색 임베딩(C3) + 대응표(B7)
   문항   → 버전(DB 연쇄) + 대응표. 검색 청크는 자소서 재인덱싱 대상(Embedder 확정 후, 4.42)
   경험   → 문항 연결(DB 연쇄) + 검색 임베딩 + 대응표
-계정 삭제: 요청 시 users.deleted_at에 기록(30일 유예, 이 기간에 철회 가능). 30일 뒤 배치가
+계정 삭제: 요청 시 users.deleted_at에 기록 + Cognito 사용자 비활성화(30일 유예, 철회하면 다시 활성화).
+  유예 중에는 로그인이 막히고, 인증 의존성(require_active_account)과 멘토 열람 차단이 이중으로 막는다. 30일 뒤 배치가
   감사 로그 user_id 익명화 → S3 users/{id}/ 삭제 → 데이터 키 폐기 → 사용자 행 삭제(소유 데이터 DB 연쇄)
   → 이 사용자가 멘토로 받은 공유가 사라졌으므로 작성자 자소서의 공유 복제본·검색 메타 재동기화
   → 마지막에 Cognito 사용자 삭제(AdminDeleteUser, D 요청 10/26). Cognito가 실패하면 DB 삭제도 되돌려
@@ -51,7 +52,10 @@ class PurgeResult:
 # --- 계정 삭제 요청·철회 (D7 API가 호출) ---------------------------------------
 
 def request_account_deletion(db: Session, user_id: str, *, now: datetime | None = None) -> datetime:
-    """삭제 예약. 이미 예약돼 있으면 처음 시각을 유지한다. 완전 삭제 예정 시각을 돌려준다."""
+    """삭제 예약 + Cognito 비활성화(로그인 차단). 이미 예약돼 있으면 처음 시각을 유지한다.
+
+    완전 삭제 예정 시각을 돌려준다. Cognito 호출이 실패하면 예외 → 호출한 요청의 DB 변경도 되돌려진다.
+    """
     now = now or datetime.now(UTC)
     u = db.get(User, user_id)
     if u is None:
@@ -59,16 +63,18 @@ def request_account_deletion(db: Session, user_id: str, *, now: datetime | None 
     if u.deleted_at is None:
         u.deleted_at = now
     db.flush()
+    set_cognito_enabled(user_id, False)
     return u.deleted_at + GRACE
 
 
 def cancel_account_deletion(db: Session, user_id: str) -> bool:
-    """유예 기간 안이면 철회(True). 예약이 없으면 False."""
+    """유예 기간 안이면 철회 + Cognito 다시 활성화(True). 예약이 없으면 False."""
     u = db.get(User, user_id)
     if u is None or u.deleted_at is None:
         return False
     u.deleted_at = None
     db.flush()
+    set_cognito_enabled(user_id, True)
     return True
 
 
@@ -150,12 +156,30 @@ def purge_account(db: Session, user_id: str) -> None:
     delete_cognito_user(user_id)
 
 
-def delete_cognito_user(user_id: str) -> None:
-    """Cognito 사용자 삭제(AdminDeleteUser). D의 클라이언트·username 조회를 그대로 쓴다(admin_router)."""
+def _cognito():
     pool_id = get_settings().cognito_user_pool_id
     if not pool_id:
         raise RuntimeError("COGNITO_USER_POOL_ID is not configured")
-    idp = admin_router.get_cognito_client()
+    return admin_router.get_cognito_client(), pool_id
+
+
+def set_cognito_enabled(user_id: str, enabled: bool) -> None:
+    """유예 중 로그인 차단(AdminDisableUser) / 철회 시 해제(AdminEnableUser). Cognito에 없는 사용자는 건너뛴다."""
+    idp, pool_id = _cognito()
+    try:
+        username = admin_router._resolve_username(idp, pool_id, user_id)
+        call = idp.admin_enable_user if enabled else idp.admin_disable_user
+        call(UserPoolId=pool_id, Username=username)
+    except NotFoundError:
+        return
+    except ClientError as e:
+        if admin_router._code(e) != "UserNotFoundException":
+            raise
+
+
+def delete_cognito_user(user_id: str) -> None:
+    """Cognito 사용자 삭제(AdminDeleteUser). D의 클라이언트·username 조회를 그대로 쓴다(admin_router)."""
+    idp, pool_id = _cognito()
     try:
         username = admin_router._resolve_username(idp, pool_id, user_id)
         idp.admin_delete_user(UserPoolId=pool_id, Username=username)

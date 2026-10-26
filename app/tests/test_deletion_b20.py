@@ -32,7 +32,13 @@ class FakeIdp:
     """cognito-idp 흉내(AWS 모드: username == sub). 삭제된 사용자를 기록한다."""
 
     def __init__(self):
-        self.deleted, self.fail = [], False
+        self.deleted, self.fail, self.disabled = [], False, set()
+
+    def admin_disable_user(self, UserPoolId, Username):
+        self.disabled.add(Username)
+
+    def admin_enable_user(self, UserPoolId, Username):
+        self.disabled.discard(Username)
 
     def admin_get_user(self, UserPoolId, Username):
         if Username in self.deleted:
@@ -191,13 +197,15 @@ def _exists(key):
         return False
 
 
-def test_request_cancel_and_pending():
+def test_request_cancel_and_pending(idp):
     uid = _uid()
     with SessionLocal.begin() as db:
         due = deletion.request_account_deletion(db, uid, now=NOW)
         assert due == NOW + timedelta(days=30) and deletion.deletion_pending(db, uid)
+        assert uid in idp.disabled  # 유예 중 로그인 차단
         assert deletion.request_account_deletion(db, uid, now=NOW + timedelta(days=5)) == due  # 처음 시각 유지
         assert deletion.cancel_account_deletion(db, uid) and not deletion.deletion_pending(db, uid)
+        assert uid not in idp.disabled  # 철회하면 다시 로그인 가능
         assert not deletion.cancel_account_deletion(db, uid)
 
 
@@ -283,3 +291,58 @@ def test_cognito_already_deleted_is_ok(idp):
         deletion.request_account_deletion(db, uid, now=NOW - timedelta(days=30))
     res = _run()
     assert res.accounts == 1 and not res.failed and _count(User, User.id == uid) == 0
+
+
+def test_request_rolls_back_if_cognito_fails(idp, monkeypatch):
+    uid = _uid()
+
+    def boom(**kw):
+        raise ClientError({"Error": {"Code": "InternalErrorException"}}, "AdminDisableUser")
+    monkeypatch.setattr(idp, "admin_disable_user", boom)
+    with pytest.raises(ClientError):
+        with SessionLocal.begin() as db:
+            deletion.request_account_deletion(db, uid, now=NOW)
+    with SessionLocal() as db:
+        assert not deletion.deletion_pending(db, uid)  # 예약도 되돌려짐
+
+
+def test_require_active_account_dependency():
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from app.auth import CurrentUser, get_current_user
+    from app.core.errors import register_exception_handlers
+    from app.features.deletion.dependencies import require_active_account
+    from fastapi import Depends
+
+    app = FastAPI()
+    register_exception_handlers(app)
+
+    @app.get("/x")
+    def x(user=Depends(require_active_account)):
+        return {"sub": user.sub}
+
+    uid = _uid()
+    app.dependency_overrides[get_current_user] = lambda: CurrentUser(sub=uid)
+    c = TestClient(app)
+    assert c.get("/x").status_code == 200
+    with SessionLocal.begin() as db:
+        deletion.request_account_deletion(db, uid, now=NOW)
+    r = c.get("/x")
+    assert r.status_code == 403 and r.json()["code"] == "account_deletion_pending"
+
+
+def test_pending_owner_hidden_from_mentor():
+    from app.auth import Role
+    from tests.test_share_b10 import As, _resume as api_resume, _share
+    owner, mentor = As(_uid("own")), As(_uid("men"), Role.MENTOR)
+    r = api_resume(owner)
+    s = _share(owner, r["id"], mentor.sub).json()
+    assert mentor.get(f"/mentor/shares/{s['id']}").status_code == 200
+    with SessionLocal.begin() as db:
+        deletion.request_account_deletion(db, owner.sub, now=NOW)
+    assert mentor.get(f"/mentor/shares/{s['id']}").status_code == 404
+    assert mentor.get("/mentor/shares").json() == []
+    with SessionLocal.begin() as db:
+        deletion.cancel_account_deletion(db, owner.sub)
+    assert mentor.get(f"/mentor/shares/{s['id']}").status_code == 200

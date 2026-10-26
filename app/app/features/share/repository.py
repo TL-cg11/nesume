@@ -59,11 +59,16 @@ def get_for_owner(db: Session, owner_id: str, share_id: uuid.UUID) -> Share | No
     )
 
 
+def _owner_active():
+    """작성자가 계정 삭제 예약 중이면 멘토에게 보이지 않는다(B20, 4.49)."""
+    return select(User.id).where(User.id == Share.owner_id, User.deleted_at.is_(None)).exists()
+
+
 def list_for_mentor(db: Session, mentor_id: str, now: datetime) -> Sequence[tuple[Share, str]]:
     return db.execute(
         select(Share, Resume.title)
         .join(Resume, Resume.id == Share.resume_id)
-        .where(Share.shared_with == mentor_id, *_active(now), Resume.deleted_at.is_(None))
+        .where(Share.shared_with == mentor_id, *_active(now), Resume.deleted_at.is_(None), _owner_active())
         .order_by(Share.expires_at)
     ).all()
 
@@ -73,7 +78,7 @@ def get_for_mentor(db: Session, mentor_id: str, share_id: uuid.UUID, now: dateti
         select(Share, Resume)
         .join(Resume, Resume.id == Share.resume_id)
         .where(Share.id == share_id, Share.shared_with == mentor_id, *_active(now),
-               Resume.deleted_at.is_(None))
+               Resume.deleted_at.is_(None), _owner_active())
     ).first()
 
 
