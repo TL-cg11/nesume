@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router'
 import Icon, { IconSprite } from './Icons.jsx'
+import ThemeToggle from './ThemeToggle.jsx'
 import { useAuth } from '../features/auth/useAuth.jsx'
 
 const ROLE_LABEL = { user: '일반 사용자', mentor: '멘토', operator: '운영자', system: '시스템' }
@@ -119,6 +120,7 @@ export default function Layout({ navItems }) {
           <span className="app-topbar-title">{pageTitle(location.pathname, navItems)}</span>
           <div className="app-topbar-right">
             <span className="app-env">dev · localhost</span>
+            <ThemeToggle />
           </div>
         </header>
         <main className="app-main">

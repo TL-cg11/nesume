@@ -155,6 +155,22 @@ a { color: var(--accent-text); }
 .app-env::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--success); }
 .app-topbar .app-user-name, .app-topbar .app-user-role { color: var(--topbar-fg); }
 
+/* 테마 토글 버튼(상단 바) */
+.theme-toggle {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  min-height: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--topbar-fg);
+  border: 1px solid var(--topbar-line);
+  border-radius: var(--radius-sm);
+}
+.theme-toggle:hover:not(:disabled) { background: var(--topbar-active-bg); filter: none; }
+.theme-toggle svg { width: 18px; height: 18px; }
+
 /* --- 본문 --- */
 .app-main { max-width: var(--content-max); width: 100%; margin: 0 auto; padding: var(--space-5) var(--space-5); }
 

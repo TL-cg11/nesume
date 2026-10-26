@@ -92,8 +92,10 @@
   --sidebar-w: 236px;
 }
 
+/* 다크 모드 토큰. 수동 토글(data-theme)이 OS 설정(prefers-color-scheme)보다 우선한다.
+   - data-theme 미설정: OS 를 따른다  - data-theme="light": 항상 라이트  - data-theme="dark": 항상 다크 */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #14181f;
     --surface: #1c212b;
     --fg: #e6e9ee;              /* bg 대비 14.6 */
@@ -129,4 +131,40 @@
     --shadow-sm: 0 2px 6px rgb(0 0 0 / 35%);
     --shadow-md: 0 8px 24px rgb(0 0 0 / 45%);
   }
+}
+:root[data-theme="dark"] {
+  --bg: #14181f;
+  --surface: #1c212b;
+  --fg: #e6e9ee;              /* bg 대비 14.6 */
+  --muted: #a1acb8;           /* bg 대비 7.7 */
+  --border: #2a303b;
+  --border-input: #6f7b87;    /* bg 대비 4.1 */
+  --accent: #1684b5;          /* on-accent 대비 4.2 (버튼 글자 굵게) */
+  --accent-text: #6cc0e6;     /* bg 대비 8.7 */
+  --accent-soft: #15303d;
+  --on-accent: #ffffff;
+  --violet: #b79be6;          /* bg 대비 8.2 */
+  --violet-soft: #241c33;
+  --navy: #222838;
+  --navy-2: #2b3346;
+  --navy-3: #3a4458;
+  --side-bg: #171b23;
+  --side-fg: #e6e9ee;
+  --side-muted: #96a1ad;
+  --side-item: #c0c8d2;
+  --side-active-bg: #262d3a;
+  --side-hover-bg: #202632;
+  --topbar-bg: #171b23;
+  --topbar-fg: #f1f4f8;
+  --topbar-muted: #a1acb8;
+  --topbar-line: #2a303b;
+  --topbar-active-bg: rgb(255 255 255 / 9%);
+  --danger: #f28b82;          /* bg 대비 7.5 */
+  --danger-soft: #3a1f1d;
+  --warning: #e3b04b;         /* bg 대비 9.0 */
+  --warning-soft: #352a14;
+  --success: #5fc98a;         /* bg 대비 8.7 */
+  --success-soft: #16301f;
+  --shadow-sm: 0 2px 6px rgb(0 0 0 / 35%);
+  --shadow-md: 0 8px 24px rgb(0 0 0 / 45%);
 }
