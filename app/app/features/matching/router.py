@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Callable
-from functools import lru_cache
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import ValidationError
@@ -26,6 +25,11 @@ from app.features.matching.schemas import (
     PostingIn,
 )
 from app.guardrail import Guardrail
+from app.guardrail.fastapi import (
+    get_guardrail,
+    guardrail_kwargs,
+    session_header,
+)
 
 router = APIRouter(prefix="/matching", tags=["matching"])
 
@@ -62,19 +66,6 @@ def get_posting_lookup() -> PostingLookup:
     return read_posting_fields
 
 
-@lru_cache(maxsize=1)
-def _default_guardrail() -> Guardrail:
-    """앱 전체가 공유하는 가드레일. 요청마다 새로 만들지 않는다.
-
-    제공자·검색·감사 로그 주입 지점은 아직 정해지지 않아 기본값이다.
-    제공자가 없으면 규칙 결과만 돌려준다 (`service.analyze` 참조).
-    """
-    return Guardrail()
-
-
-def get_guardrail() -> Guardrail:
-    """테스트에서 갈아끼울 수 있게 의존성으로 뺀다."""
-    return _default_guardrail()
 
 
 def _posting_from(
@@ -111,6 +102,7 @@ async def analyze(
     payload: AnalyzeRequest,
     user: AuthenticatedUser,
     guard: Guardrail = Depends(get_guardrail),
+    session_id: str | None = Depends(session_header),
     lookup: PostingLookup = Depends(get_posting_lookup),
 ) -> AnalyzeResponse:
     """공고 요건을 뽑아 자소서·경험과 대조한다.
@@ -124,8 +116,7 @@ async def analyze(
         posting.to_domain(),
         payload.evidence(),
         guard=guard,
-        user_id=user.sub,
-        role=str(user.role),
+        **guardrail_kwargs(user, session_id),
         use_llm=payload.use_llm,
     )
 

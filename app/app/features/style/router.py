@@ -6,8 +6,6 @@
 
 from __future__ import annotations
 
-from functools import lru_cache
-
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.auth import AuthenticatedUser
@@ -22,19 +20,15 @@ from app.features.style.schemas import (
     CountOut,
 )
 from app.guardrail import Guardrail
+from app.guardrail.fastapi import (
+    get_guardrail,
+    guardrail_kwargs,
+    session_header,
+)
 
 router = APIRouter(prefix="/style", tags=["style"])
 
 
-@lru_cache(maxsize=1)
-def _default_guardrail() -> Guardrail:
-    """앱 전체가 공유하는 가드레일. 요청마다 새로 만들지 않는다."""
-    return Guardrail()
-
-
-def get_guardrail() -> Guardrail:
-    """테스트에서 갈아끼울 수 있게 의존성으로 뺀다."""
-    return _default_guardrail()
 
 
 @router.post("/adjust", response_model=AdjustResponse)
@@ -42,6 +36,7 @@ async def adjust(
     payload: AdjustRequest,
     user: AuthenticatedUser,
     guard: Guardrail = Depends(get_guardrail),
+    session_id: str | None = Depends(session_header),
 ) -> AdjustResponse:
     """글자 수와 문체를 본다. 규칙으로 못 줄이면 모델에게 다시 쓰게 한다.
 
@@ -53,8 +48,7 @@ async def adjust(
         result = await service.adjust(
             payload.text,
             guard=guard,
-            user_id=user.sub,
-            role=str(user.role),
+            **guardrail_kwargs(user, session_id),
             limit=payload.limit,
             min_chars=payload.min_chars,
             target_tone=payload.target_tone,  # type: ignore[arg-type]
