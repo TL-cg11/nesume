@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -42,6 +42,23 @@ class VersionCreate(BaseModel):
     body: str
 
 
+class VersionShareTag(BaseModel):
+    """이 버전을 고정한 멘토 공유(B10, 작성자 화면용, 4.43)."""
+
+    share_id: uuid.UUID
+    mentor_label: str
+    end_date: date
+    status: str  # active / expired / revoked
+    ended_on: date | None  # 만료일 또는 취소일(KST). 유효하면 None
+
+
+class ShareSummary(BaseModel):
+    """자소서의 유효한 멘토 공유 요약."""
+
+    active_count: int
+    earliest_end_date: date
+
+
 class VersionSummary(BaseModel):
     """타임라인 항목. 본문은 포함하지 않는다."""
 
@@ -53,6 +70,7 @@ class VersionSummary(BaseModel):
     compressed: bool
     restored_from: uuid.UUID | None
     created_at: datetime
+    shares: list[VersionShareTag] = []
 
 
 class VersionOut(VersionSummary):
@@ -81,6 +99,7 @@ class ResumeOut(BaseModel):
     status: str | None
     created_at: datetime
     updated_at: datetime
+    share_summary: ShareSummary | None = None
 
 
 class ResumeDetail(ResumeOut):

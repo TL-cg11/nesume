@@ -24,3 +24,16 @@
 .diff { white-space: pre-wrap; line-height: 1.7; padding: var(--space-3); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); }
 .diff del { color: var(--danger); background: var(--danger-soft); }
 .diff ins { color: var(--success); background: var(--success-soft); text-decoration: none; font-weight: 600; }
+
+/* 멘토 공유 태그(B10, 4.43) */
+.share-tags { display: inline-flex; flex-wrap: wrap; gap: var(--space-1); align-items: center; }
+.share-tag, .share-summary {
+  display: inline-flex; align-items: center; gap: var(--space-1);
+  font-size: var(--text-sm); color: var(--accent-text); background: var(--accent-soft);
+  padding: calc(var(--space-1) / 2) var(--space-2); border-radius: var(--radius-pill); white-space: nowrap;
+}
+.share-tag-mark { font-weight: 700; }
+.share-tag.ended { color: var(--muted); background: var(--surface); border: 1px solid var(--border); }
+.share-more { font-size: var(--text-sm); color: var(--accent-text); }
+.share-toggle { display: inline-flex; align-items: center; gap: var(--space-1); cursor: pointer; }
+.share-toggle input { min-height: 0; }

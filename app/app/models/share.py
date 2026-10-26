@@ -37,4 +37,7 @@ class Share(Base):
     # 공유 시점의 문항별 버전 고정(B10, part2_guide 4.40). 이후 수정본은 멘토에게 보이지 않는다.
     # FK 없음(applications.version_ids와 같은 방식). 버전은 수정·개별 삭제 불가라 참조가 깨지지 않는다
     version_ids: Mapped[list[uuid.UUID]] = mapped_column(ARRAY(Uuid), default=list, server_default="{}")
+    # 작성자가 붙이는 멘토 별칭(1~20자, 본인만 보는 메모). 멘토 이름은 DB에 없어 표시용으로 받는다(4.43)
+    # API(B10)는 필수로 받는다. DB 기본값은 API 밖에서 만든 행(테스트·배치)과 기존 행용
+    mentor_label: Mapped[str] = mapped_column(String(20), default="멘토", server_default="멘토")
     created_at: Mapped[CreatedAt]

@@ -67,6 +67,7 @@ def _resume(owner, bodies=("본문",), title="자소서"):
 
 
 def _share(owner, rid, mentor_sub, **kw):
+    kw.setdefault("mentor_label", "김멘토")
     return owner.post(f"/resumes/{rid}/shares", json={"mentor_id": mentor_sub, **kw})
 
 
@@ -275,3 +276,81 @@ def test_server_only_fields_rejected(owner, mentor):
     r = _resume(owner)
     res = _share(owner, r["id"], mentor.sub, version_ids=[], expires_at="2030-01-01T00:00:00Z")
     assert res.status_code == 422
+
+
+# --- 공유 버전 태그·멘토 별칭 (part2_guide 4.43) ------------------------------
+
+@pytest.mark.parametrize("label", [None, "", "   ", "가" * 21, "주민 900101-1234567"])
+def test_mentor_label_required_and_validated(owner, mentor, label):
+    r = _resume(owner)
+    body = {"mentor_id": mentor.sub} if label is None else {"mentor_id": mentor.sub, "mentor_label": label}
+    assert owner.post(f"/resumes/{r['id']}/shares", json=body).status_code == 422
+
+
+def test_rename_label_including_ended_share(owner, mentor):
+    r = _resume(owner)
+    s = _share(owner, r["id"], mentor.sub, mentor_label="  김멘토  ").json()
+    assert s["mentor_label"] == "김멘토"
+    owner.delete(f"/shares/{s['id']}")
+    res = owner.patch(f"/shares/{s['id']}", json={"mentor_label": "학교 취업센터"})
+    assert res.status_code == 200 and res.json()["mentor_label"] == "학교 취업센터"
+    assert As(_sub("own")).patch(f"/shares/{s['id']}", json={"mentor_label": "x"}).status_code == 404
+    assert owner.patch(f"/shares/{s['id']}", json={"mentor_label": ""}).status_code == 422
+
+
+def test_label_not_shown_to_mentor(owner, mentor):
+    r = _resume(owner)
+    s = _share(owner, r["id"], mentor.sub, mentor_label="비밀 메모").json()
+    assert "비밀 메모" not in mentor.get("/mentor/shares").text
+    assert "비밀 메모" not in mentor.get(f"/mentor/shares/{s['id']}").text
+
+
+def _versions(owner, r, include_ended=False):
+    q = owner.get(f"/resumes/{r['id']}").json()["questions"][0]
+    url = f"/resumes/{r['id']}/questions/{q['id']}/versions" + ("?include_ended=true" if include_ended else "")
+    return {v["version_no"]: v["shares"] for v in owner.get(url).json()}, q
+
+
+def test_version_tags_per_version_and_mentor(owner, mentor):
+    r = _resume(owner)
+    m2, m3 = _sub("men"), _sub("men")
+    _share(owner, r["id"], mentor.sub, mentor_label="김멘토", end_date=(_today() + timedelta(days=6)).isoformat())
+    _share(owner, r["id"], m2, mentor_label="박멘토", end_date=(_today() + timedelta(days=3)).isoformat())
+    tags, q = _versions(owner, r)
+    assert [t["mentor_label"] for t in tags[1]] == ["박멘토", "김멘토"]  # 종료일 빠른 순
+    assert all(t["status"] == "active" and t["ended_on"] is None for t in tags[1])
+
+    owner.post(f"/resumes/{r['id']}/questions/{q['id']}/versions", json={"body": "v2"})
+    _share(owner, r["id"], m3, mentor_label="이멘토")
+    tags, _ = _versions(owner, r)
+    assert [t["mentor_label"] for t in tags[2]] == ["이멘토"]
+    assert len(tags[1]) == 2
+
+
+def test_ended_shares_hidden_by_default_and_shown_on_request(owner, mentor):
+    r = _resume(owner)
+    revoked = _share(owner, r["id"], mentor.sub, mentor_label="취소멘토").json()
+    owner.delete(f"/shares/{revoked['id']}")
+    expired = _share(owner, r["id"], _sub("men"), mentor_label="만료멘토").json()
+    _expire(expired["id"])
+    _share(owner, r["id"], _sub("men"), mentor_label="유효멘토")
+
+    tags, _ = _versions(owner, r)
+    assert [t["mentor_label"] for t in tags[1]] == ["유효멘토"]
+    tags, _ = _versions(owner, r, include_ended=True)
+    by = {t["mentor_label"]: t for t in tags[1]}
+    assert [t["mentor_label"] for t in tags[1]][0] == "유효멘토"  # 유효한 공유가 앞
+    assert by["취소멘토"]["status"] == "revoked" and by["취소멘토"]["ended_on"] == _today().isoformat()
+    assert by["만료멘토"]["status"] == "expired" and by["만료멘토"]["ended_on"] is not None
+
+
+def test_resume_list_and_detail_share_summary(owner, mentor):
+    r1, r2 = _resume(owner, title="A"), _resume(owner, title="B")
+    _share(owner, r1["id"], mentor.sub, end_date=(_today() + timedelta(days=9)).isoformat())
+    _share(owner, r1["id"], _sub("men"), end_date=(_today() + timedelta(days=2)).isoformat())
+    gone = _share(owner, r1["id"], _sub("men")).json()
+    owner.delete(f"/shares/{gone['id']}")
+    summary = {x["title"]: x["share_summary"] for x in owner.get("/resumes").json()}
+    assert summary["A"] == {"active_count": 2, "earliest_end_date": (_today() + timedelta(days=2)).isoformat()}
+    assert summary["B"] is None
+    assert owner.get(f"/resumes/{r1['id']}").json()["share_summary"]["active_count"] == 2

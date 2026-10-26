@@ -2,13 +2,19 @@
 import uuid
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Annotated
+
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+
+# 작성자가 붙이는 멘토 별칭(4.43)
+MentorLabel = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=20)]
 
 
 class ShareCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     mentor_id: str = Field(min_length=1, max_length=128)
+    mentor_label: MentorLabel
     end_date: date | None = None  # 비우면 공유일 포함 7일째 날
     confirm: bool = False         # 같은 멘토에게 유효한 공유가 있을 때 확인 후 true로 다시 요청
 
@@ -19,10 +25,17 @@ class ShareExtend(BaseModel):
     end_date: date
 
 
+class ShareRename(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mentor_label: MentorLabel
+
+
 class ShareOut(BaseModel):
     id: uuid.UUID
     resume_id: uuid.UUID
     mentor_id: str
+    mentor_label: str
     end_date: date
     expires_at: datetime
     status: str  # active / expired / revoked

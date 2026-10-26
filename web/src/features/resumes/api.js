@@ -15,7 +15,9 @@ export const resumesApi = {
   removeQuestion: (rid, qid) => api.delete(q(rid, qid)),
 
   saveVersion: (rid, qid, body) => api.post(`${q(rid, qid)}/versions`, { body }),
-  listVersions: (rid, qid) => api.get(`${q(rid, qid)}/versions`),
+  // includeEnded: 만료·취소된 멘토 공유 태그도 포함(B10 공유 버전 태그)
+  listVersions: (rid, qid, includeEnded = false) =>
+    api.get(`${q(rid, qid)}/versions${includeEnded ? '?include_ended=true' : ''}`),
   getVersion: (rid, qid, vid) => api.get(`${q(rid, qid)}/versions/${vid}`),
   diff: (rid, qid, from, to) => api.get(`${q(rid, qid)}/versions/diff?from=${from}&to=${to}`),
   restore: (rid, qid, vid) => api.post(`${q(rid, qid)}/versions/${vid}/restore`),

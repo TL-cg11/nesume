@@ -14,11 +14,12 @@ from sqlalchemy.orm import Session
 from app.auth import AuthenticatedUser, CurrentUser, Role
 from app.core.errors import ConflictError
 from app.db import get_db
+from app.features.resumes import pii_hooks
 from app.features.resumes.service import ensure_user
 from app.features.share import period, service
 from app.features.share import repository as repo
 from app.features.share.schemas import (
-    ReceivedShare, SharedQuestion, SharedResume, ShareCreate, ShareExtend, ShareOut,
+    ReceivedShare, SharedQuestion, SharedResume, ShareCreate, ShareExtend, ShareOut, ShareRename,
 )
 from app.models import Share
 
@@ -29,6 +30,12 @@ Db = Annotated[Session, Depends(get_db)]
 _NOT_FOUND = HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
 _PERIOD = HTTPException(
     status.HTTP_422_UNPROCESSABLE_CONTENT, f"공유 기간은 오늘부터 {period.MAX_DAYS}일 이내로 선택해 주세요."
+)
+
+
+_SENSITIVE = HTTPException(
+    status.HTTP_422_UNPROCESSABLE_CONTENT,
+    "주민번호·계좌번호 등 민감정보는 제공하지 않습니다. 입력 시에도 자동 차단됩니다.",
 )
 
 
@@ -43,7 +50,8 @@ Mentor = Annotated[CurrentUser, Depends(require_mentor)]
 
 def _out(s: Share, now: datetime) -> ShareOut:
     return ShareOut(
-        id=s.id, resume_id=s.resume_id, mentor_id=s.shared_with, end_date=period.end_date_of(s.expires_at),
+        id=s.id, resume_id=s.resume_id, mentor_id=s.shared_with, mentor_label=s.mentor_label,
+        end_date=period.end_date_of(s.expires_at),
         expires_at=s.expires_at, status=service.status_of(s, now), created_at=s.created_at,
         revoked_at=s.revoked_at,
     )
@@ -64,11 +72,13 @@ def create_share(resume_id: uuid.UUID, payload: ShareCreate, user: Authenticated
     now = datetime.now(UTC)
     try:
         share = service.create_share(db, user.sub, resume_id, payload.mentor_id, payload.end_date,
-                                     confirm=payload.confirm, now=now)
+                                     mentor_label=payload.mentor_label, confirm=payload.confirm, now=now)
     except service.ShareConfirmRequired as e:
         raise ConflictError(e.message, code="share_confirm_required", errors={"kind": e.kind}) from None
     except period.PeriodInvalid:
         raise _PERIOD from None
+    except pii_hooks.SensitiveInputBlocked:
+        raise _SENSITIVE from None
     except service.SelfShare:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "본인에게는 공유할 수 없습니다.") from None
     except service.MentorNotFound:
@@ -107,6 +117,17 @@ def extend_share(share_id: uuid.UUID, payload: ShareExtend, user: AuthenticatedU
             status.HTTP_422_UNPROCESSABLE_CONTENT, "연장 종료일은 현재 종료일보다 뒤여야 합니다."
         ) from None
     return _out(s, now)
+
+
+@owner_router.patch("/shares/{share_id}", response_model=ShareOut)
+def rename_share(share_id: uuid.UUID, payload: ShareRename, user: AuthenticatedUser, db: Db):
+    """멘토 별칭 수정. 끝난 공유도 가능(작성자 본인 메모)."""
+    s = _share_or_404(db, user.sub, share_id)
+    try:
+        service.rename_share(db, s, payload.mentor_label)
+    except pii_hooks.SensitiveInputBlocked:
+        raise _SENSITIVE from None
+    return _out(s, datetime.now(UTC))
 
 
 @owner_router.delete("/shares/{share_id}", status_code=status.HTTP_204_NO_CONTENT)

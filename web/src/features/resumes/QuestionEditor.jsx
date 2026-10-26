@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { resumesApi } from './api.js'
 import DiffView from './DiffView.jsx'
+import ShareTags from './ShareTags.jsx'
 import { experiencesApi } from '../experiences/api.js'
 import { experienceSummary } from '../experiences/summary.js'
 
@@ -16,12 +17,13 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete }
   const [experiences, setExperiences] = useState([])
   const [linked, setLinked] = useState([])
   const [pick, setPick] = useState('')
+  const [showEnded, setShowEnded] = useState(false)
 
   const loadVersions = useCallback(async () => {
-    const list = await resumesApi.listVersions(resumeId, question.id)
+    const list = await resumesApi.listVersions(resumeId, question.id, showEnded)
     setVersions(list)
     return list
-  }, [resumeId, question.id])
+  }, [resumeId, question.id, showEnded])
 
   useEffect(() => {
     loadVersions()
@@ -153,7 +155,13 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete }
         </ul>
       )}
 
-      <h3>버전 기록</h3>
+      <div className="row">
+        <h3 className="grow">버전 기록</h3>
+        <label className="muted share-toggle">
+          <input type="checkbox" checked={showEnded} onChange={(e) => setShowEnded(e.target.checked)} />
+          지난 공유 보기
+        </label>
+      </div>
       <ul className="timeline">
         {versions.map((v) => (
           <li key={v.id}>
@@ -164,6 +172,7 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete }
               {' · '}
               {v.char_count}자 · {new Date(v.created_at).toLocaleString()}
             </span>
+            <ShareTags shares={v.shares} />
             {v !== versions[0] && (
               <button className="secondary" onClick={() => restore(v.id)}>
                 이 버전으로 복원

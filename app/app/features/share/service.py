@@ -13,6 +13,7 @@ from datetime import UTC, date, datetime
 
 from sqlalchemy.orm import Session
 
+from app.features.resumes import pii_hooks
 from app.features.resumes import repository as resume_repo
 from app.features.resumes.service import ensure_user
 from app.features.share import index_hooks, period
@@ -82,7 +83,7 @@ def sync_resume(db: Session, resume: Resume, now: datetime) -> None:
 
 def create_share(
     db: Session, owner_id: str, resume_id: uuid.UUID, mentor_id: str, end: date | None,
-    *, confirm: bool = False, now: datetime | None = None,
+    *, mentor_label: str, confirm: bool = False, now: datetime | None = None,
 ) -> Share | None:
     """공유 생성. 자소서가 없거나 타인 소유면 None."""
     now = now or datetime.now(UTC)
@@ -100,6 +101,7 @@ def create_share(
         ensure_user(db, mentor_id)
     end = end or period.default_end(now)
     period.check_end(end, now)
+    pii_hooks.ensure_no_sensitive(mentor_label)
     version_ids = _latest_version_ids(db, owner_id, resume_id)
     if not version_ids:
         raise NothingToShare()
@@ -114,7 +116,7 @@ def create_share(
     for s in same:
         s.revoked_at = now
 
-    share = Share(resume_id=resume_id, owner_id=owner_id, shared_with=mentor_id,
+    share = Share(resume_id=resume_id, owner_id=owner_id, shared_with=mentor_id, mentor_label=mentor_label,
                   expires_at=period.expires_at_for(end), version_ids=version_ids)
     db.add(share)
     db.flush()
@@ -143,3 +145,52 @@ def revoke_share(db: Session, share: Share, *, now: datetime | None = None) -> N
         share.revoked_at = now
         db.flush()
         sync_resume(db, db.get(Resume, share.resume_id), now)
+
+
+def rename_share(db: Session, share: Share, mentor_label: str) -> Share:
+    """별칭 수정. 작성자 본인 메모라 끝난 공유도 고칠 수 있다."""
+    pii_hooks.ensure_no_sensitive(mentor_label)
+    share.mentor_label = mentor_label
+    db.flush()
+    return share
+
+
+def _tag(s: Share, now: datetime) -> dict:
+    status = status_of(s, now)
+    ended_on = None
+    if status == "revoked":
+        ended_on = s.revoked_at.astimezone(period.KST).date()
+    elif status == "expired":
+        ended_on = period.end_date_of(s.expires_at)
+    return {"share_id": s.id, "mentor_label": s.mentor_label, "end_date": period.end_date_of(s.expires_at),
+            "status": status, "ended_on": ended_on}
+
+
+def version_tags(
+    db: Session, owner_id: str, version_ids: list[uuid.UUID], *, include_ended: bool = False,
+    now: datetime | None = None,
+) -> dict[uuid.UUID, list[dict]]:
+    """버전별 공유 태그(작성자 화면용). 유효한 공유를 앞에, 종료일 빠른 순."""
+    now = now or datetime.now(UTC)
+    wanted = set(version_ids)
+    out: dict[uuid.UUID, list[dict]] = {v: [] for v in version_ids}
+    for s in repo.for_owner_versions(db, owner_id, version_ids, now, include_ended=include_ended):
+        for vid in set(s.version_ids) & wanted:
+            out[vid].append(_tag(s, now))
+    for tags in out.values():
+        tags.sort(key=lambda t: (t["status"] != "active", t["end_date"]))
+    return out
+
+
+def resume_summaries(
+    db: Session, owner_id: str, resume_ids: list[uuid.UUID], *, now: datetime | None = None,
+) -> dict[uuid.UUID, dict]:
+    """자소서별 유효한 공유 요약: 멘토 수, 가장 빠른 종료일. 공유가 없으면 키 없음."""
+    now = now or datetime.now(UTC)
+    out: dict[uuid.UUID, dict] = {}
+    for s in repo.active_for_resumes(db, owner_id, resume_ids, now):
+        end = period.end_date_of(s.expires_at)
+        cur = out.setdefault(s.resume_id, {"active_count": 0, "earliest_end_date": end})
+        cur["active_count"] += 1
+        cur["earliest_end_date"] = min(cur["earliest_end_date"], end)
+    return out
