@@ -16,7 +16,7 @@ from app.core.errors import ConflictError
 from app.db import get_db
 from app.features.resumes import pii_hooks
 from app.features.resumes.service import ensure_user
-from app.features.share import period, service
+from app.features.share import display, period, service
 from app.features.share import repository as repo
 from app.features.share.schemas import (
     ReceivedShare, SharedQuestion, SharedResume, ShareCreate, ShareExtend, ShareOut, ShareRename,
@@ -152,7 +152,8 @@ def view_shared(share_id: uuid.UUID, user: Mentor, db: Db):
         raise _NOT_FOUND
     share, resume = row
     items = [
-        SharedQuestion(question_title=q.title, char_limit=q.char_limit, version_no=v.version_no, body=v.body)
+        SharedQuestion(question_title=q.title, char_limit=q.char_limit, version_no=v.version_no,
+                       body=display.readable(v.body))
         for v, q in repo.shared_versions(db, share.version_ids)
     ]
     return SharedResume(id=share.id, resume_title=resume.title,

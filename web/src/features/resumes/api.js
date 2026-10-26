@@ -22,3 +22,12 @@ export const resumesApi = {
   diff: (rid, qid, from, to) => api.get(`${q(rid, qid)}/versions/diff?from=${from}&to=${to}`),
   restore: (rid, qid, vid) => api.post(`${q(rid, qid)}/versions/${vid}/restore`),
 }
+
+// B10 멘토 공유(작성자용)
+export const sharesApi = {
+  list: (rid) => api.get(`/resumes/${rid}/shares`),
+  create: (rid, data) => api.post(`/resumes/${rid}/shares`, data),
+  extend: (sid, endDate) => api.post(`/shares/${sid}/extend`, { end_date: endDate }),
+  rename: (sid, label) => api.patch(`/shares/${sid}`, { mentor_label: label }),
+  revoke: (sid) => api.delete(`/shares/${sid}`),
+}

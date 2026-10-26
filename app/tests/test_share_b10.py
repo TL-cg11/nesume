@@ -131,7 +131,7 @@ def test_mentor_sees_snapshot_tokenized_readonly(owner, mentor):
     assert [x["id"] for x in mentor.get("/mentor/shares").json()] == [s["id"]]
     view = mentor.get(f"/mentor/shares/{s['id']}").json()
     assert view["resume_title"] == "자소서"
-    assert [x["body"] for x in view["questions"]] == ["연락처 [[PHONE_1]]"]  # 공유 시점 버전, 토큰 상태
+    assert [x["body"] for x in view["questions"]] == ["연락처 (전화번호 비공개)"]  # 공유 시점 버전, 비공개 문구
     assert view["questions"][0]["version_no"] == 1
 
 
@@ -354,3 +354,11 @@ def test_resume_list_and_detail_share_summary(owner, mentor):
     assert summary["A"] == {"active_count": 2, "earliest_end_date": (_today() + timedelta(days=2)).isoformat()}
     assert summary["B"] is None
     assert owner.get(f"/resumes/{r1['id']}").json()["share_summary"]["active_count"] == 2
+
+
+def test_readable_token_text():
+    from app.features.share.display import readable
+    assert readable("[[PERSON_1]]님 연락처 [[PHONE_2]], [[EMAIL_1]] / [[ADDRESS_1]]") == (
+        "(이름 비공개)님 연락처 (전화번호 비공개), (이메일 비공개) / (주소 비공개)")
+    assert readable("[[ORG_1]]·[[SCHOOL_3]]·[[NEWKIND_1]]") == "(기관명 비공개)·(학교명 비공개)·(비공개 정보)"
+    assert readable("토큰 없음 [[x]] [[PHONE]]") == "토큰 없음 [[x]] [[PHONE]]"

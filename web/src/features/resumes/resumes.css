@@ -37,3 +37,10 @@
 .share-more { font-size: var(--text-sm); color: var(--accent-text); }
 .share-toggle { display: inline-flex; align-items: center; gap: var(--space-1); cursor: pointer; }
 .share-toggle input { min-height: 0; }
+
+/* 작성자용 멘토 공유 관리(B10 후속, 4.44) */
+.share-panel { margin-top: var(--space-4); }
+.share-panel h2 { margin: 0; }
+.share-confirm p { margin: 0 0 var(--space-2); }
+.share-list > li .row { margin: var(--space-1) 0; }
+.share-list > li.ended strong { color: var(--muted); }

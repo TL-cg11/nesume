@@ -6,7 +6,7 @@ import { experiencesApi } from '../experiences/api.js'
 import { experienceSummary } from '../experiences/summary.js'
 
 // 문항 편집: 저장할 때마다 새 버전(spec 3.1), 버전 타임라인, 두 버전 비교, 복원
-export default function QuestionEditor({ resumeId, question, onSaved, onDelete }) {
+export default function QuestionEditor({ resumeId, question, onSaved, onDelete, shareRev = 0 }) {
   const [body, setBody] = useState('')
   const [savedBody, setSavedBody] = useState('')
   const [versions, setVersions] = useState([])
@@ -25,8 +25,15 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete }
     return list
   }, [resumeId, question.id, showEnded])
 
+  // 버전 목록(공유 태그 포함): 지난 공유 토글·공유 변경 때마다 다시 불러온다. 편집 중인 본문은 건드리지 않는다
   useEffect(() => {
-    loadVersions()
+    loadVersions().catch((e) => setError(e.message))
+  }, [loadVersions, shareRev])
+
+  // 본문 초기값: 문항이 바뀔 때만 최신 버전으로
+  useEffect(() => {
+    resumesApi
+      .listVersions(resumeId, question.id)
       .then(async (list) => {
         if (list.length) {
           const latest = await resumesApi.getVersion(resumeId, question.id, list[0].id)
@@ -35,7 +42,7 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete }
         }
       })
       .catch((e) => setError(e.message))
-  }, [loadVersions, resumeId, question.id])
+  }, [resumeId, question.id])
 
   const loadLinked = useCallback(
     () => experiencesApi.listLinked(resumeId, question.id).then(setLinked),

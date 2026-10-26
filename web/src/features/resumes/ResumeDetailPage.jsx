@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { resumesApi } from './api.js'
 import QuestionEditor from './QuestionEditor.jsx'
+import SharePanel from './SharePanel.jsx'
 import './resumes.css'
 
 export default function ResumeDetailPage() {
@@ -11,6 +12,7 @@ export default function ResumeDetailPage() {
   const [selectedId, setSelectedId] = useState(null)
   const [newQuestion, setNewQuestion] = useState({ title: '', char_limit: '' })
   const [error, setError] = useState(null)
+  const [shareRev, setShareRev] = useState(0) // 공유가 바뀌면 버전 태그를 다시 불러온다
 
   const load = useCallback(() => {
     resumesApi
@@ -89,6 +91,14 @@ export default function ResumeDetailPage() {
       </div>
       {error && <p className="error">{error}</p>}
 
+      <SharePanel
+        resumeId={resumeId}
+        onChanged={() => {
+          setShareRev((n) => n + 1)
+          load()
+        }}
+      />
+
       <div className="detail-grid">
         <aside>
           <h2>문항</h2>
@@ -130,6 +140,7 @@ export default function ResumeDetailPage() {
               question={selected}
               onSaved={load}
               onDelete={() => removeQuestion(selected.id)}
+              shareRev={shareRev}
             />
           ) : (
             <p className="muted">문항을 추가하거나 선택하세요.</p>

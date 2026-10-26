@@ -53,7 +53,7 @@ class SharedQuestion(BaseModel):
     question_title: str
     char_limit: int | None
     version_no: int
-    body: str  # PII 토큰 상태 그대로(원문 복원은 소유자만, tasks B7)
+    body: str  # PII는 '(전화번호 비공개)' 같은 문구로 표시(원문 복원은 소유자만, tasks B7, 4.44)
 
 
 class SharedResume(BaseModel):
