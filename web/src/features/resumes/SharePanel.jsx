@@ -23,6 +23,7 @@ export default function SharePanel({ resumeId, onChanged }) {
   const [confirm, setConfirm] = useState(null) // 다시 공유 확인 문구(409)
   const [editing, setEditing] = useState({}) // share_id → { label?, end_date? }
   const [error, setError] = useState(null)
+  const [comments, setComments] = useState({}) // share_id → 코멘트 목록(펼친 공유만)
 
   const load = useCallback(() => sharesApi.list(resumeId).then(setShares), [resumeId])
 
@@ -69,6 +70,29 @@ export default function SharePanel({ resumeId, onChanged }) {
   const revoke = (s) => {
     if (!window.confirm(`${s.mentor_label}님과의 공유를 취소할까요? 바로 열람할 수 없게 됩니다.`)) return
     run(() => sharesApi.revoke(s.id))
+  }
+
+  const toggleComments = async (sid) => {
+    if (comments[sid]) {
+      setComments(({ [sid]: _, ...rest }) => rest)
+      return
+    }
+    try {
+      const list = await sharesApi.comments(sid)
+      setComments((cur) => ({ ...cur, [sid]: list }))
+    } catch (e) {
+      setError(e.message)
+    }
+  }
+
+  const markRead = async (sid, cid) => {
+    try {
+      const c = await sharesApi.markRead(sid, cid)
+      setComments((cur) => ({ ...cur, [sid]: cur[sid].map((x) => (x.id === cid ? c : x)) }))
+      await load()
+    } catch (e) {
+      setError(e.message)
+    }
   }
 
   const visible = shares.filter((s) => showEnded || s.status === 'active')
@@ -178,6 +202,12 @@ export default function SharePanel({ resumeId, onChanged }) {
                 <span className="grow" title={s.mentor_id}>
                   ID {s.mentor_id.slice(0, 8)}… · {shortDate(s.created_at.slice(0, 10))} 공유
                 </span>
+                {s.comment_count > 0 && (
+                  <button className="secondary" onClick={() => toggleComments(s.id)} aria-expanded={!!comments[s.id]}>
+                    코멘트 {s.comment_count}
+                    {s.unread_count > 0 && <span className="share-unread"> · 새 {s.unread_count}</span>}
+                  </button>
+                )}
                 {active && ed.end_date === undefined && (
                   <>
                     <button className="secondary" onClick={() => edit(s.id, { end_date: localDate(MAX_DAYS - 1) })}>
@@ -207,6 +237,29 @@ export default function SharePanel({ resumeId, onChanged }) {
                   </>
                 )}
               </div>
+              {comments[s.id] && (
+                <ul className="share-comment-list">
+                  {comments[s.id].map((c) => (
+                    <li key={c.id} className={c.read_at ? '' : 'unread'}>
+                      <p className="muted">
+                        {c.question_title ?? '삭제된 문항'} · {c.paragraph_index + 1}번째 문단
+                      </p>
+                      {c.paragraph && <blockquote className="share-comment-quote">{c.paragraph}</blockquote>}
+                      <p className="share-comment-body">{c.body}</p>
+                      <div className="row">
+                        <span className="muted grow">{new Date(c.updated_at).toLocaleString()}</span>
+                        {c.read_at ? (
+                          <span className="muted">확인함</span>
+                        ) : (
+                          <button className="secondary" onClick={() => markRead(s.id, c.id)}>
+                            확인
+                          </button>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </li>
           )
         })}

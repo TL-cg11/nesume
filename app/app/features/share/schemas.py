@@ -41,6 +41,8 @@ class ShareOut(BaseModel):
     status: str  # active / expired / revoked
     created_at: datetime
     revoked_at: datetime | None
+    comment_count: int = 0  # 멘토 코멘트 수(B17)
+    unread_count: int = 0   # 작성자가 확인 안 한 코멘트 수
 
 
 class ReceivedShare(BaseModel):
@@ -49,11 +51,52 @@ class ReceivedShare(BaseModel):
     end_date: date
 
 
+CommentBody = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+
+class CommentCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version_id: uuid.UUID
+    paragraph_index: int = Field(ge=0)
+    body: CommentBody
+
+
+class CommentEdit(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    body: CommentBody
+
+
+class MentorComment(BaseModel):
+    id: uuid.UUID
+    version_id: uuid.UUID
+    paragraph_index: int
+    body: str  # 비공개 문구 표시
+    created_at: datetime
+    updated_at: datetime
+
+
+class OwnerComment(BaseModel):
+    id: uuid.UUID
+    version_id: uuid.UUID
+    question_title: str | None  # 공유 뒤 삭제된 문항이면 None
+    paragraph_index: int
+    paragraph: str | None       # 코멘트가 달린 문단(원문)
+    body: str                   # 원문
+    read_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
 class SharedQuestion(BaseModel):
     question_title: str
     char_limit: int | None
+    version_id: uuid.UUID
     version_no: int
     body: str  # PII는 '(전화번호 비공개)' 같은 문구로 표시(원문 복원은 소유자만, tasks B7, 4.44)
+    paragraphs: list[str]  # 빈 줄 기준 문단(코멘트 위치, 4.47)
+    comments: list[MentorComment]
 
 
 class SharedResume(BaseModel):

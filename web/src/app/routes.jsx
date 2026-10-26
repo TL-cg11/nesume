@@ -12,6 +12,8 @@ import ExperiencesPage from '../features/experiences/ExperiencesPage.jsx'
 import InterviewPage from '../features/interview/InterviewPage.jsx'
 import GithubPage from '../features/github/GithubPage.jsx'
 import WritingPage from '../features/writing/WritingPage.jsx'
+import MentorSharesPage from '../features/share/MentorSharesPage.jsx'
+import MentorSharePage from '../features/share/MentorSharePage.jsx'
 
 // nav: 상단 메뉴 노출 여부와 라벨
 export const featureRoutes = [
@@ -21,6 +23,8 @@ export const featureRoutes = [
   { path: 'interview', element: <InterviewPage />, nav: '면접 연습' },
   { path: 'github', element: <GithubPage />, nav: 'GitHub 소개' },
   { path: 'writing', element: <WritingPage />, nav: '글 다듬기' },
+  { path: 'mentor', element: <MentorSharesPage />, nav: '받은 공유' }, // B17 멘토 전용(그 외 역할은 안내 문구)
+  { path: 'mentor/:shareId', element: <MentorSharePage /> },
 ]
 
 export const routes = [

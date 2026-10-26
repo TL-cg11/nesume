@@ -9,6 +9,7 @@ from app.models.pii import PiiVault, UserKey
 from app.models.posting import CollectionRun, JobPosting
 from app.models.resume import Question, Resume, Version
 from app.models.share import Share
+from app.models.share_comment import ShareComment
 from app.models.template import PromptTemplate
 from app.models.user import User
 from app.models.writing_profile import WritingProfile
@@ -33,6 +34,7 @@ __all__ = [
     "Question",
     "Resume",
     "Share",
+    "ShareComment",
     "User",
     "UserKey",
     "UserProfileEmbedding",

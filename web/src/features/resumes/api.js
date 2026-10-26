@@ -30,4 +30,7 @@ export const sharesApi = {
   extend: (sid, endDate) => api.post(`/shares/${sid}/extend`, { end_date: endDate }),
   rename: (sid, label) => api.patch(`/shares/${sid}`, { mentor_label: label }),
   revoke: (sid) => api.delete(`/shares/${sid}`),
+  // B17 멘토 코멘트(작성자는 원문으로 보고 확인 표시만 한다)
+  comments: (sid) => api.get(`/shares/${sid}/comments`),
+  markRead: (sid, cid) => api.post(`/shares/${sid}/comments/${cid}/read`),
 }
