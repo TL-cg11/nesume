@@ -156,6 +156,7 @@ erDiagram
 | 감사 로그 90일 보관 | `features/audit/retention.py` (1회 최대 5,000행, 오래된 순) | spec 10.2 (B3) |
 | PII 대응표는 사용자별 DEK로 암호화, DEK는 KMS 암호화 상태로만 저장 | `user_keys`, `pii_vaults`, `app/app/pii/envelope.py` | spec 8.3, tasks B7 |
 | 저장용 대응표는 만료 없음, LLM용은 만료 후 열람 시·정리 배치로 삭제 | `pii_vaults.expires_at`, `pg_vault_store.cleanup_expired` | part2_guide 4.26, 4.28 |
+| 소프트 삭제 30일 후 물리 삭제, 계정은 요청 30일 후 삭제(감사 로그는 익명화 보존) | `app/app/features/deletion/service.py` | tasks B20, spec 10.2 |
 | 등급은 저장 시 기능별 고정값으로 자동 부여, 이후 변경 불가 | `app/app/models/grading.py` | tasks B8, spec 6.4 |
 | 버전·경험은 자기 대응표를 가리키고, 대응표는 참조 행을 먼저 지운 뒤 삭제(NO ACTION) | `versions.vault_id`, `experiences.vault_id` | part2_guide 4.33 |
 | 참조 중인 공고는 물리 삭제 불가. 계정 삭제 시 본인 입력 공고는 함께 삭제 | `resumes`·`applications.job_posting_id` RESTRICT | part2_guide 4.30 |
