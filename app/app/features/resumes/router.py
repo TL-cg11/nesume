@@ -28,6 +28,7 @@ from app.features.resumes.schemas import (
     VersionOut,
     VersionSummary,
 )
+from app.features.share import service as share_service
 
 router = APIRouter(prefix="/resumes", tags=["resumes"])
 Db = Annotated[Session, Depends(get_db)]
@@ -76,7 +77,9 @@ def list_resumes(
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
 ):
-    return repo.list_resumes(db, user.sub, limit, offset)
+    rows = repo.list_resumes(db, user.sub, limit, offset)
+    summaries = share_service.resume_summaries(db, user.sub, [r.id for r in rows])
+    return [{**ResumeOut.model_validate(r).model_dump(), "share_summary": summaries.get(r.id)} for r in rows]
 
 
 @router.get("/{resume_id}", response_model=ResumeDetail)
@@ -86,6 +89,7 @@ def get_resume(resume_id: uuid.UUID, user: AuthenticatedUser, db: Db):
     latest = repo.latest_versions(db, [q.id for q in questions])
     return {
         **ResumeOut.model_validate(resume).model_dump(),
+        "share_summary": share_service.resume_summaries(db, user.sub, [resume.id]).get(resume.id),
         "questions": [
             {**QuestionOut.model_validate(q).model_dump(exclude={"latest_version"}),
              "latest_version": latest.get(q.id)}
@@ -149,9 +153,14 @@ def create_version(
 
 
 @router.get("/{resume_id}/questions/{question_id}/versions", response_model=list[VersionSummary])
-def list_versions(resume_id: uuid.UUID, question_id: uuid.UUID, user: AuthenticatedUser, db: Db):
+def list_versions(
+    resume_id: uuid.UUID, question_id: uuid.UUID, user: AuthenticatedUser, db: Db, include_ended: bool = False,
+):
+    """버전 타임라인 + 버전별 멘토 공유 태그. include_ended=true면 만료·취소된 공유도 포함(4.43)."""
     _question_or_404(db, user.sub, resume_id, question_id)
-    return repo.list_versions(db, user.sub, question_id)
+    rows = repo.list_versions(db, user.sub, question_id)
+    tags = share_service.version_tags(db, user.sub, [v.id for v in rows], include_ended=include_ended)
+    return [{**VersionSummary.model_validate(v).model_dump(), "shares": tags[v.id]} for v in rows]
 
 
 @router.get("/{resume_id}/questions/{question_id}/versions/diff", response_model=VersionDiff)

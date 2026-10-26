@@ -19,6 +19,7 @@ from app.models.audit import AuditLog
 from app.models.experience import Experience
 from app.models.pii import PiiVault
 from app.models.resume import Question, Resume, Version
+from app.models.share_comment import ShareComment
 from app.models.template import PromptTemplate
 from app.models.writing_profile import WritingProfile
 
@@ -33,6 +34,7 @@ GRADE_BY_MODEL: dict[type, Grade] = {
     PiiVault: Grade.SENSITIVE,   # PII 토큰화 전 원문
     AuditLog: Grade.SENSITIVE,
     WritingProfile: Grade.PERSONAL,  # A14 말투 프로필
+    ShareComment: Grade.PERSONAL,  # B17 멘토 코멘트(자소서에 딸린 데이터)
 }
 
 

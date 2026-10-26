@@ -59,11 +59,16 @@ def get_for_owner(db: Session, owner_id: str, share_id: uuid.UUID) -> Share | No
     )
 
 
+def _owner_active():
+    """작성자가 계정 삭제 예약 중이면 멘토에게 보이지 않는다(B20, 4.49)."""
+    return select(User.id).where(User.id == Share.owner_id, User.deleted_at.is_(None)).exists()
+
+
 def list_for_mentor(db: Session, mentor_id: str, now: datetime) -> Sequence[tuple[Share, str]]:
     return db.execute(
         select(Share, Resume.title)
         .join(Resume, Resume.id == Share.resume_id)
-        .where(Share.shared_with == mentor_id, *_active(now), Resume.deleted_at.is_(None))
+        .where(Share.shared_with == mentor_id, *_active(now), Resume.deleted_at.is_(None), _owner_active())
         .order_by(Share.expires_at)
     ).all()
 
@@ -73,7 +78,7 @@ def get_for_mentor(db: Session, mentor_id: str, share_id: uuid.UUID, now: dateti
         select(Share, Resume)
         .join(Resume, Resume.id == Share.resume_id)
         .where(Share.id == share_id, Share.shared_with == mentor_id, *_active(now),
-               Resume.deleted_at.is_(None))
+               Resume.deleted_at.is_(None), _owner_active())
     ).first()
 
 
@@ -86,4 +91,24 @@ def shared_versions(db: Session, version_ids: Sequence[uuid.UUID]) -> Sequence[t
         .join(Question, Question.id == Version.question_id)
         .where(Version.id.in_(list(version_ids)), Question.deleted_at.is_(None))
         .order_by(Question.position, Question.id)
+    ).all()
+
+
+def for_owner_versions(
+    db: Session, owner_id: str, version_ids: Sequence[uuid.UUID], now: datetime, *, include_ended: bool
+) -> Sequence[Share]:
+    """주어진 버전 중 하나라도 고정한 공유. 기본은 유효한 공유만."""
+    if not version_ids:
+        return []
+    stmt = select(Share).where(Share.owner_id == owner_id, Share.version_ids.overlap(list(version_ids)))
+    if not include_ended:
+        stmt = stmt.where(*_active(now))
+    return db.scalars(stmt.order_by(Share.expires_at)).all()
+
+
+def active_for_resumes(db: Session, owner_id: str, resume_ids: Sequence[uuid.UUID], now: datetime) -> Sequence[Share]:
+    if not resume_ids:
+        return []
+    return db.scalars(
+        select(Share).where(Share.owner_id == owner_id, Share.resume_id.in_(list(resume_ids)), *_active(now))
     ).all()

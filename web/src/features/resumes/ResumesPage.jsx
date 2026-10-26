@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { resumesApi } from './api.js'
+import { shortDate } from './ShareTags.jsx'
 import './resumes.css'
 
 export default function ResumesPage() {
@@ -54,6 +55,12 @@ export default function ResumesPage() {
             <span className="muted">
               {r.status ?? '상태 없음'} · {new Date(r.updated_at).toLocaleString()}
             </span>
+            {r.share_summary && (
+              <span className="share-summary">
+                <span className="share-tag-mark">공유 중</span>
+                {r.share_summary.active_count}명 · 가장 빠른 종료 {shortDate(r.share_summary.earliest_end_date)}
+              </span>
+            )}
           </li>
         ))}
         {!error && items.length === 0 && <li className="muted">자소서가 없습니다.</li>}

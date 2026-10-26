@@ -70,7 +70,7 @@ def test_share_changes_sync_embedding_shared_with(db_session):
     owner, mentor = _user(db_session), _user(db_session)
     r = _resume_with_version(db_session, owner)
     e = _emb(db_session, owner, "resume", r.id)
-    s = share_service.create_share(db_session, owner, r.id, mentor, None)
+    s = share_service.create_share(db_session, owner, r.id, mentor, None, mentor_label="멘토")
     got = _state(db_session, e.id).shared_with
     assert [x["user_id"] for x in got] == [mentor] and got[0]["expires_at"].endswith("Z")
     share_service.revoke_share(db_session, s)

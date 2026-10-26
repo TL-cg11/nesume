@@ -57,3 +57,17 @@ def open_object(key: str) -> Iterator[bytes]:
 
 def delete_object(key: str) -> None:
     aws.client("s3").delete_object(Bucket=_bucket(), Key=key)
+
+
+def delete_user_objects(user_id: str) -> int:
+    """`users/{user_id}/` 아래 객체를 모두 지운다(계정 삭제, B20). 지운 개수. 다시 불러도 안전하다."""
+    if not _SEGMENT.match(user_id) or ".." in user_id:
+        raise ValueError("invalid object key segment")
+    s3 = aws.client("s3")
+    deleted = 0
+    for page in s3.get_paginator("list_objects_v2").paginate(Bucket=_bucket(), Prefix=f"users/{user_id}/"):
+        keys = [{"Key": o["Key"]} for o in page.get("Contents", [])]
+        if keys:  # 한 번에 최대 1,000개(S3 제한), 페이지가 1,000개 단위라 그대로 보낸다
+            s3.delete_objects(Bucket=_bucket(), Delete={"Objects": keys, "Quiet": True})
+            deleted += len(keys)
+    return deleted

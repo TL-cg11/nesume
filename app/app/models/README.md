@@ -1,6 +1,6 @@
 # 데이터 모델 (B1, B2)
 
-마이그레이션: `0002` B1 핵심 테이블, `0003` B2 문서 등급·공유 컬럼, `0004` B4 복원 출처, `0005` B5 문항↔경험 연결, `0006` B6 다운로드 토큰, `0007` B3 감사 로그 무결성, `0008` B7 PII 대응표·사용자 키, `0009` B11 감사 로그 변조 방지, `0010` C4 공고 테이블 취합·공고 FK, `0011` B7 버전·경험 대응표 참조, `0012` B10 공유 버전 고정, `0013` C·A 모델 취합(수집 기록·임베딩·학습·말투 프로필)
+마이그레이션: `0002` B1 핵심 테이블, `0003` B2 문서 등급·공유 컬럼, `0004` B4 복원 출처, `0005` B5 문항↔경험 연결, `0006` B6 다운로드 토큰, `0007` B3 감사 로그 무결성, `0008` B7 PII 대응표·사용자 키, `0009` B11 감사 로그 변조 방지, `0010` C4 공고 테이블 취합·공고 FK, `0011` B7 버전·경험 대응표 참조, `0012` B10 공유 버전 고정, `0013` C·A 모델 취합(수집 기록·임베딩·학습·말투 프로필), `0014` B10 멘토 별칭, `0015` B17 멘토 코멘트
 소유: B (모델 추가는 B가 취합, tasks.md 디렉터리 소유). **C·D 리뷰 요청 대상.**
 
 ## ERD
@@ -17,6 +17,7 @@ erDiagram
     resumes ||--o{ questions : has
     questions ||--o{ versions : has
     resumes ||--o{ shares : shared
+    shares ||--o{ share_comments : "문단별 코멘트(B17)"
     resumes |o--o{ applications : "SET NULL"
     questions ||--o{ question_experiences : pulls
     experiences ||--o{ question_experiences : "pulled into"
@@ -104,6 +105,7 @@ erDiagram
         timestamptz expires_at "종료일 다음 날 00:00 KST"
         timestamptz revoked_at
         uuid[] version_ids "공유 시점 문항별 버전(B10)"
+        string mentor_label "작성자가 붙인 멘토 별칭, 1~20자"
     }
     applications {
         uuid id PK
@@ -154,6 +156,7 @@ erDiagram
 | 감사 로그 90일 보관 | `features/audit/retention.py` (1회 최대 5,000행, 오래된 순) | spec 10.2 (B3) |
 | PII 대응표는 사용자별 DEK로 암호화, DEK는 KMS 암호화 상태로만 저장 | `user_keys`, `pii_vaults`, `app/app/pii/envelope.py` | spec 8.3, tasks B7 |
 | 저장용 대응표는 만료 없음, LLM용은 만료 후 열람 시·정리 배치로 삭제 | `pii_vaults.expires_at`, `pg_vault_store.cleanup_expired` | part2_guide 4.26, 4.28 |
+| 소프트 삭제 30일 후 물리 삭제, 계정은 요청 30일 후 삭제(감사 로그는 익명화 보존) | `app/app/features/deletion/service.py` | tasks B20, spec 10.2 |
 | 등급은 저장 시 기능별 고정값으로 자동 부여, 이후 변경 불가 | `app/app/models/grading.py` | tasks B8, spec 6.4 |
 | 버전·경험은 자기 대응표를 가리키고, 대응표는 참조 행을 먼저 지운 뒤 삭제(NO ACTION) | `versions.vault_id`, `experiences.vault_id` | part2_guide 4.33 |
 | 참조 중인 공고는 물리 삭제 불가. 계정 삭제 시 본인 입력 공고는 함께 삭제 | `resumes`·`applications.job_posting_id` RESTRICT | part2_guide 4.30 |
