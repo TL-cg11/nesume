@@ -22,6 +22,7 @@
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass, field
 
 from app.features.writing import proofread, star
@@ -149,6 +150,7 @@ async def improve(
     role: str,
     session_id: str = "",
     is_test: bool = False,
+    request_id: uuid.UUID | None = None,
     use_llm: bool = True,
 ) -> ImproveResult:
     """1차 + 2차를 돌려 제안 목록을 만든다."""
@@ -165,6 +167,9 @@ async def improve(
     ctx = RequestContext(
         user_id=user_id, role=role, feature=FEATURE,
         session_id=session_id, is_test=is_test,
+        # 감사 로그 request_id 를 HTTP X-Request-ID 와 같게 맞춘다(B16 요청).
+        # 라우터가 주지 않으면(단위 테스트 등) 새로 만든다.
+        request_id=request_id or uuid.uuid4(),
     )
     try:
         result = await guard.run(
