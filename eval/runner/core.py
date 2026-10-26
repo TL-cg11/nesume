@@ -36,6 +36,8 @@ ENDPOINTS: dict[str, tuple[str, str, Callable[[str], dict]]] = {
 }
 FALLBACK = ENDPOINTS["writing.proofread"]
 
+# 기대 안내 문구(expect_message)는 비교하지 않는다. 지금 API는 사용자 문구가 아니라 규칙 ID를 돌려주고,
+# 문구는 A9(D10 차단 정책 문서 대기)에서 정해진다(A 요청 10/26). A9 이후 맞춘다.
 # 지금 러너가 확인할 수 없는 추가 항목(감사 로그·응답에 근거가 없음) → 결과에 '미확인'으로 남긴다
 UNVERIFIABLE_CHECKS = ("prompt_free_of", "retrieval_excludes")
 

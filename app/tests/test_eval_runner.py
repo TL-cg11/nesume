@@ -81,7 +81,9 @@ def test_llm_channel_reads_audit_log_when_sink_wired(env):
     by = {r.id: r for r in results}
     assert by["A10-SENS-01"].judged_by == "audit" and by["A10-SENS-01"].actual_decision == "block"
     assert by["A10-SENS-05"].judged_by == "audit" and by["A10-SENS-05"].actual_decision == "allow"
-    assert all(r.substituted and r.endpoint == "POST /writing/proofread" for r in results)  # A10은 기능 미지정
+    assert all(r.endpoint == "POST /writing/proofread" for r in results)
+    # 대체 표시는 시트의 feature가 러너 엔드포인트 표에 없을 때만(A10 feature 반영 전후 모두 성립)
+    assert all(r.substituted == (r.feature not in core.ENDPOINTS) for r in results)
     assert by["A10-SENS-05"].checks_unverified == ["prompt_free_of"]
 
 
