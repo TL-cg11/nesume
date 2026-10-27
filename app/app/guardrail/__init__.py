@@ -87,6 +87,16 @@ LLM 제공자·모델이 아직 정해지지 않았다. 기본 제공자는 호�
 정해지면 `LlmProvider` 구현 어댑터 한 파일을 추가하고 주입 지점만 바꾼다.
 """
 
+from app.guardrail.classifier import (
+    RULES_PATH,
+    TYPE_TO_DECISION,
+    Classification,
+    PolicyLike,
+    Rule,
+    RuleFileError,
+    classify,
+    load_rules,
+)
 from app.guardrail.errors import (
     LlmBudgetExceeded,
     LlmError,
@@ -97,49 +107,19 @@ from app.guardrail.errors import (
     LlmTransient,
     LlmUnavailable,
 )
-from app.guardrail.schema import (
-    CANARY_RULE_ID,
-    DECISION_STAGES,
-    DECISIONS,
-    MAX_FLAG_LEN,
-    MAX_RULE_ID_LEN,
-    QUERY_TYPES,
-    SEVERITIES,
-    Decision,
-    DecisionStage,
-    Finding,
-    QueryType,
-    Severity,
-    Verdict,
-    allow,
-    decision_rank,
-    severity_rank,
-    worse_decision,
-)
-from app.guardrail.pipeline import (
-    DEFAULT_SYSTEM_PROMPT,
-    DEFAULT_TOP_K,
-    ROLES,
-    TEST_SESSION_PREFIX,
-    AuditSink,
-    AuditWriteFailed,
-    Chunk,
-    Guardrail,
-    PipelineResult,
-    PromptBuilder,
-    RequestContext,
-    Retriever,
-    build_prompt,
-)
-from app.guardrail.classifier import (
-    RULES_PATH,
-    TYPE_TO_DECISION,
-    Classification,
-    PolicyLike,
-    Rule,
-    RuleFileError,
-    classify,
-    load_rules,
+from app.guardrail.llm_client import (
+    DEFAULT_MAX_CALLS,
+    DEFAULT_MAX_OUTPUT_TOKENS,
+    DEFAULT_TIMEOUT_S,
+    ZERO_USAGE,
+    LlmClient,
+    LlmProvider,
+    LlmRequest,
+    LlmResponse,
+    NotConfiguredProvider,
+    RetryPolicy,
+    Usage,
+    validate_request,
 )
 from app.guardrail.multiturn import (
     ESCALATION_THRESHOLD,
@@ -163,19 +143,39 @@ from app.guardrail.output_guard import (
     OutputContext,
     check_output,
 )
-from app.guardrail.llm_client import (
-    DEFAULT_MAX_CALLS,
-    DEFAULT_MAX_OUTPUT_TOKENS,
-    DEFAULT_TIMEOUT_S,
-    ZERO_USAGE,
-    LlmClient,
-    LlmProvider,
-    LlmRequest,
-    LlmResponse,
-    NotConfiguredProvider,
-    RetryPolicy,
-    Usage,
-    validate_request,
+from app.guardrail.pipeline import (
+    DEFAULT_SYSTEM_PROMPT,
+    DEFAULT_TOP_K,
+    ROLES,
+    TEST_SESSION_PREFIX,
+    AuditSink,
+    AuditWriteFailed,
+    Chunk,
+    Guardrail,
+    PipelineResult,
+    PromptBuilder,
+    RequestContext,
+    Retriever,
+    build_prompt,
+)
+from app.guardrail.schema import (
+    CANARY_RULE_ID,
+    DECISION_STAGES,
+    DECISIONS,
+    MAX_FLAG_LEN,
+    MAX_RULE_ID_LEN,
+    QUERY_TYPES,
+    SEVERITIES,
+    Decision,
+    DecisionStage,
+    Finding,
+    QueryType,
+    Severity,
+    Verdict,
+    allow,
+    decision_rank,
+    severity_rank,
+    worse_decision,
 )
 
 __all__ = [

@@ -29,8 +29,9 @@ from __future__ import annotations
 import asyncio
 import random
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
-from typing import Protocol, Sequence
+from typing import Protocol
 
 from app.guardrail.errors import (
     LlmBudgetExceeded,
@@ -252,7 +253,7 @@ class LlmClient:
                     # 어댑터가 timeout_s 를 무시해도 여기서 끊는다
                     timeout=self.timeout_s,
                 )
-            except asyncio.TimeoutError as exc:
+            except TimeoutError as exc:
                 last = LlmTimeout(f"{self.timeout_s}초 안에 응답이 없었습니다")
                 last.__cause__ = exc
             except LlmRetryable as exc:

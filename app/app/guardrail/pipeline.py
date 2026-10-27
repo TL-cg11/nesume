@@ -33,14 +33,15 @@ from __future__ import annotations
 import hashlib
 import time
 import uuid
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Awaitable, Callable, Mapping, Protocol, Sequence
+from typing import Protocol
 
 from app.guardrail.classifier import PolicyLike, classify
+from app.guardrail.llm_client import ZERO_USAGE, LlmClient, LlmRequest, LlmResponse, Usage
 from app.guardrail.multiturn import TurnStore, check_multiturn, make_turn
-from app.guardrail.llm_client import LlmClient, LlmRequest, LlmResponse, Usage, ZERO_USAGE
 from app.guardrail.output_guard import OutputContext, check_output
-from app.guardrail.schema import Finding, Verdict, allow, worse_decision
+from app.guardrail.schema import Finding, Verdict, allow
 from app.pii import (
     InMemoryVaultStore,
     VaultStore,

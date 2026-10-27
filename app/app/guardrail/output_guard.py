@@ -29,7 +29,6 @@ from app.guardrail.schema import (
     CANARY_RULE_ID,
     Decision,
     Finding,
-    Severity,
     Verdict,
 )
 from app.pii import detect, mask

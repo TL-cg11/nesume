@@ -5,8 +5,8 @@ DB·네트워크를 쓰지 않는다. C6 검색과 B11 로그는 아직 없으�
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Sequence
 
 import pytest
 
@@ -17,11 +17,8 @@ from app.guardrail import (
     Chunk,
     Guardrail,
     LlmClient,
-    LlmRequest,
-    LlmResponse,
     LlmTransient,
     RequestContext,
-    Usage,
 )
 from app.pii import InMemoryVaultStore
 from tests.guardrail.fakes import FakeProvider
@@ -236,7 +233,9 @@ async def test_audit_is_written_even_when_blocked() -> None:
 async def test_audit_is_written_when_the_model_fails() -> None:
     """예외가 터져도 기록은 남는다. 없으면 그 요청이 있었는지도 모른다."""
     audit = FakeAudit()
-    failing = LlmClient(provider=FakeProvider(failures=[LlmTransient("1"), LlmTransient("2"), LlmTransient("3")]))
+    failing = LlmClient(
+        provider=FakeProvider(failures=[LlmTransient("1"), LlmTransient("2"), LlmTransient("3")])
+    )
     guard = _guard(llm=failing, audit=audit)
 
     with pytest.raises(LlmTransient):
@@ -282,7 +281,9 @@ async def test_audit_failure_raises_on_success_path() -> None:
 @pytest.mark.anyio
 async def test_audit_failure_does_not_hide_the_original_error() -> None:
     """이미 올라가는 예외를 감사 실패가 가리면 원인을 못 찾는다."""
-    failing = LlmClient(provider=FakeProvider(failures=[LlmTransient("1"), LlmTransient("2"), LlmTransient("3")]))
+    failing = LlmClient(
+        provider=FakeProvider(failures=[LlmTransient("1"), LlmTransient("2"), LlmTransient("3")])
+    )
     guard = _guard(llm=failing, audit=FakeAudit(fail=True))
 
     with pytest.raises(LlmTransient):
