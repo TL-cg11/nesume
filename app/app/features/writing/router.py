@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.auth import AuthenticatedUser
+from app.auth import CurrentUser, require_interactive
 from app.features.writing import service
 from app.features.writing.schemas import (
     ApplyRequest,
@@ -42,7 +42,10 @@ router = APIRouter(prefix="/writing", tags=["writing"])
 @router.post("/proofread", response_model=ProofreadResponse)
 async def proofread(
     payload: ProofreadRequest,
-    user: AuthenticatedUser,
+    # ★ 대화형 엔드포인트다. 시스템 계정은 호출할 수 없다 —
+    #   matrix.yaml 의 "system 대화형 불가" 를 D7 require_interactive 가 막는다.
+    #   C11 권한 우회 시나리오가 이것을 403(interactive_only)으로 확인한다.
+    user: CurrentUser = Depends(require_interactive),
     guard: Guardrail = Depends(get_guardrail),
     session_id: str | None = Depends(session_header),
 ) -> ProofreadResponse:
@@ -69,7 +72,10 @@ async def proofread(
 
 
 @router.post("/apply", response_model=ApplyResponse)
-def apply(payload: ApplyRequest, user: AuthenticatedUser) -> ApplyResponse:
+def apply(
+    payload: ApplyRequest,
+    user: CurrentUser = Depends(require_interactive),
+) -> ApplyResponse:
     """수락한 제안만 반영해 돌려준다. 저장하지 않는다.
 
     모델을 부르지 않으므로 동기 함수다.
