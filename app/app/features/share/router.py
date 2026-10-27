@@ -16,7 +16,7 @@ from app.core.errors import ConflictError
 from app.db import get_db
 from app.features.resumes import pii_hooks
 from app.features.resumes.service import ensure_user, restore_body as service_restore
-from app.features.share import comments, display, period, service
+from app.features.share import comments, denials, display, period, service
 from app.features.share import repository as repo
 from app.features.share.schemas import (
     CommentCreate, CommentEdit, MentorComment, OwnerComment, ReceivedShare, SharedQuestion, SharedResume,
@@ -185,6 +185,7 @@ def received_shares(user: Mentor, db: Db):
 def view_shared(share_id: uuid.UUID, user: Mentor, db: Db):
     row = repo.get_for_mentor(db, user.sub, share_id, datetime.now(UTC))
     if row is None:
+        denials.record_denied(user)  # 10분 5회면 감사 로그(4.57). 응답은 그대로 404
         raise _NOT_FOUND
     share, resume = row
     by_version: dict[uuid.UUID, list[MentorComment]] = {}
@@ -203,9 +204,10 @@ def view_shared(share_id: uuid.UUID, user: Mentor, db: Db):
                         end_date=period.end_date_of(share.expires_at), questions=items)
 
 
-def _active_share_for_mentor(db: Session, mentor_id: str, share_id: uuid.UUID) -> Share:
-    row = repo.get_for_mentor(db, mentor_id, share_id, datetime.now(UTC))
+def _active_share_for_mentor(db: Session, user: CurrentUser, share_id: uuid.UUID) -> Share:
+    row = repo.get_for_mentor(db, user.sub, share_id, datetime.now(UTC))
     if row is None:
+        denials.record_denied(user)
         raise _NOT_FOUND
     return row[0]
 
@@ -221,7 +223,7 @@ def _mentor_out(c) -> MentorComment:
 @mentor_router.post("/{share_id}/comments", response_model=MentorComment, status_code=status.HTTP_201_CREATED)
 def add_comment(share_id: uuid.UUID, payload: CommentCreate, user: Mentor, db: Db):
     """문단별 코멘트(B17). 유효한 공유에서만. 본문은 바꿀 수 없다."""
-    share = _active_share_for_mentor(db, user.sub, share_id)
+    share = _active_share_for_mentor(db, user, share_id)
     try:
         c = comments.add(db, share, payload.version_id, payload.paragraph_index, payload.body)
     except comments.TargetInvalid:
@@ -231,8 +233,8 @@ def add_comment(share_id: uuid.UUID, payload: CommentCreate, user: Mentor, db: D
     return _mentor_out(c)
 
 
-def _own_comment(db: Session, mentor_id: str, share_id: uuid.UUID, comment_id: uuid.UUID):
-    share = _active_share_for_mentor(db, mentor_id, share_id)
+def _own_comment(db: Session, user: CurrentUser, share_id: uuid.UUID, comment_id: uuid.UUID):
+    share = _active_share_for_mentor(db, user, share_id)
     c = comments.get_in_share(db, share.id, comment_id)
     if c is None:
         raise _NOT_FOUND
@@ -241,7 +243,7 @@ def _own_comment(db: Session, mentor_id: str, share_id: uuid.UUID, comment_id: u
 
 @mentor_router.patch("/{share_id}/comments/{comment_id}", response_model=MentorComment)
 def edit_comment(share_id: uuid.UUID, comment_id: uuid.UUID, payload: CommentEdit, user: Mentor, db: Db):
-    c = _own_comment(db, user.sub, share_id, comment_id)
+    c = _own_comment(db, user, share_id, comment_id)
     try:
         comments.edit(db, c, payload.body)
     except pii_hooks.SensitiveInputBlocked:
@@ -251,5 +253,5 @@ def edit_comment(share_id: uuid.UUID, comment_id: uuid.UUID, payload: CommentEdi
 
 @mentor_router.delete("/{share_id}/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_comment(share_id: uuid.UUID, comment_id: uuid.UUID, user: Mentor, db: Db):
-    comments.remove(db, _own_comment(db, user.sub, share_id, comment_id))
+    comments.remove(db, _own_comment(db, user, share_id, comment_id))
     return Response(status_code=status.HTTP_204_NO_CONTENT)

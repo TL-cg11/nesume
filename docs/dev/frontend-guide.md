@@ -46,7 +46,6 @@ web/
    │  ├─ layout.css         레이아웃·기본 요소(버튼·입력)·공용 클래스
    │  ├─ api/client.js      공통 API 호출 함수 (모든 화면이 이것만 사용)
    │  ├─ pages/             Home, NotFound
-   │  └─ dev/               개발 서버 전용 도구(DevTokenPanel)
    └─ features/             ★ 기능별 화면 — 각 팀 소유
       ├─ resumes/  share/  pdf/  interview/  github/  experiences/   B
       ├─ writing/                                                    A
@@ -143,7 +142,7 @@ export const jobsApi = {
 
 - 토큰은 인증 모듈(D7, `features/auth`)이 `setTokenProvider(fn)`으로 넣는다. 각 화면은 토큰을 다루지 않는다.
 - 401이 오면 `setUnauthorizedHandler`에 등록된 동작(로그인 화면 이동 등, D7)이 실행된다.
-- D7 로그인 화면 전까지는 개발 서버 상단 **DEV 토큰** 입력란을 쓴다(10절).
+- 로그인은 D7 로그인 화면(`/login`)에서 한다(11절). 토큰은 공통 클라이언트가 붙인다.
 
 ### 에러 응답 형식 (백엔드 D3) ✅
 
@@ -155,16 +154,16 @@ export const jobsApi = {
 - `code`로 분기한다(문구로 분기하지 않는다). 예: `not_found`, `forbidden`, `validation_error`, `rate_limited`
 - `request_id`는 문의·디버깅용. 사용자가 오류를 신고할 때 함께 받는다.
 
-### 📝 제안: `ApiError`에 `code`·`requestId` 추가
+### `ApiError`의 `code`·`requestId` ✅ (D7에서 반영, 10/26)
 
-현재 `ApiError`는 `status`·`detail`만 담는다. D3 형식에 맞춰 아래처럼 넓히자(B가 `client.js` 수정, 기존 화면 호환).
+`ApiError`는 `status`·`detail`·**`code`**·**`requestId`**를 담는다. 문구가 아니라 `code`로 분기한다.
 
 ```js
-// 사용 예
 try { await resumesApi.get(id) }
 catch (e) {
   if (e.status === 404) showNotFound()
-  else if (e.code === 'rate_limited') showRetryLater()
+  else if (e.code === 'mfa_required') showMfaGuide()        // 운영자 MFA 필요(D7)
+  else if (e.code === 'share_confirm_required') askConfirm(e.message)  // B10 재공유 확인
   else showError(e.message, e.requestId)
 }
 ```
@@ -224,65 +223,89 @@ useEffect(() => {
 
 ---
 
-## 8. 스타일 규칙 ✅
+## 8. 스타일 규칙 ✅ (2026-10-27 D 테마 기준으로 재작성)
+
+화면 기준은 **발표 시안**(`sprint2/index.html`, 10/22)이고, D가 10/26 이 시안에 맞춰 테마와 앱 레이아웃을 바꿨다(쿨 그레이 바탕, 좌측 사이드바, 짙은 남회색 상단 바, 청록 강조). **새 화면은 이 D 기준을 따른다.**
 
 ### 파일 구성
 
 | 파일 | 내용 | 소유 |
 |---|---|---|
-| `app/theme.css` | **테마(디자인 토큰)**: 색·간격·모서리·글꼴·그림자 변수, 다크 모드 값 | B (변경은 B 리뷰) |
-| `app/layout.css` | 바탕·레이아웃·기본 요소(버튼·입력)·**공용 클래스** | B |
+| `app/theme.css` | **테마(디자인 토큰)**: 색·간격·모서리·글꼴·그림자·폭 변수, 다크 모드 값 | B 소유, D가 시안 기준으로 정비(변경은 B 리뷰) |
+| `app/layout.css` | 앱 레이아웃(사이드바·상단 바)·기본 요소(버튼·입력)·**공용 클래스** | B 소유, D 정비 |
+| `app/Layout.jsx` | 사이드바 메뉴(그룹·아이콘)·상단 바(페이지 제목·사용자·테마 전환) | B 소유, D 정비 |
+| `app/Icons.jsx` / `app/ThemeToggle.jsx` | 메뉴 아이콘 / 라이트·다크 수동 전환 | D |
 | `features/<기능>/<기능>.css` | 기능 전용 스타일 | 각 팀 |
 
 `App.jsx`가 `theme.css` → `layout.css` 순서로 불러온다. 기능 CSS는 각 페이지에서 import한다.
 
 ### 규칙
 
-1. **색·간격·모서리·글꼴은 `theme.css` 변수만 쓴다.** `#fff`, `12px` 같은 값을 직접 쓰지 않는다(다크 모드 깨짐, 통일 깨짐). 현재 `theme.css` 밖에는 직접 쓴 색이 없다.
-2. 인라인 `style={{...}}`은 쓰지 않는다. 필요한 모양은 공용 클래스나 기능 CSS로.
-3. 기능 전용 클래스에는 **기능 접두사**를 붙인다: `exp-form`, `resume-list`, `job-card`
-4. 전역 요소 선택자(`button {}`, `h1 {}`)는 `layout.css`에서만 쓴다.
-5. 모바일 전환은 **720px 하나**: `@media (max-width: 720px) { ... }` (CSS 변수로 쓸 수 없어 숫자 고정)
-6. 변수가 부족하면 기능 CSS에서 새 색을 만들지 말고 B에 변수 추가를 요청한다.
+1. **색·간격·모서리·글꼴·그림자는 `theme.css` 변수만 쓴다.** `#fff`, `12px` 같은 값을 직접 쓰지 않는다(다크 모드·통일 깨짐). 작은 값이 필요하면 `calc(var(--space-1) / 2)`처럼 변수로 만든다.
+2. 인라인 `style={{...}}`은 쓰지 않는다.
+3. 기능 전용 클래스에는 **기능 접두사**를 붙인다: `exp-`, `resume-`, `share-`, `share-view-`, `tpl-`, `wr-`
+4. **다른 기능의 CSS·클래스를 가져다 쓰지 않는다**(예: 템플릿 화면에서 `resumes.css`의 `.detail-grid` 사용 금지). 공통으로 필요하면 `layout.css` 공용 클래스로 올리도록 B에 요청한다.
+5. 전역 요소 선택자(`button {}`, `h1 {}`)는 `layout.css`에서만 쓴다.
+6. 모바일 전환은 **720px 하나**: `@media (max-width: 720px) { ... }`
+7. **사이드바·상단 바 전용 토큰(`--side-*`, `--topbar-*`, `--navy*`)은 레이아웃만 쓴다.** 기능 화면은 일반 토큰(`--bg`, `--surface`, `--accent` …)만 쓴다.
+8. 변수가 부족하면 기능 CSS에서 새 색을 만들지 말고 B에 변수 추가를 요청한다.
+
+### 레이아웃과 메뉴
+
+- 화면 구조: **좌측 사이드바**(`--sidebar-w` 236px, 로고·메뉴 그룹·사용자) + **상단 바**(페이지 제목·환경 표시·테마 전환) + 본문(`--content-max` 1120px). 720px 이하에서는 사이드바가 메뉴 버튼으로 접힌다.
+- 메뉴 등록은 4절(`routes.jsx`의 `nav` 라벨)과 같고, **아이콘·그룹은 `Layout.jsx`의 `NAV_META`에 한 줄** 추가한다. 그룹은 시안 순서 `워크스페이스 → AI 도구 → 소개 → 관리`. `NAV_META`에 없으면 '기타'로 들어간다.
+
+| 그룹 | 메뉴(경로) |
+|---|---|
+| 워크스페이스 | 자소서(`resumes`), 경험(`experiences`) |
+| AI 도구 | 글 다듬기(`writing`), 면접 연습(`interview`) |
+| 소개 | GitHub 소개(`github`) |
+| 관리 | 받은 공유(`mentor`), 프롬프트 템플릿(`templates`) |
+
+- 아이콘 이름(`Icons.jsx`): `dash` `file` `case` `spark` `msg` `git` `user` `shield` `home`. 새 아이콘이 필요하면 D에 요청한다.
+- 역할별 메뉴 숨김은 아직 없다(모든 역할에 보임). 역할 밖 화면은 페이지에서 "○○만 사용할 수 있습니다"로 안내한다.
 
 ### 색 변수
 
 | 변수 | 용도 |
 |---|---|
-| `--bg` / `--surface` | 페이지 바탕 / 카드·패널·비교 영역 바탕 |
+| `--bg` / `--surface` | 페이지 바탕(쿨 그레이) / 카드·패널·입력칸(흰색) |
 | `--fg` / `--muted` | 본문 글자 / 보조 글자(날짜·설명) |
-| `--border` | 장식용 구분선·카드 테두리 |
-| `--border-input` | 입력칸·보조 버튼·칩 경계(경계 대비 3:1 확보) |
-| `--accent` / `--on-accent` | 기본 버튼 배경 / 그 위 글자 |
-| `--accent-text` / `--accent-soft` | 링크·활성 메뉴 글자 / 선택된 항목 배경 |
-| `--danger`, `--danger-soft` | 오류·삭제 |
-| `--warning`, `--warning-soft` | 주의 안내 |
-| `--success`, `--success-soft` | 완료·추가 |
+| `--border` / `--border-input` | 장식용 구분선·카드 테두리 / 입력칸·보조 버튼 경계(3:1) |
+| `--accent` / `--on-accent` | 기본 버튼 배경(청록) / 그 위 글자 |
+| `--accent-text` / `--accent-soft` | 링크·활성 메뉴·강조 글자 / 선택된 항목·태그 배경 |
+| `--violet` / `--violet-soft` | 보조 강조(시안의 AI·NEW 표시 등). 강조가 두 종류 필요할 때만 |
+| `--danger` · `--warning` · `--success` (+ `-soft`) | 오류·삭제 / 주의 / 완료·추가 |
 | `--focus-ring` | 키보드 포커스 표시 |
+| `--side-*`, `--topbar-*`, `--navy*` | **레이아웃 전용**(사이드바·상단 바) |
 
-**대비 기준**: 라이트·다크 모두 글자 4.5:1, 입력칸 경계 3:1 이상으로 계산해 정했다(값은 `theme.css` 주석). 색을 바꾸면 다시 계산한다.
+**대비 기준**: 글자 4.5:1, 입력칸 경계 3:1 이상(값은 `theme.css` 주석).
+- ⚠️ `--side-muted`는 사이드바 바탕 대비 3.3이라 **본문 글자에는 쓰지 않는다**(사이드바 그룹 라벨 같은 보조 표시 전용). 개선은 D에 요청 중.
+- 다크 모드: 운영체제 설정을 따르고, 상단 바의 테마 전환(`data-theme`)이 있으면 그쪽이 우선한다. 기능 화면은 변수만 쓰면 자동으로 맞는다.
 
-### 간격·모서리·글꼴 변수
+### 간격·모서리·글꼴·그림자 변수
 
 | 종류 | 변수 |
 |---|---|
 | 간격 | `--space-1` 4 · `--space-2` 8 · `--space-3` 12 · `--space-4` 16 · `--space-5` 24 · `--space-6` 32 (px) |
-| 모서리 | `--radius-sm` 6(버튼·입력) · `--radius-md` 10(카드·폼) · `--radius-pill` 999(태그 칩) |
-| 글꼴 크기 | `--text-sm` 13(보조) · `--text-md` 15(본문) · `--text-lg` 18(소제목) · `--text-xl` 22(페이지 제목) |
-| 기타 | `--font-sans`, `--font-mono`, `--leading` 1.6, `--shadow-sm`, `--content-max` 1080px |
+| 모서리 | `--radius-sm` 9(버튼·입력·메뉴) · `--radius-md` 14(카드·폼·패널) · `--radius-pill` 999(태그 칩) |
+| 글꼴 | `--font-sans` Pretendard 계열 · `--font-mono` IBM Plex Mono 계열 |
+| 글꼴 크기 | `--text-sm` 13(보조) · `--text-md` 15(본문) · `--text-lg` 18(소제목) · `--text-xl` 22(페이지 제목), `--leading` 1.6 |
+| 그림자 | `--shadow-sm`(카드) · `--shadow-md`(떠 있는 패널·메뉴) |
+| 폭 | `--content-max` 1120px(본문) · `--sidebar-w` 236px(사이드바) |
 
 ### 기본 요소 (클래스 없이 적용)
 
 | 요소 | 모양 |
 |---|---|
-| `h1` / `h2` / `h3` | 22 / 18 / 15px, 굵게 |
-| `<button>` | **기본 동작**(저장, 만들기): 강조색 배경 |
-| `<button className="secondary">` | **보조 동작**(취소, 비교, 복원): 테두리만 |
+| `h1` / `h2` / `h3` | 22 / 18 / 15px, 굵게. 페이지 제목은 상단 바에도 표시되므로 화면 안 `h1`은 필요할 때만 |
+| `<button>` | **기본 동작**(저장, 만들기, 공유): 청록 배경 |
+| `<button className="secondary">` | **보조 동작**(취소, 비교, 복원): 흰 바탕·테두리 |
 | `<button className="danger">` | **삭제·되돌릴 수 없는 동작**: 빨간 테두리·글자 |
 | `<button className="link">` | 글자만 있는 버튼(목록 항목 선택 등) |
-| `input`, `textarea`, `select` | 테두리·여백 자동, 포커스 시 강조색 테두리 |
+| `input`, `textarea`, `select` | 흰 바탕·테두리·여백 자동, 포커스 시 강조색 테두리 |
 
-한 화면에 기본(강조색) 버튼은 **하나**만 두는 것을 권장한다(주 동작이 분명하게).
+한 화면에 기본(청록) 버튼은 **하나**만 두는 것을 권장한다.
 
 ### 공용 클래스
 
@@ -291,8 +314,8 @@ useEffect(() => {
 | `.row` | 가로 배치, 간격 8px, 줄바꿈 허용 |
 | `.stack` | 세로 배치, 간격 8px |
 | `.grow` | 남은 폭 채우기(`flex: 1`) |
-| `.muted` | 보조 글자(13px, 회색) |
-| `.card` | 카드 상자(바탕·테두리·모서리·그림자) |
+| `.muted` | 보조 글자(13px) |
+| `.card` | 흰 카드(테두리·14px 모서리·옅은 그림자). 시안의 패널·목록 상자는 모두 카드 |
 | `.list` | 목록(점 없음, 항목 사이 구분선) |
 | `.error` / `.notice` / `.success` | 상태 메시지(색 + 옅은 배경). 문구도 함께 써서 색만으로 구분하지 않는다 |
 
@@ -303,9 +326,13 @@ useEffect(() => {
     <button onClick={create}>새로 만들기</button>
   </div>
   {error && <p className="error">불러오지 못했습니다: {error.message}</p>}
-  <ul className="list job-list">...</ul>
+  <div className="card">
+    <ul className="list job-list">...</ul>
+  </div>
 </section>
 ```
+
+**태그·칩**: 상태·분류 표시는 `--accent-soft` 바탕 + `--accent-text` 글자 + `--radius-pill`(예: 자소서 `.share-tag`). 끝난 상태는 `--surface` 바탕 + `--muted` 글자 + 테두리.
 
 ## 9. 보안 규칙 (필수)
 
@@ -315,7 +342,7 @@ useEffect(() => {
 | 외부 링크는 `target="_blank" rel="noopener noreferrer"` + "외부 사이트" 표시 | 📝 | 공유 문서(C) |
 | 고용24 링크는 `https`이면서 `work24.go.kr` 도메인만 허용 | 📝 | 공유 문서(C) |
 | 서울시 공고 화면은 "서울특별시 공공데이터" 출처 표시, AI 분석 결과는 원문과 구분 표시 | 📝 | 공유 문서(C), 출처 표시 의무 |
-| **토큰을 `localStorage`·`sessionStorage`에 저장하지 않는다** | ✅ (DEV 토큰도 메모리만) | 탈취 위험 |
+| **토큰을 `localStorage`·`sessionStorage`에 저장하지 않는다** | ✅ (D7 인증 모듈이 관리) | 탈취 위험 |
 | `console.log`에 자소서 본문·개인정보·토큰을 찍지 않는다 | 📝 | 브라우저 로그 유출 방지 |
 | 개인정보 가림(마스킹)은 서버가 한다. 화면에서 다시 풀거나 가공하지 않는다 | ✅ | spec 6.3 (멘토·운영자는 가린 값만 받음) |
 | 파일 다운로드는 `fetch`(로그인 헤더 포함)로 받아 저장한다. 링크로 직접 열지 않는다 | ✅ | B6 1회용 토큰, 발급자 본인만 |
@@ -336,11 +363,11 @@ useEffect(() => {
 
 ---
 
-## 11. 개발 도구: DEV 토큰 ✅
+## 11. 로그인 (D7) ✅
 
-- `app/dev/DevTokenPanel.jsx`: 개발 서버(`npm run dev`)에서만 상단에 보인다. **운영 빌드에는 포함되지 않는다**(빌드 결과물에 해당 코드 없음 확인).
-- cognito-local 토큰 발급 방법은 루트 `README.md`의 "프론트엔드 개발 서버" 절 참고.
-- D7 로그인 화면이 들어오면 삭제한다(B).
+- 개발용 토큰 입력란(`DevTokenPanel`)은 D7 로그인 화면(`/login`, 가입·MFA 포함)으로 대체되어 삭제됐다(10/26).
+- 로그인 상태·역할은 `features/auth/useAuth.jsx`(`/auth/me`)에서 가져온다. 토큰 주입·401 처리는 공통 클라이언트가 한다.
+- 로컬 시드 계정(`test-user1`, `test-mentor1`, `test-operator1` 등)은 D6 시드 스크립트(`python -m app.auth.seed`)로 만든다.
 
 ---
 
@@ -375,11 +402,11 @@ useEffect(() => {
 
 | # | 제안 | 담당 |
 |---|---|---|
-| 1 | `ApiError`에 `code`·`requestId` 추가 (5절) | B 구현 |
-| 2 | ~~공용 클래스 이동, 720px 통일~~ → **완료**: `theme.css` 신설, 공용 클래스 `layout.css`로 이동, 직접 쓴 색 제거, 720px 통일 (8절) | B 완료 |
+| 1 | ~~`ApiError`에 `code`·`requestId` 추가~~ → **완료**(D7, 10/26, 5절) | D 완료 |
+| 2 | ~~공용 클래스 이동, 720px 통일~~ → **완료**. 10/26 D가 발표 시안 테마로 정비, 10/27 8절 D 기준 재작성 | B·D 완료 |
 | 3 | 상태 처리 4종·입력 규칙 (6·7절) | 전원 |
 | 4 | 보안 규칙 중 📝 항목 (9절) | 전원 |
 | 5 | 경로·이름 규칙 (4·12절) | 전원 |
 | 6 | 패키지 추가 규칙 (1절) | 전원 |
 
-합의되면 이 문서의 📝를 ✅로 바꾸고, B는 1번을 반영한다. 8절(스타일)은 이미 코드에 반영되어 ✅이다.
+합의되면 이 문서의 📝를 ✅로 바꾼다. 8절(스타일)은 D 테마로 코드에 반영되어 ✅이다.

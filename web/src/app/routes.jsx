@@ -21,6 +21,7 @@ import MfaChallengePage from '../features/auth/MfaChallengePage.jsx'
 import MfaSetupPage from '../features/auth/MfaSetupPage.jsx'
 import MentorSharesPage from '../features/share/MentorSharesPage.jsx'
 import MentorSharePage from '../features/share/MentorSharePage.jsx'
+import TemplatesPage from '../features/templates/TemplatesPage.jsx'
 
 // nav: 상단 메뉴 노출 여부와 라벨
 export const featureRoutes = [
@@ -39,6 +40,7 @@ export const featureRoutes = [
   { path: 'mfa/setup', element: <MfaSetupPage /> },
   { path: 'mentor', element: <MentorSharesPage />, nav: '받은 공유' }, // B17 멘토 전용(그 외 역할은 안내 문구)
   { path: 'mentor/:shareId', element: <MentorSharePage /> },
+  { path: 'templates', element: <TemplatesPage />, nav: '프롬프트 템플릿' }, // B9 운영자 전용(그 외 역할은 안내 문구)
 ]
 
 export const routes = [
