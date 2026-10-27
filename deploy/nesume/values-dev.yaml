@@ -1,6 +1,6 @@
 # dev (EKS). 값은 D8·D9 에서 채운다.
 image:
-  registry: ""                       # <account>.dkr.ecr.ap-northeast-2.amazonaws.com
+  registry: 852138520969.dkr.ecr.ap-northeast-2.amazonaws.com
   pullPolicy: IfNotPresent
 
 app:
@@ -12,14 +12,17 @@ web:
 config:
   APP_ENV: dev
   LOG_LEVEL: DEBUG
-  DB_HOST: ""                        # RDS endpoint
-  S3_BUCKET_NAME: ""
-  KMS_KEY_ALIAS: ""
-  APP_SECRET_NAME: ""
-  COGNITO_USER_POOL_ID: ""
+  DB_HOST: ""                        # 매일 바뀐다. up.ps1 이 --set config.DB_HOST 로 넘긴다
+  # 아래는 base 레이어 output (terraform -chdir=infra/envs/dev/base output). base 를 다시 만들지 않는 한 고정.
+  S3_BUCKET_NAME: nesume-dev-docs-852138520969
+  KMS_KEY_ALIAS: alias/nesume-dev-pii
+  APP_SECRET_NAME: nesume/dev/app
+  COGNITO_USER_POOL_ID: ap-northeast-2_jFqNdpDUg
   COGNITO_CLIENT_ID: ""
-  COGNITO_ISSUER: ""
-  COGNITO_JWKS_URL: ""
+  COGNITO_CLIENT_IDS: "ldgp7rgsjbhnoiha00gt250lv,5e8g76caq7v0r5nt3pb86muv3i"   # web,runner (cognito_client_ids)
+  COGNITO_WEB_CLIENT_ID: ldgp7rgsjbhnoiha00gt250lv
+  COGNITO_ISSUER: https://cognito-idp.ap-northeast-2.amazonaws.com/ap-northeast-2_jFqNdpDUg
+  COGNITO_JWKS_URL: https://cognito-idp.ap-northeast-2.amazonaws.com/ap-northeast-2_jFqNdpDUg/.well-known/jwks.json
 
 externalSecrets:
   enabled: true
