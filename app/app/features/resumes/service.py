@@ -16,7 +16,22 @@ from app.models import Question, Resume, User, Version
 from app.retrieval import indexing
 
 # spec 3.1 "버전은 문항당 최대 50개". 초과 시 압축 방식은 팀 확인 후 구현(part2_guide 4.14).
-MAX_VERSIONS_PER_QUESTION = 50
+MAX_VERSIONS_PER_QUESTION = 50  # 문항당 버전 상한. 넘으면 저장 거부(10/26 회의, part2_guide 4.14·4.56)
+MAX_RESUMES_PER_USER = 50       # 사용자당 자소서 상한(삭제되지 않은 것만 셈)
+
+
+class ResumeLimitReached(ValueError):
+    pass
+
+
+class VersionLimitReached(ValueError):
+    pass
+
+
+class VersionInUse(ValueError):
+    def __init__(self, by: str):
+        self.by = by  # application / share
+        super().__init__(by)
 VERSION_SOURCES = ("manual", "ai")
 
 
@@ -26,7 +41,10 @@ def ensure_user(db: Session, user_id: str) -> None:
 
 
 def create_resume(db: Session, owner_id: str, **fields) -> Resume:
+    """자소서는 사용자당 50개까지. 넘으면 ResumeLimitReached(기존 자소서를 지워야 새로 만들 수 있음)."""
     ensure_user(db, owner_id)
+    if repo.count_resumes(db, owner_id) >= MAX_RESUMES_PER_USER:
+        raise ResumeLimitReached()
     resume = Resume(owner_id=owner_id, **fields)
     db.add(resume)
     db.flush()
@@ -82,14 +100,17 @@ def create_version(
 ) -> tuple[Version, bool] | None:
     """새 버전을 저장한다(덮어쓰기 없음). 문항이 없거나 타인 소유면 None.
 
-    본문에 민감정보가 있으면 pii_hooks.SensitiveInputBlocked.
-    반환: (버전, 문항당 50개 초과 여부)
+    본문에 민감정보가 있으면 pii_hooks.SensitiveInputBlocked. 문항에 버전이 이미 50개면 VersionLimitReached
+    (사용자가 지울 버전을 골라 삭제한 뒤 저장, 4.56).
+    반환: (버전, False) — 두 번째 값은 예전 '50개 초과' 표시로, 이제 초과 저장이 없어 항상 False(호환용)
     """
     if source not in VERSION_SOURCES:
         raise ValueError(f"unknown source: {source}")
     question = repo.get_question(db, owner_id, resume_id, question_id, for_update=True)
     if question is None:
         return None
+    if repo.count_versions(db, question.id) >= MAX_VERSIONS_PER_QUESTION:
+        raise VersionLimitReached()
 
     # 민감정보 거부 → 토큰화 → 대응표 저장(같은 트랜잭션, part2_guide 4.33)
     protected, vault_id = pii_hooks.protect_fields(db, owner_id, {"body": body})
@@ -107,8 +128,7 @@ def create_version(
     db.add(version)
     db.flush()
     db.refresh(version)
-    over_limit = repo.count_versions(db, question.id) > MAX_VERSIONS_PER_QUESTION
-    return version, over_limit
+    return version, False
 
 
 def restore_version(
@@ -123,6 +143,21 @@ def restore_version(
     body = restore_body(db, owner_id, owner_id, source_version)
     return create_version(db, owner_id, resume_id, question_id, body, "manual",
                           restored_from=source_version.id)
+
+
+def delete_version(db: Session, owner_id: str, version: Version) -> None:
+    """버전 삭제(상한 50개를 넘기지 않게 사용자가 고른 것). 수정은 여전히 금지, 삭제만 허용.
+
+    지원 기록이 고정 참조하는 버전(4.2), 유효한 멘토 공유가 고정한 버전(B10)은 지울 수 없다 → VersionInUse.
+    """
+    if repo.version_used_by_application(db, owner_id, version.id):
+        raise VersionInUse("application")
+    if repo.version_used_by_active_share(db, owner_id, version.id):
+        raise VersionInUse("share")
+    vault = version.vault_id
+    db.delete(version)
+    db.flush()
+    pii_hooks.discard_vault(db, vault)
 
 
 def restore_body(db: Session, owner_id: str, requester_id: str, version: Version) -> str:

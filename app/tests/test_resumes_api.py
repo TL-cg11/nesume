@@ -161,15 +161,19 @@ def test_ai_version_saved_through_service(alice):
         assert version.source == "ai"
 
 
-def test_over_limit_flag_after_50_versions(alice):
+def test_version_limit_50_then_delete_to_save(alice):
+    # 문항당 50개에서 저장 거부 → 지울 버전을 골라 삭제하면 다시 저장(10/26 회의, 4.56)
     r = _resume(alice)
     q = _question(alice, r["id"])
-    for i in range(service.MAX_VERSIONS_PER_QUESTION):
-        assert _version(alice, r["id"], q["id"], f"v{i}")["over_limit"] is False
-    # 51번째도 저장은 된다(모든 저장은 새 버전). 압축 방식은 팀 확인 후 구현
-    v51 = _version(alice, r["id"], q["id"], "v51")
-    assert v51["version_no"] == 51 and v51["over_limit"] is True
-
+    base = f"/resumes/{r['id']}/questions/{q['id']}/versions"
+    ids = [_version(alice, r["id"], q["id"], f"v{i}")["id"] for i in range(service.MAX_VERSIONS_PER_QUESTION)]
+    res = alice.post(base, json={"body": "51번째"})
+    assert res.status_code == 409 and res.json()["code"] == "version_limit_reached"
+    assert alice.post(f"{base}/{ids[0]}/restore").json()["code"] == "version_limit_reached"  # 복원도 새 버전
+    assert alice.delete(f"{base}/{ids[0]}").status_code == 204
+    assert len(alice.get(base).json()) == 49
+    v = alice.post(base, json={"body": "다시 저장"}).json()
+    assert v["version_no"] == 51 and v["over_limit"] is False  # 번호는 이어서(재사용하지 않음)
 
 def test_deleted_question_hides_versions(alice):
     r = _resume(alice)
@@ -308,3 +312,39 @@ def test_dashboard_is_owner_scoped(two_users):
     sw, a_sub, b_sub = two_users
     _resume(sw.as_(a_sub))  # 클라이언트를 만들 때 사용자가 바뀌므로 차례로
     assert sw.as_(b_sub).get("/resumes/dashboard").json()["resume_total"] == 0
+
+
+def test_resume_limit_50_soft_deleted_not_counted(alice, monkeypatch):
+    monkeypatch.setattr(service, "MAX_RESUMES_PER_USER", 3)  # 50개 대신 3개로 같은 규칙 확인
+    ids = [_resume(alice, f"r{i}")["id"] for i in range(3)]
+    res = alice.post("/resumes", json={"title": "넘침"})
+    assert res.status_code == 409 and res.json()["code"] == "resume_limit_reached"
+    alice.delete(f"/resumes/{ids[0]}")  # 사용자가 골라 삭제하면(소프트 삭제) 바로 자리가 생김
+    assert alice.post("/resumes", json={"title": "새 자소서"}).status_code == 201
+
+
+def test_cannot_delete_version_in_use(alice):
+    from app.models import Application
+
+    r = _resume(alice)
+    q = _question(alice, r["id"])
+    base = f"/resumes/{r['id']}/questions/{q['id']}/versions"
+    v1 = _version(alice, r["id"], q["id"], "지원한 버전")
+    v2 = _version(alice, r["id"], q["id"], "공유한 버전")
+    owner = alice.get("/resumes/dashboard")  # noqa: F841 (사용자 행 보장)
+    with SessionLocal.begin() as db:
+        sub = db.get(Version, uuid.UUID(v1["id"])).owner_id
+        db.add(Application(owner_id=sub, resume_id=uuid.UUID(r["id"]), version_ids=[uuid.UUID(v1["id"])],
+                           status="applied"))
+    res = alice.delete(f"{base}/{v1['id']}")
+    assert res.status_code == 409 and res.json()["errors"] == {"by": "application"}
+    from app.features.share import service as share_service
+    from app.models import User
+    with SessionLocal.begin() as db:
+        mentor = f"men-{uuid.uuid4().hex[:6]}"
+        db.add(User(id=mentor))
+        db.flush()
+        share_service.create_share(db, sub, uuid.UUID(r["id"]), mentor, None, mentor_label="멘토")
+    res = alice.delete(f"{base}/{v2['id']}")
+    assert res.status_code == 409 and res.json()["errors"] == {"by": "share"}
+    assert alice.delete(f"{base}/{uuid.uuid4()}").status_code == 404

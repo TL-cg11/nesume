@@ -4,6 +4,8 @@ import { resumesApi } from './api.js'
 import { shortDate } from './ShareTags.jsx'
 import './resumes.css'
 
+const MAX_RESUMES = 50 // 서버 MAX_RESUMES_PER_USER와 같다(4.56). 넘으면 서버가 안내 문구로 거부
+
 export default function ResumesPage() {
   const [items, setItems] = useState([])
   const [title, setTitle] = useState('')
@@ -35,7 +37,9 @@ export default function ResumesPage() {
 
   return (
     <section>
-      <h1>자소서</h1>
+      <h1>
+        자소서 <span className="muted">{items.length}/{MAX_RESUMES}</span>
+      </h1>
       <form className="row" onSubmit={create}>
         <input
           placeholder="새 자소서 제목 (예: 네이버 백엔드)"

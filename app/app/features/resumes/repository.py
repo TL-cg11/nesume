@@ -126,3 +126,25 @@ def dashboard_counts(db: Session, owner_id: str):
     experience_total = db.scalar(select(func.count()).select_from(Experience)
                                  .where(Experience.owner_id == owner_id, Experience.deleted_at.is_(None)))
     return resumes, questions, experience_total
+
+
+def count_resumes(db: Session, owner_id: str) -> int:
+    return db.scalar(select(func.count()).select_from(Resume)
+                     .where(Resume.owner_id == owner_id, Resume.deleted_at.is_(None))) or 0
+
+
+def version_used_by_application(db: Session, owner_id: str, version_id: uuid.UUID) -> bool:
+    from app.models import Application
+
+    return db.scalar(select(Application.id).where(Application.owner_id == owner_id,
+                                                  Application.version_ids.any(version_id)).limit(1)) is not None
+
+
+def version_used_by_active_share(db: Session, owner_id: str, version_id: uuid.UUID) -> bool:
+    from datetime import UTC, datetime
+
+    from app.models import Share
+
+    return db.scalar(select(Share.id).where(
+        Share.owner_id == owner_id, Share.version_ids.any(version_id), Share.revoked_at.is_(None),
+        Share.expires_at > datetime.now(UTC)).limit(1)) is not None

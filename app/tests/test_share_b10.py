@@ -362,3 +362,68 @@ def test_readable_token_text():
         "(이름 비공개)님 연락처 (전화번호 비공개), (이메일 비공개) / (주소 비공개)")
     assert readable("[[ORG_1]]·[[SCHOOL_3]]·[[NEWKIND_1]]") == "(기관명 비공개)·(학교명 비공개)·(비공개 정보)"
     assert readable("토큰 없음 [[x]] [[PHONE]]") == "토큰 없음 [[x]] [[PHONE]]"
+
+
+# --- 권한 없는 열람 시도 감시: 10분 내 5회 → 감사 로그 1행 (4.57) ---------------
+
+def _deny_logs(mentor_sub):
+    from sqlalchemy import select
+
+    from app.models import AuditLog
+    with SessionLocal() as db:
+        return db.scalars(select(AuditLog).where(AuditLog.user_id == mentor_sub,
+                                                 AuditLog.feature == "share.view")).all()
+
+
+def test_denied_views_logged_once_at_fifth_attempt(owner, mentor):
+    r = _resume(owner)
+    s = _share(owner, r["id"], mentor.sub).json()
+    _expire(s["id"])
+    for i in range(4):
+        assert mentor.get(f"/mentor/shares/{s['id']}").status_code == 404
+    assert _deny_logs(mentor.sub) == []  # 4회까지는 기록 안 함
+    assert mentor.get(f"/mentor/shares/{s['id']}").status_code == 404  # 5회째도 응답은 그대로 404
+    logs = _deny_logs(mentor.sub)
+    assert len(logs) == 1
+    log = logs[0]
+    assert (log.decision, log.query_type, log.flags, log.rule_id, log.role) == (
+        "block", "out_of_scope", ["SHARE_DENIED_BURST"], "SHARE-DENY-001", "mentor")
+    for _ in range(4):
+        mentor.get(f"/mentor/shares/{s['id']}")
+    assert len(_deny_logs(mentor.sub)) == 1  # 같은 구간에서는 한 번만
+
+
+def test_denied_comment_attempts_and_unknown_ids_counted(owner, mentor):
+    r = _resume(owner)
+    s = _share(owner, r["id"], mentor.sub).json()
+    owner.delete(f"/shares/{s['id']}")  # 취소
+    for _ in range(3):
+        mentor.post(f"/mentor/shares/{s['id']}/comments", json={"version_id": str(uuid.uuid4()),
+                                                                "paragraph_index": 0, "body": "x"})
+    for _ in range(2):
+        mentor.get(f"/mentor/shares/{uuid.uuid4()}")  # 없는 공유 ID 찌르기
+    assert len(_deny_logs(mentor.sub)) == 1
+
+
+def test_valid_views_and_other_mentors_not_counted(owner, mentor):
+    r = _resume(owner)
+    s = _share(owner, r["id"], mentor.sub).json()
+    for _ in range(6):
+        assert mentor.get(f"/mentor/shares/{s['id']}").status_code == 200
+    other = As(_sub("men"), Role.MENTOR)
+    for _ in range(4):
+        other.get(f"/mentor/shares/{s['id']}")
+    assert _deny_logs(mentor.sub) == [] and _deny_logs(other.sub) == []
+
+
+def test_new_window_counts_again():
+    from app.auth import CurrentUser
+    from app.features.share import denials
+
+    u = CurrentUser(sub=_sub("men"), role=Role.MENTOR)
+    t0 = 1_000_000.0
+    assert [denials.record_denied(u, now=t0 + i) for i in range(5)] == [False] * 4 + [True]
+    assert denials.record_denied(u, now=t0 + 10) is False
+    later = t0 + denials.WINDOW_SECONDS + 1  # 10분이 지나면 새로 셈
+    assert [denials.record_denied(u, now=later + i) for i in range(5)][-1] is True
+    assert len(_deny_logs(u.sub)) == 2

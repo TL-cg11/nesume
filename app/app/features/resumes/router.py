@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.auth import AuthenticatedUser
+from app.core.errors import AppError
 from app.db import get_db
 from app.features.resumes import pii_hooks
 from app.features.resumes import repository as repo
@@ -57,6 +58,24 @@ def _version_out(db: Session, owner_id: str, requester_id: str, v) -> dict:
     return data
 
 
+def _limit_resumes() -> AppError:
+    return AppError(
+        f"자기소개서는 {service.MAX_RESUMES_PER_USER}개까지 만들 수 있습니다. 기존 자기소개서를 삭제한 뒤 새로 만들어 주세요.",
+        code="resume_limit_reached", status_code=409,
+    )
+
+
+def _limit_versions() -> AppError:
+    return AppError(
+        f"문항당 버전은 {service.MAX_VERSIONS_PER_QUESTION}개까지 저장됩니다. 지울 버전을 골라 삭제한 뒤 저장해 주세요.",
+        code="version_limit_reached", status_code=409,
+    )
+_IN_USE = {
+    "application": "지원 기록에 쓰인 버전은 삭제할 수 없습니다.",
+    "share": "멘토에게 공유 중인 버전은 삭제할 수 없습니다. 공유가 끝난 뒤 삭제해 주세요.",
+}
+
+
 # 안내 문구는 spec 9.1 block(민감정보)
 _SENSITIVE = HTTPException(
     status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -68,7 +87,10 @@ _SENSITIVE = HTTPException(
 
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=ResumeOut)
 def create_resume(payload: ResumeCreate, user: AuthenticatedUser, db: Db):
-    return service.create_resume(db, user.sub, **payload.model_dump())
+    try:
+        return service.create_resume(db, user.sub, **payload.model_dump())
+    except service.ResumeLimitReached:
+        raise _limit_resumes() from None
 
 
 @router.get("", response_model=list[ResumeOut])
@@ -157,6 +179,8 @@ def create_version(
         result = service.create_version(db, user.sub, resume_id, question_id, payload.body, "manual")
     except pii_hooks.SensitiveInputBlocked:
         raise _SENSITIVE from None
+    except service.VersionLimitReached:
+        raise _limit_versions() from None
     if result is None:
         raise _NOT_FOUND
     version, over_limit = result
@@ -205,6 +229,22 @@ def get_version(
     return _version_out(db, user.sub, user.sub, version)
 
 
+@router.delete("/{resume_id}/questions/{question_id}/versions/{version_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_version(
+    resume_id: uuid.UUID, question_id: uuid.UUID, version_id: uuid.UUID, user: AuthenticatedUser, db: Db
+):
+    """버전 삭제(문항당 50개 상한, 4.56). 지원 기록·유효한 멘토 공유가 쓰는 버전은 409."""
+    _question_or_404(db, user.sub, resume_id, question_id)
+    version = repo.get_version(db, user.sub, question_id, version_id)
+    if version is None:
+        raise _NOT_FOUND
+    try:
+        service.delete_version(db, user.sub, version)
+    except service.VersionInUse as e:
+        raise AppError(_IN_USE[e.by], code="version_in_use", status_code=409, errors={"by": e.by}) from None
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.post(
     "/{resume_id}/questions/{question_id}/versions/{version_id}/restore",
     status_code=status.HTTP_201_CREATED,
@@ -213,7 +253,10 @@ def get_version(
 def restore_version(
     resume_id: uuid.UUID, question_id: uuid.UUID, version_id: uuid.UUID, user: AuthenticatedUser, db: Db
 ):
-    result = service.restore_version(db, user.sub, resume_id, question_id, version_id)
+    try:
+        result = service.restore_version(db, user.sub, resume_id, question_id, version_id)
+    except service.VersionLimitReached:
+        raise _limit_versions() from None
     if result is None:
         raise _NOT_FOUND
     version, over_limit = result
