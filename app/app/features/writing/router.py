@@ -10,15 +10,28 @@
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
 
 from app.auth import AuthenticatedUser
-from app.features.writing import service
+from app.db import get_db
+from app.features.profile.router import get_store as get_profile_store
+from app.features.profile.store import ProfileStore
+from app.features.resumes import pii_hooks
+from app.features.resumes import service as resumes_service
+from app.features.writing import rewrite_service, service
+from app.features.writing.rewrite import RewriteOptionError
 from app.features.writing.schemas import (
     ApplyRequest,
     ApplyResponse,
     ProofreadRequest,
     ProofreadResponse,
+    RewriteApplyRequest,
+    RewriteApplyResponse,
+    RewriteRequest,
+    RewriteResponse,
     StarOut,
     SuggestionOut,
 )
@@ -35,6 +48,8 @@ from app.guardrail.fastapi import (
 )
 
 router = APIRouter(prefix="/writing", tags=["writing"])
+
+Db = Annotated[Session, Depends(get_db)]
 
 
 
@@ -87,3 +102,71 @@ def apply(payload: ApplyRequest, user: AuthenticatedUser) -> ApplyResponse:
     accepted = set(payload.accepted)
     applied = sum(1 for s in suggestions if s.id in accepted and s.is_replacement)
     return ApplyResponse(text=text, applied=applied)
+
+
+# --- A6 리라이팅 ---------------------------------------------------------------
+#
+# ★ `/rewrite` 는 만들기만 하고 저장하지 않는다. `/rewrite/apply` 가 저장한다.
+#   A13(`/style/adjust` + `/style/apply`)과 같은 두 단계다 — 사용자가 **보고 고른
+#   뒤에** 저장되어야 한다.
+
+
+@router.post("/rewrite", response_model=RewriteResponse)
+async def rewrite_selection(
+    payload: RewriteRequest,
+    user: AuthenticatedUser,
+    db: Db,
+    guard: Guardrail = Depends(get_guardrail),
+    store: ProfileStore = Depends(get_profile_store),
+    session_id: str | None = Depends(session_header),
+) -> RewriteResponse:
+    """고른 구간을 다시 쓴 후보 3개를 돌려준다. 저장하지 않는다."""
+    try:
+        options = payload.options()
+    except RewriteOptionError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from None
+
+    result = await rewrite_service.rewrite(
+        db, payload.text, options,
+        guard=guard, store=store, use_llm=payload.use_llm,
+        **guardrail_kwargs(user, session_id),
+    )
+    return RewriteResponse.of(payload.text, result)
+
+
+@router.post("/rewrite/apply", response_model=RewriteApplyResponse, status_code=status.HTTP_201_CREATED)
+def apply_rewrite(
+    payload: RewriteApplyRequest,
+    user: AuthenticatedUser,
+    db: Db,
+) -> RewriteApplyResponse:
+    """고른 후보를 새 버전으로 저장한다 (B4, `source="ai"`).
+
+    모델을 부르지 않으므로 동기 함수다.
+    """
+    try:
+        result = rewrite_service.apply_candidate(
+            db, owner_id=user.sub,
+            resume_id=payload.resume_id, question_id=payload.question_id,
+            body=payload.body,
+        )
+    except pii_hooks.SensitiveInputBlocked:
+        # 안내 문구는 B4 와 같은 것을 쓴다 — 같은 저장 경로에서 같은 이유로 막혔는데
+        # 화면마다 다른 말이 나오면 사용자는 다른 문제로 읽는다
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "주민번호·계좌번호 등 민감정보는 제공하지 않습니다. 입력 시에도 자동 차단됩니다.",
+        ) from None
+    except resumes_service.VersionLimitReached:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"문항당 버전은 {resumes_service.MAX_VERSIONS_PER_QUESTION}개까지 저장됩니다. "
+            "지울 버전을 골라 삭제한 뒤 저장해 주세요.",
+        ) from None
+
+    if result is None:
+        # 없는 문항과 남의 문항을 **같게** 답한다 (존재 노출 금지)
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "문항을 찾을 수 없습니다.")
+
+    version, _ = result
+    return RewriteApplyResponse(version_id=version.id, char_count=len(version.body))
