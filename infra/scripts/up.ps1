@@ -1,6 +1,8 @@
 ﻿# compute apply -> kubeconfig -> ESO 대기 -> ClusterSecretStore -> ECR 최신 sha -> helm -> /api/health
 # 실행: $env:AWS_PROFILE = "nesume"; .\infra\scripts\up.ps1      (15~20분)
 $ErrorActionPreference = "Stop"
+# PS 5.1은 외부 명령(terraform/kubectl/helm)의 실패를 Stop으로 잡지 않는다. 매 단계 exit code를 본다.
+function Check($step) { if ($LASTEXITCODE) { throw "$step failed (exit $LASTEXITCODE)" } }
 if (-not $env:AWS_PROFILE) { throw "AWS_PROFILE is not set. Run: `$env:AWS_PROFILE = 'nesume'" }
 $Account = "852138520969"; $Region = "ap-northeast-2"; $Cluster = "nesume-dev"
 if ((aws sts get-caller-identity --query Account --output text) -ne $Account) { throw "wrong AWS account (expected $Account)" }
@@ -8,14 +10,15 @@ if ((aws sts get-caller-identity --query Account --output text) -ne $Account) { 
 $Repo    = (Resolve-Path "$PSScriptRoot\..\..").Path
 $Compute = Join-Path $Repo "infra\envs\dev\compute"
 
-terraform -chdir="$Compute" init -input=false
-terraform -chdir="$Compute" apply -auto-approve -input=false
+terraform -chdir="$Compute" init -input=false; Check "terraform init"
+terraform -chdir="$Compute" apply -auto-approve -input=false; Check "terraform apply"
 $DbHost = terraform -chdir="$Compute" output -raw rds_address
 
-aws eks update-kubeconfig --name $Cluster --region $Region
+aws eks update-kubeconfig --name $Cluster --region $Region; Check "update-kubeconfig"
+kubectl -n kube-system rollout status deploy/aws-load-balancer-controller --timeout=5m; Check "alb controller rollout"
 kubectl -n external-secrets rollout status deploy/external-secrets-webhook --timeout=5m
-kubectl -n external-secrets rollout status deploy/external-secrets --timeout=5m
-kubectl apply -f (Join-Path $Repo "deploy\clustersecretstore-dev.yaml")   # D9에서 차트로 옮기면 삭제
+kubectl -n external-secrets rollout status deploy/external-secrets --timeout=5m; Check "eso rollout"
+kubectl apply -f (Join-Path $Repo "deploy\clustersecretstore-dev.yaml"); Check "clustersecretstore"   # D9에서 차트로 옮기면 삭제
 
 $Sha = aws ecr describe-images --repository-name nesume/app --query 'sort_by(imageDetails,&imagePushedAt)[-1].imageTags[0]' --output text
 if (-not $Sha -or $Sha -eq "None") { throw "no image in ECR nesume/app. Push one first." }
@@ -24,6 +27,7 @@ if ($WebTags -notmatch $Sha) { throw "ECR nesume/web has no tag $Sha (app has it
 
 helm upgrade --install nesume (Join-Path $Repo "deploy\nesume") -n dev -f (Join-Path $Repo "deploy\nesume\values-dev.yaml") `
   --set config.DB_HOST=$DbHost --set image.app.tag=$Sha --set image.web.tag=$Sha --wait --timeout 10m
+Check "helm upgrade --install"
 
 $Alb = $null
 for ($i = 0; $i -lt 30 -and -not $Alb; $i++) {

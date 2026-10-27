@@ -86,6 +86,7 @@ terraform -chdir="infra/envs/dev/base" plan      # No changes
 | `docker login` 400 Bad Request | PS 5.1 파이프 `--password-stdin`이 토큰을 깨뜨린다. `--password (aws ecr get-login-password --region ap-northeast-2)` |
 | migrate Job `serviceaccount "nesume-app" not found` | pre-install hook이 release의 SA보다 먼저 돈다. 차트는 첫 설치에서 hook을 끈다(`.Release.IsInstall`) |
 | helm install `Ingress ... NotFound` | uninstall 직후 재설치. `kubectl -n dev wait --for=delete ingress/nesume` 후 설치 |
+| ESO release failed, `service "external-secrets-webhook" not found`, 이어서 ClusterSecretStore·ExternalSecret 생성 실패 | ALB 컨트롤러의 Service 뮤테이팅 웹훅이 엔드포인트도 없이 ESO의 webhook Service 생성을 막음(동시 설치 경쟁). `enableServiceMutatorWebhook = false`. 실패한 release는 `helm uninstall` 후 재apply |
 | ClusterSecretStore webhook `no endpoints available` | 노드가 없다(스팟 미배치). `kubectl get nodes` 먼저 |
 | ALB 컨트롤러·ESO `AccessDenied`/`NoCredentialProviders` | Pod Identity 연결의 namespace/SA 이름 불일치, `eks-pod-identity-agent` 없음, 또는 연결보다 파드가 먼저 뜸(파드 재시작) |
 | `aws_eks_addon coredns` 타임아웃 | 노드 전에 생성. `depends_on = [aws_eks_node_group.default]` |
@@ -99,6 +100,7 @@ terraform -chdir="infra/envs/dev/base" plan      # No changes
 | `explicit deny in a service control policy` | 조직에 미부착 상태의 차단 SCP가 있다. IAM으로는 못 푼다. 조직 관리자에게 문의 |
 | kubernetes provider `connection refused localhost:80` | 클러스터가 없는데 state에 k8s 리소스가 남음. `terraform state rm module.addons.kubernetes_namespace.dev` 후 재시도 |
 | PS에서 `InputObject[0]:` 프롬프트 | 인자 없는 `echo`는 입력 대기. `Write-Host ""` |
+| 스크립트가 terraform 실패 뒤에도 계속 진행 | PS 5.1은 외부 명령 exit code를 Stop으로 안 잡는다. 단계마다 `$LASTEXITCODE` 확인(`Check`) |
 
 ## 6. 다른 팀에 알릴 것
 

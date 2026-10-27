@@ -12,6 +12,9 @@ resource "helm_release" "alb_controller" {
     clusterName = var.cluster_name
     region      = var.region
     vpcId       = var.vpc_id
+    # Service 뮤테이팅 웹훅은 끈다. 10-27 실측: ESO와 동시에 설치되면 ESO의 webhook Service 생성이
+    # 이 웹훅(아직 엔드포인트 없음)에 막혀 release가 failed로 남는다. Service type=LoadBalancer는 안 쓴다(ALB는 Ingress).
+    enableServiceMutatorWebhook = false
     serviceAccount = {
       create = true
       name   = "aws-load-balancer-controller" # Pod Identity 연결 kube-system/aws-load-balancer-controller 와 일치
