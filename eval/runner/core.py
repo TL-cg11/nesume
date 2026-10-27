@@ -103,6 +103,9 @@ def run_api(client: httpx.Client, accounts: Accounts, seeder: Seeder, s: dict, r
     want = s["expect_checks"].get("http_status")
     if want is not None and res.status_code != want:
         r.checks_failed.append(f"http_status {res.status_code} != {want}")
+    for text in s["expect_checks"].get("response_excludes", []):  # 응답 본문에 나오면 안 되는 문장(B19-05)
+        if text in res.text:
+            r.checks_failed.append(f"응답에 '{text}' 있음")
 
 
 SESSION_HEADER = "X-Session-Id"  # A guardrail/fastapi.py

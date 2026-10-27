@@ -16,6 +16,7 @@ from app.features.share import service as share_service
 from app.models import Share
 
 LABEL = "평가 러너"
+POST_SHARE_BODY = "공유 이후 수정본"  # B19-SHARE-05 response_excludes와 같은 문장
 
 
 class DbSeeder:
@@ -48,9 +49,10 @@ class DbSeeder:
                                .values(created_at=now - timedelta(days=2), expires_at=now - timedelta(seconds=1)))
                     share_service.sync_resume(db, r, now)
                 if pre.get("edited_after_share"):
-                    resume_service.create_version(db, owner, r.id, q.id, "공유 이후 수정본", "manual")
+                    resume_service.create_version(db, owner, r.id, q.id, POST_SHARE_BODY, "manual")
                 if pre.get("unshared_resume"):
-                    self._resume(db, owner, "공유하지 않은 다른 자소서")
+                    rb, _ = self._resume(db, owner, "공유하지 않은 다른 자소서")
+                    values["unshared_resume_id"] = str(rb.id)
                 values.update(share_id=str(sh.id), resume_id=str(r.id), question_id=str(q.id))
             if pre.get("target") == "other_user_resume":  # C11: 다른 사용자(user2)의 자소서
                 other = self.accounts.sub("user2")

@@ -71,7 +71,18 @@ def test_api_channel_b19_against_real_api(env):
     api = {r.id: r for r in results if r.channel == "api"}
     assert {i: (r.actual_decision, r.http_status, r.match) for i, r in api.items()} == {
         "B19-SHARE-01": ("block", 404, True), "B19-SHARE-02": ("block", 404, True),
-        "B19-SHARE-03": ("block", 404, True)}
+        "B19-SHARE-03": ("block", 404, True), "B19-SHARE-04": ("block", 404, True),
+        "B19-SHARE-05": ("allow", 200, True)}  # 5건 모두 api(4.61)
+
+
+def test_response_excludes_catches_leak(env):
+    """대조군: 응답 본문에 나오면 안 되는 문장이 실제로 있으면 불일치로 잡는다(05가 '항상 통과'하지 않게)."""
+    app, accounts = env
+    s = dict(_scenarios("B19-SHARE-05")[0])
+    s["expect_checks"] = {**s["expect_checks"], "response_excludes": ["평가 러너 시드 문단"]}  # 공유 시점 v1 본문
+    results, _ = core.run(TestClient(app), accounts, DbSeeder(accounts), [s])
+    assert results[0].http_status == 200 and not results[0].match
+    assert results[0].checks_failed == ["응답에 '평가 러너 시드 문단' 있음"]
 
 
 def test_llm_channel_reads_audit_log_when_sink_wired(env):

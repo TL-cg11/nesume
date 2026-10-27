@@ -150,11 +150,19 @@ def build() -> str:
     w(f"## 7. 시나리오별 결과 ({len(rows)}건)\n")
     w("| ID | 유형 | 경로 | 역할 | 질의·요청 | 기대 | 실제 | 일치 |")
     w("|---|---|---|---|---|---|---|---|")
+    changed = []  # 측정 뒤 시트에서 경로(api/llm)가 바뀐 시나리오. 질의·요청은 현재 시트 기준이라 표시한다
     for cat in ORDER:
         for r in (x for x in rows if x["category"] == cat):
-            q = _query(sheet.get(r["id"]))
+            row = sheet.get(r["id"])
+            q = _query(row)
+            if row and row["channel"] != r["channel"]:
+                changed.append(r["id"])
+                q = f"※ {q}"
             w(f"| {r['id']} | {CATEGORY[cat]} | {r['channel']} | {r['role']} | {_short(q, 45)} | "
               f"{LABEL[r['expect_decision']]} | {LABEL[r['actual_decision']]} | {'✓' if r['match'] == 'Y' else '✗'} |")
+    if changed:
+        w(f"\n- ※ {', '.join(changed)}: {last['name']} 측정 뒤 시나리오 형식이 바뀜(경로는 측정 당시, 질의·요청은 현재 시트). "
+          "다음 라운드부터 새 형식으로 측정")
     w("")
     return "\n".join(L) + "\n"
 
