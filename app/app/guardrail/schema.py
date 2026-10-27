@@ -27,7 +27,7 @@ A3(질의 분류)·C6(검색 필터)·A5(출력 검사)가 각각 판정을 내�
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Literal
 
 # --------------------------------------------------------------------------
@@ -98,7 +98,8 @@ class Finding:
             raise ValueError("rule_id 가 비어 있습니다")
         if len(self.rule_id) > MAX_RULE_ID_LEN:
             raise ValueError(
-                f"rule_id 가 {MAX_RULE_ID_LEN}자를 넘습니다 — audit_logs 에 들어가지 못합니다: {self.rule_id!r}"
+                f"rule_id 가 {MAX_RULE_ID_LEN}자를 넘습니다 — "
+                f"audit_logs 에 들어가지 못합니다: {self.rule_id!r}"
             )
         if self.severity not in SEVERITIES:
             raise ValueError(f"severity 는 {SEVERITIES} 중 하나여야 합니다: {self.severity!r}")

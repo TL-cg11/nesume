@@ -25,7 +25,6 @@ from app.guardrail import (
     worse_decision,
 )
 
-
 # ---------------------------------------------------------------- DB 제약과 대조
 
 def test_values_match_audit_log_constraints() -> None:
