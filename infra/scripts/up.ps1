@@ -1,4 +1,4 @@
-﻿# compute apply -> kubeconfig -> ESO 대기 -> ClusterSecretStore -> ECR 최신 sha -> helm -> /api/health
+﻿# compute apply -> kubeconfig -> ESO 대기 -> ECR 최신 sha -> helm -> /api/health
 # 실행: $env:AWS_PROFILE = "nesume"; .\infra\scripts\up.ps1      (15~20분)
 $ErrorActionPreference = "Stop"
 # PS 5.1은 외부 명령(terraform/kubectl/helm)의 실패를 Stop으로 잡지 않는다. 매 단계 exit code를 본다.
@@ -18,7 +18,6 @@ aws eks update-kubeconfig --name $Cluster --region $Region; Check "update-kubeco
 kubectl -n kube-system rollout status deploy/aws-load-balancer-controller --timeout=5m; Check "alb controller rollout"
 kubectl -n external-secrets rollout status deploy/external-secrets-webhook --timeout=5m
 kubectl -n external-secrets rollout status deploy/external-secrets --timeout=5m; Check "eso rollout"
-kubectl apply -f (Join-Path $Repo "deploy\clustersecretstore-dev.yaml"); Check "clustersecretstore"   # D9에서 차트로 옮기면 삭제
 
 $Sha = aws ecr describe-images --repository-name nesume/app --query 'sort_by(imageDetails,&imagePushedAt)[-1].imageTags[0]' --output text
 if (-not $Sha -or $Sha -eq "None") { throw "no image in ECR nesume/app. Push one first." }

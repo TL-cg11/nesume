@@ -41,7 +41,7 @@ $env:AWS_PROFILE = "nesume"; .\infra\scripts\up.ps1     # 15~20분
 $env:AWS_PROFILE = "nesume"; .\infra\scripts\down.ps1   # 10분
 ```
 
-`up.ps1`: compute apply → kubeconfig → External Secrets 대기 → ClusterSecretStore → ECR 최신 태그 확인(app·web 둘 다 있어야 함) → `helm upgrade --install` → ALB 주소 출력 → `/api/health` 200.
+`up.ps1`: compute apply → kubeconfig → External Secrets 대기 → ECR 최신 태그 확인(app·web 둘 다 있어야 함) → `helm upgrade --install` → ALB 주소 출력 → `/api/health` 200.
 
 `down.ps1`: `helm uninstall --wait` → Ingress finalizer 삭제 대기 → ALB 소멸 대기 → `terraform destroy` → NAT·EIP·EKS·RDS·ALB 잔존 확인. 마지막 다섯 줄이 전부 `none`이어야 끝난 것이다.
 

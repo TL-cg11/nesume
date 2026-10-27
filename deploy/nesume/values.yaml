@@ -71,6 +71,7 @@ externalSecrets:
   secretStoreRef:
     name: aws-secretsmanager
     kind: ClusterSecretStore
+  createStore: false                 # true: 차트가 ClusterSecretStore 를 만든다(clustersecretstore.yaml). 클러스터 스코프라 클러스터당 한 릴리스만 true
   remoteKey: nesume/production/app   # Secrets Manager 키. JSON 필드명 = secrets.* 키
   refreshInterval: 1h
 

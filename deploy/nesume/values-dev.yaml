@@ -4,7 +4,7 @@ image:
   pullPolicy: IfNotPresent
 
 app:
-  replicas: 1
+  replicas: 2                        # 스팟 회수·롤링 중 무중단. pdb minAvailable 1 과 짝
 
 web:
   replicas: 1
@@ -27,6 +27,7 @@ config:
 externalSecrets:
   enabled: true
   remoteKey: nesume/dev/app
+  createStore: true                  # dev 클러스터의 유일한 릴리스. 스토어 region 은 config.AWS_REGION
 
 ingress:
   enabled: true
@@ -43,4 +44,4 @@ hpa:
   enabled: false
 
 pdb:
-  enabled: false
+  enabled: true                      # minAvailable 1(기본값). replicas 1 로 내리면 drain 이 막히니 같이 끈다
