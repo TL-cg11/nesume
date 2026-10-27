@@ -1,0 +1,35 @@
+/* 홈 대시보드(B). 값은 theme.css 변수만 사용. 접두사 home- */
+.home { display: flex; flex-direction: column; gap: var(--space-4); }
+.home-hero { padding: var(--space-6) var(--space-5); }
+.home-hero h1 { font-size: var(--text-xl); line-height: 1.4; margin: var(--space-2) 0; }
+.home-eyebrow { font-size: var(--text-sm); font-weight: 700; color: var(--violet); }
+.home-cta {
+  display: inline-block; margin-top: var(--space-3); padding: var(--space-2) var(--space-4);
+  background: var(--accent); color: var(--on-accent); border-radius: var(--radius-sm); font-weight: 700; text-decoration: none;
+}
+.home-cta:hover { filter: brightness(1.08); }
+
+.home-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-3); }
+.home-stat { display: flex; flex-direction: column; gap: var(--space-1); }
+.home-stat-value { font-size: var(--text-xl); color: var(--fg); }
+
+.home-grid { display: grid; grid-template-columns: 2fr 1fr; gap: var(--space-4); align-items: start; }
+.home-side { margin-top: 0; gap: var(--space-4); }
+.home-recent { display: flex; align-items: center; gap: var(--space-3); }
+.home-recent p, .home .list p { margin: var(--space-1) 0 0; }
+.home-recent-title, .home-quick-title { color: var(--fg); font-weight: 650; text-decoration: none; }
+.home-recent-title:hover, a.home-quick-title:hover { color: var(--accent-text); }
+.home-badge {
+  font-size: var(--text-sm); font-weight: 700; white-space: nowrap;
+  padding: calc(var(--space-1) / 2) var(--space-2); border-radius: var(--radius-pill);
+  color: var(--accent-text); background: var(--accent-soft);
+}
+.home-badge.review { color: var(--violet); background: var(--violet-soft); }
+.home-badge.done { color: var(--success); background: var(--success-soft); }
+.home-tip { background: var(--accent-soft); border-color: transparent; }
+.home-tip h3 { margin-top: 0; }
+
+@media (max-width: 720px) {
+  .home-stats { grid-template-columns: repeat(2, 1fr); }
+  .home-grid { grid-template-columns: 1fr; }
+}

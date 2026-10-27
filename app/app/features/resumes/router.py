@@ -15,6 +15,7 @@ from app.features.resumes import pii_hooks
 from app.features.resumes import repository as repo
 from app.features.resumes import service
 from app.features.resumes.schemas import (
+    Dashboard,
     QuestionCreate,
     QuestionOut,
     QuestionUpdate,
@@ -80,6 +81,16 @@ def list_resumes(
     rows = repo.list_resumes(db, user.sub, limit, offset)
     summaries = share_service.resume_summaries(db, user.sub, [r.id for r in rows])
     return [{**ResumeOut.model_validate(r).model_dump(), "share_summary": summaries.get(r.id)} for r in rows]
+
+
+@router.get("/dashboard", response_model=Dashboard)
+def get_dashboard(user: AuthenticatedUser, db: Db):
+    """홈 대시보드(사용자용). `/{resume_id}`보다 먼저 둔다(경로 충돌 방지)."""
+    data = service.dashboard(db, user.sub)
+    summaries = share_service.resume_summaries(db, user.sub, [r["id"] for r in data["recent"]])
+    for r in data["recent"]:
+        r["share_summary"] = summaries.get(r["id"])
+    return data
 
 
 @router.get("/{resume_id}", response_model=ResumeDetail)

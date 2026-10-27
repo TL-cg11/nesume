@@ -5,6 +5,8 @@ const q = (rid, qid) => `/resumes/${rid}/questions/${qid}`
 
 export const resumesApi = {
   list: () => api.get('/resumes'),
+  // 홈 대시보드 집계(B, 4.54)
+  dashboard: (opts) => api.get('/resumes/dashboard', opts),
   create: (data) => api.post('/resumes', data),
   get: (rid) => api.get(`/resumes/${rid}`),
   update: (rid, data) => api.patch(`/resumes/${rid}`, data),

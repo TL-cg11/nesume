@@ -140,3 +140,40 @@ def diff_segments(before: str, after: str) -> list[dict]:
     for op, i1, i2, j1, j2 in difflib.SequenceMatcher(a=a, b=b, autojunk=False).get_opcodes():
         out.append({"op": op, "before": "".join(a[i1:i2]), "after": "".join(b[j1:j2])})
     return out
+
+
+def dashboard(db: Session, owner_id: str, *, recent_limit: int = 4) -> dict:
+    """홈 대시보드 집계(B, part2_guide 4.54). 상태 없음은 작성 중으로 센다."""
+    resumes, questions, experience_total = repo.dashboard_counts(db, owner_id)
+    latest = repo.latest_versions(db, [q.id for q in questions])
+    by_resume: dict[uuid.UUID, list] = {}
+    for q in questions:
+        by_resume.setdefault(q.resume_id, []).append(q)
+    titles = {r.id: r.title for r in resumes}
+
+    def last_edited(r):
+        times = [r.updated_at] + [latest[q.id].created_at for q in by_resume.get(r.id, []) if q.id in latest]
+        return max(times)
+
+    newest = max(latest.values(), key=lambda v: v.created_at, default=None)
+    qmap = {q.id: q for q in questions}
+    filled = len(latest)
+    return {
+        "resume_total": len(resumes),
+        "resume_in_progress": sum(r.status != "완료" for r in resumes),
+        "experience_total": experience_total or 0,
+        "question_total": len(questions),
+        "question_filled": filled,
+        "progress_percent": round(filled * 100 / len(questions)) if questions else 0,
+        "latest_save": None if newest is None else {
+            "resume_id": qmap[newest.question_id].resume_id,
+            "resume_title": titles[qmap[newest.question_id].resume_id],
+            "question_title": qmap[newest.question_id].title,
+            "version_no": newest.version_no, "created_at": newest.created_at,
+        },
+        "recent": [
+            {"id": r.id, "title": r.title, "status": r.status, "question_count": len(by_resume.get(r.id, [])),
+             "last_edited_at": last_edited(r)}
+            for r in sorted(resumes, key=last_edited, reverse=True)[:recent_limit]
+        ],
+    }

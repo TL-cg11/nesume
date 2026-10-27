@@ -5,6 +5,9 @@ import QuestionEditor from './QuestionEditor.jsx'
 import SharePanel from './SharePanel.jsx'
 import './resumes.css'
 
+// 자소서 상태(발표 시안, 4.54). 서버 schemas.RESUME_STATUSES와 같다
+const RESUME_STATUSES = ['작성 중', '검토 중', '완료']
+
 export default function ResumeDetailPage() {
   const { resumeId } = useParams()
   const navigate = useNavigate()
@@ -77,14 +80,19 @@ export default function ResumeDetailPage() {
           onBlur={(e) => e.target.value.trim() && e.target.value !== resume.title && saveMeta('title', e.target.value.trim())}
           aria-label="자소서 제목"
         />
-        <input
+        <select
           className="status-input"
-          defaultValue={resume.status ?? ''}
-          placeholder="상태"
-          maxLength={20}
-          onBlur={(e) => e.target.value !== (resume.status ?? '') && saveMeta('status', e.target.value.trim())}
+          value={resume.status ?? ''}
+          onChange={(e) => saveMeta('status', e.target.value)}
           aria-label="상태"
-        />
+        >
+          <option value="">상태 없음</option>
+          {RESUME_STATUSES.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
         <button className="danger" onClick={removeResume}>
           삭제
         </button>

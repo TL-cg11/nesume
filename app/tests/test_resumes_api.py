@@ -59,7 +59,7 @@ def test_resume_crud_and_soft_delete(alice):
     r = _resume(alice)
     assert r["status"] is None
 
-    assert alice.patch(f"/resumes/{r['id']}", json={"status": "작성중"}).json()["status"] == "작성중"
+    assert alice.patch(f"/resumes/{r['id']}", json={"status": "검토 중"}).json()["status"] == "검토 중"
     assert [x["id"] for x in alice.get("/resumes").json()] == [r["id"]]
 
     assert alice.delete(f"/resumes/{r['id']}").status_code == 204
@@ -266,3 +266,45 @@ def test_version_id_from_other_question_rejected(alice):
     v = _version(alice, r["id"], q1["id"], "q1 본문")
     assert alice.get(f"/resumes/{r['id']}/questions/{q2['id']}/versions/{v['id']}").status_code == 404
     assert alice.post(f"/resumes/{r['id']}/questions/{q2['id']}/versions/{v['id']}/restore").status_code == 404
+
+
+# --- 상태 값·홈 대시보드 (part2_guide 4.54) ---------------------------------------
+
+@pytest.mark.parametrize("status,ok", [("작성 중", True), ("검토 중", True), ("완료", True), (None, True),
+                                       ("작성중", False), ("draft", False)])
+def test_resume_status_values(alice, status, ok):
+    r = _resume(alice)
+    res = alice.patch(f"/resumes/{r['id']}", json={"status": status})
+    assert res.status_code == (200 if ok else 422)
+
+
+def test_dashboard_counts_progress_latest_and_recent(alice):
+    empty = alice.get("/resumes/dashboard").json()
+    assert empty["resume_total"] == 0 and empty["progress_percent"] == 0 and empty["latest_save"] is None
+
+    a = _resume(alice)
+    b = alice.post("/resumes", json={"title": "카카오", "status": "완료"}).json()
+    qa1, qa2 = _question(alice, a["id"]), _question(alice, a["id"])
+    qb = _question(alice, b["id"])
+    _version(alice, a["id"], qa1["id"], "본문1")
+    _version(alice, b["id"], qb["id"], "본문2")
+    gone = _resume(alice)
+    _question(alice, gone["id"])
+    alice.delete(f"/resumes/{gone['id']}")  # 삭제된 자소서는 제외
+    alice.post("/experiences", json={"title": "경험", "type": "project"})
+
+    d = alice.get("/resumes/dashboard").json()
+    assert (d["resume_total"], d["resume_in_progress"]) == (2, 1)  # 상태 없음 = 작성 중, 완료 제외
+    assert (d["question_total"], d["question_filled"], d["progress_percent"]) == (3, 2, 67)
+    assert d["experience_total"] == 1
+    assert d["latest_save"]["resume_title"] == "카카오" and d["latest_save"]["version_no"] == 1
+    assert [x["id"] for x in d["recent"]] == [b["id"], a["id"]]  # 버전 저장 시각 기준 최신순
+    assert {x["id"]: x["question_count"] for x in d["recent"]} == {a["id"]: 2, b["id"]: 1}
+    _version(alice, a["id"], qa2["id"], "본문3")
+    assert alice.get("/resumes/dashboard").json()["recent"][0]["id"] == a["id"]
+
+
+def test_dashboard_is_owner_scoped(two_users):
+    sw, a_sub, b_sub = two_users
+    _resume(sw.as_(a_sub))  # 클라이언트를 만들 때 사용자가 바뀌므로 차례로
+    assert sw.as_(b_sub).get("/resumes/dashboard").json()["resume_total"] == 0

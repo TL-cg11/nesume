@@ -9,7 +9,7 @@ from collections.abc import Sequence
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import Question, Resume, Version
+from app.models import Experience, Question, Resume, Version
 
 
 def get_resume(db: Session, owner_id: str, resume_id: uuid.UUID) -> Resume | None:
@@ -114,3 +114,15 @@ def max_version_no(db: Session, question_id: uuid.UUID) -> int:
 
 def count_versions(db: Session, question_id: uuid.UUID) -> int:
     return db.scalar(select(func.count()).where(Version.question_id == question_id))
+
+
+def dashboard_counts(db: Session, owner_id: str):
+    """대시보드 집계 재료. 삭제된 자소서·문항은 제외."""
+    resumes = db.scalars(select(Resume).where(Resume.owner_id == owner_id, Resume.deleted_at.is_(None))).all()
+    questions = db.scalars(
+        select(Question).join(Resume, Resume.id == Question.resume_id)
+        .where(Question.owner_id == owner_id, Question.deleted_at.is_(None), Resume.deleted_at.is_(None))
+    ).all()
+    experience_total = db.scalar(select(func.count()).select_from(Experience)
+                                 .where(Experience.owner_id == owner_id, Experience.deleted_at.is_(None)))
+    return resumes, questions, experience_total
