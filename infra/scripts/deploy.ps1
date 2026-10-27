@@ -46,8 +46,9 @@ if ($clusters -notmatch $Cluster) {
 
 aws eks update-kubeconfig --name $Cluster --region $Region | Out-Null; Check "update-kubeconfig"
 $DbHost = terraform -chdir="$Compute" output -raw rds_address; Check "terraform output rds_address"
+# --set-string: sha 가 숫자로만 되면(예: 6462796) --set 은 int 로 읽어 이미지 이름이 %!s(int64=...) 로 깨진다(10-27 실측).
 helm upgrade --install nesume (Join-Path $Repo "deploy\nesume") -n dev -f (Join-Path $Repo "deploy\nesume\values-dev.yaml") `
-  --set config.DB_HOST=$DbHost --set image.app.tag=$Sha --set image.web.tag=$Sha --wait --timeout 10m
+  --set-string config.DB_HOST=$DbHost --set-string image.app.tag=$Sha --set-string image.web.tag=$Sha --wait --timeout 10m
 Check "helm upgrade --install"
 
 $Alb = kubectl -n dev get ingress nesume -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'

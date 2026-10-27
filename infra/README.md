@@ -82,6 +82,7 @@ terraform -chdir="infra/envs/dev/base" plan      # No changes
 | 파드 `Pending`, `Too many pods` | `m6g/m7g.medium`은 ENI 한도로 노드당 파드 8개. 시스템 파드만 15개. 타입 목록에서 제외돼 있다 |
 | 파드 `exec format error` | amd64 이미지. arm64로 빌드 |
 | `ImagePullBackOff`, `no basic auth credentials` | 노드 역할에 `AmazonEC2ContainerRegistryPullOnly` 없음 |
+| migrate 파드 `InvalidImageName`, 이미지가 `app:%!s(int64=6462796)` | git sha 가 숫자로만 된 경우 helm `--set` 이 정수로 읽는다. 스크립트는 `--set-string`. 수동으로 칠 때도 `--set-string image.app.tag=...` |
 | `web ImagePullBackOff ... not found` | ECR `nesume/web`에 그 태그가 없다. app·web 같은 태그로 push |
 | `docker login` 400 Bad Request | PS 5.1 파이프 `--password-stdin`이 토큰을 깨뜨린다. `--password (aws ecr get-login-password --region ap-northeast-2)` |
 | migrate Job `serviceaccount "nesume-app" not found` | pre-install hook이 release의 SA보다 먼저 돈다. 차트는 첫 설치에서 hook을 끈다(`.Release.IsInstall`) |
