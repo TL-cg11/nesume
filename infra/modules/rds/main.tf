@@ -24,6 +24,11 @@ resource "random_id" "snap" {
   byte_length = 4
 }
 
+# trivy 예외(dev): 매일 destroy하는 DB라 삭제 보호·백업 보존 연장은 맞지 않는다(final snapshot은 뜬다).
+# IAM DB 인증은 앱이 Secrets Manager 비밀번호를 쓰므로 미사용.
+#trivy:ignore:AVD-AWS-0177
+#trivy:ignore:AVD-AWS-0077
+#trivy:ignore:AVD-AWS-0176
 resource "aws_db_instance" "this" {
   identifier     = var.name
   engine         = "postgres"

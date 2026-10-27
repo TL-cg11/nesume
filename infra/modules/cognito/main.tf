@@ -2,7 +2,7 @@
 # 환경 디렉터리(infra/envs/<env>)에서 모듈로 호출한다(D8). apply는 AWS 크레딧 뒤.
 # 그 전에는 init -backend=false / validate / fmt -check 까지만 확인한다.
 terraform {
-  required_version = ">= 1.9"
+  required_version = ">= 1.10"
   required_providers {
     aws = { source = "hashicorp/aws", version = "~> 6.0" }
   }

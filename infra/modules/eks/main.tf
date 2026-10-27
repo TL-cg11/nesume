@@ -1,3 +1,9 @@
+# trivy 예외(dev). 퍼블릭 엔드포인트는 팀원·GitHub Actions 러너(IP 가변)가 kubectl을 쓰려면 필요하다. IP 제한은 D17.
+# 시크릿 암호화는 EKS 1.28+에서 AWS 소유 키로 기본 적용된다(encryption_config는 한 번 켜면 못 끈다). 컨트롤 플레인 로그는 매일 재생성하는 dev에서 비용만 든다.
+#trivy:ignore:AVD-AWS-0040
+#trivy:ignore:AVD-AWS-0041
+#trivy:ignore:AVD-AWS-0039
+#trivy:ignore:AVD-AWS-0038
 resource "aws_eks_cluster" "this" {
   name     = var.name
   version  = var.cluster_version
