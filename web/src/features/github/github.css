@@ -1,0 +1,15 @@
+/* GitHub 프로젝트 소개(B14). 값은 theme.css 변수만 사용. 접두사 gh- */
+.gh-input { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.gh-input input[name='repo'] { flex: 1 1 320px; font-family: var(--font-mono); }
+.gh-input input { min-width: 0; }
+.gh-stats { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: baseline; }
+.gh-repo { font-weight: 700; }
+.gh-sections { display: grid; grid-template-columns: 4.5em 1fr; gap: var(--space-2) var(--space-3); margin: var(--space-3) 0 0; }
+.gh-sections dt { font-weight: 700; color: var(--muted); }
+.gh-sections dd { margin: 0; white-space: pre-wrap; }
+.gh-questions { margin: var(--space-2) 0 0; padding-left: 1.4em; }
+.gh-form { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+.gh-form label { display: flex; flex-direction: column; gap: var(--space-1); }
+.gh-form .gh-full { grid-column: 1 / -1; }
+.gh-form textarea { width: 100%; }
+@media (max-width: 720px) { .gh-form { grid-template-columns: 1fr; } }
