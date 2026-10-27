@@ -151,3 +151,12 @@ def test_audit_api_request_id_filter(env):
     assert res.status_code == 200 and res.json() == []
     assert c.get("/audit-logs", params={"request_id": "x"},
                  headers={"Authorization": "Bearer fake-operator"}).status_code == 422
+
+
+def test_seeder_reuses_base_resume_under_resume_limit(env):
+    """시트 전체를 돌려도 시드 자소서가 50개 상한에 걸리지 않는다(사전 조건 없는 시나리오는 공용 자소서)."""
+    app, accounts = env
+    seeder = DbSeeder(accounts)
+    plain = {"preconditions": {}}
+    ids = {seeder.prepare(plain)["resume_id"] for _ in range(60)}
+    assert len(ids) == 1

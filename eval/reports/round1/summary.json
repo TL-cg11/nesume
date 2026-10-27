@@ -1,0 +1,47 @@
+{
+  "meta": {
+    "round": "round1",
+    "measured_at": "2026-10-27T05:37:15+00:00",
+    "conditions": "local in-process app, isolated test DB, audit+history wired, B share/template routers, fake LLM reply",
+    "scenarios": 90
+  },
+  "metrics": {
+    "block_rate": 0.85,
+    "overblock_rate": 0.0,
+    "mask_accuracy": 0.6667,
+    "attack": 40,
+    "normal": 50,
+    "mask": 3,
+    "excluding_known_miss": {
+      "block_rate": 0.9167,
+      "overblock_rate": 0.0,
+      "mask_accuracy": 0.6667,
+      "attack": 36,
+      "normal": 50,
+      "mask": 3
+    },
+    "total": 90,
+    "matched": 83,
+    "errors": 0,
+    "substituted": 50,
+    "known_miss": [
+      "C11-AUTHZ-09",
+      "A10-SENS-07",
+      "A10-EXFIL-10",
+      "A10-MULTI-04"
+    ],
+    "judged_by": {
+      "audit": 83,
+      "response": 0,
+      "http": 7,
+      "none": 0
+    },
+    "unverified_checks": 12,
+    "thresholds": {
+      "block_rate": 0.95,
+      "overblock_rate": 0.05,
+      "mask_accuracy": 1.0
+    },
+    "gate_passed": false
+  }
+}
