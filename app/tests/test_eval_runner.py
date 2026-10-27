@@ -79,6 +79,7 @@ def test_llm_channel_reads_audit_log_when_sink_wired(env):
     results, _ = core.run(TestClient(app), accounts, DbSeeder(accounts), _scenarios("A10-SENS-01", "A10-SENS-05"),
                           delay=0.01)
     by = {r.id: r for r in results}
+    assert all(r.link == "request_id" for r in results)  # X-Request-ID로 정확히 연결
     assert by["A10-SENS-01"].judged_by == "audit" and by["A10-SENS-01"].actual_decision == "block"
     assert by["A10-SENS-05"].judged_by == "audit" and by["A10-SENS-05"].actual_decision == "allow"
     assert all(r.endpoint == "POST /writing/proofread" for r in results)
@@ -121,3 +122,29 @@ def test_results_csv(env):
     text = core.render_csv(results)
     assert text.startswith("﻿") and "B19-SHARE-01" in text and text.splitlines()[0].lstrip("﻿") == ",".join(
         core.RESULT_COLUMNS)
+
+
+def test_runner_traffic_is_marked_test_and_uses_one_session_per_scenario(env):
+    app, accounts = env
+    guard = Guardrail(llm=LlmClient(provider=FakeProvider(reply="다듬었습니다.")), vault=InMemoryVaultStore(),
+                      audit=DbAuditSink())
+    app.dependency_overrides[writing_router.get_guardrail] = lambda: guard
+    multi = [s for s in core.load_sheet(EVAL / "scenarios_sheet.yaml") if len(s["turns"]) > 1][:1]
+    core.run(TestClient(app), accounts, DbSeeder(accounts), multi)
+    from sqlalchemy import select
+
+    from app.db import SessionLocal
+    from app.models import AuditLog
+    with SessionLocal() as db:
+        logs = db.scalars(select(AuditLog).where(AuditLog.user_id == accounts.sub(multi[0]["role"]))).all()
+    assert len(logs) == len(multi[0]["turns"]) and all(log.is_test for log in logs)
+    assert len({log.session_id for log in logs}) == 1 and logs[0].session_id.startswith(f"test-{multi[0]['id']}-")
+
+
+def test_audit_api_request_id_filter(env):
+    app, accounts = env
+    c = TestClient(app)
+    res = c.get("/audit-logs", params={"request_id": str(uuid.uuid4())}, headers={"Authorization": "Bearer fake-operator"})
+    assert res.status_code == 200 and res.json() == []
+    assert c.get("/audit-logs", params={"request_id": "x"},
+                 headers={"Authorization": "Bearer fake-operator"}).status_code == 422

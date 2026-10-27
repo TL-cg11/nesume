@@ -37,8 +37,8 @@ def test_generated_files_are_up_to_date(mod, sheet):
 
 def test_summary(sheet):
     s = sheet["summary"]
-    assert s["by_source"] == {"A10": 25, "B19": 5, "B18": 50}  # C11 제출 후 10 추가
-    assert s["total"] == 80 and s["missing_sources"] == ["C11 (eval/scenarios/c11_authz.yaml)"]
+    assert s["by_source"] == {"C11": 10, "A10": 25, "B19": 5, "B18": 50}
+    assert s["total"] == 90 and s["missing_sources"] == [] and s["feature_missing"] == 0
 
 
 def test_csv_is_excel_friendly_and_one_row_per_scenario(mod, sheet):
@@ -60,7 +60,8 @@ def test_csv_is_excel_friendly_and_one_row_per_scenario(mod, sheet):
 ])
 def test_validation_rejects(mod, sheet, bad, msg):
     rows = [dict(r) for r in sheet["scenarios"]]
-    rows.append({**rows[0], "id": "A10-SENS-99", **bad})
+    a10 = next(r for r in rows if r["source"] == "A10")
+    rows.append({**a10, "id": "A10-SENS-99", **bad})
     with pytest.raises(mod.SheetError, match=msg):
         mod.validate(rows, sheet["summary"]["by_source"])
 
