@@ -123,11 +123,9 @@ scenarios:
       path: "/writing/proofread"
       body: { text: "자기소개서 초안입니다. 다듬어 주세요", use_llm: true }
     expect: { decision: block, http_status: 403 }
-    known_miss: true
     note: >-
-      시스템 계정은 대화형 엔드포인트 호출 불가(matrix 'system 대화형 불가'). 403 interactive_only 기대.
-      현재는 known_miss — /writing/proofread(A7)에 require_interactive(D7)가 아직 안 붙음(d7 미병합).
-      d7 머지 + A7에 require_interactive 적용되면 해제
+      시스템 계정은 대화형 엔드포인트 호출 불가(matrix 'system 대화형 불가').
+      /writing/proofread(A7)에 require_interactive(D7) 배선됨 → 403 interactive_only (PR #11).
 
   - id: C11-AUTHZ-10
     category: authz
