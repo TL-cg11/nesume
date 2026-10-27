@@ -37,7 +37,9 @@ resource "aws_eks_node_group" "default" {
   node_role_arn   = var.node_role_arn
   subnet_ids      = var.private_subnet_ids
 
-  instance_types = ["t4g.medium"]
+  # 스팟은 타입 하나면 못 띄운다(10-27 실측: t4g.medium 단독 배치 점수 1/10, 아래 8개면 9/10).
+  # 전부 arm64, 2 vCPU 이상 또는 4GB 이상. ASG가 가용한 것을 고른다(capacity-optimized).
+  instance_types = ["t4g.medium", "t4g.large", "m6g.medium", "m6g.large", "m7g.medium", "m7g.large", "c6g.large", "c7g.large"]
   ami_type       = "AL2023_ARM_64_STANDARD"
   capacity_type  = "SPOT"
   disk_size      = 20
