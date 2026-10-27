@@ -50,7 +50,8 @@ def env():
 
     def current(request: Request):
         role = request.headers["Authorization"].removeprefix("Bearer fake-")
-        return CurrentUser(sub=accounts.sub(role), role=ROLES[role])
+        # 시드 계정은 모두 test 그룹(D6) → is_test는 토큰에서 온다(A PR #11). 가짜 계정도 같게 맞춘다
+        return CurrentUser(sub=accounts.sub(role), role=ROLES[role], is_test=True)
 
     app.dependency_overrides[get_current_user] = current
     # B11 조회는 운영자 MFA 필수. 러너 테스트는 MFA 검사를 끈다(staging은 TOTP 등록 계정 사용, B16.md)
