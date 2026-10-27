@@ -38,8 +38,8 @@ def test_measure_round(env):  # noqa: F811
     out = OUT / ROUND
     out.mkdir(parents=True, exist_ok=True)
     meta = {"round": ROUND, "measured_at": datetime.now(UTC).isoformat(timespec="seconds"),
-            "conditions": "local in-process app, isolated test DB, audit+history wired, B share/template routers, "
-                          "fake LLM reply", "scenarios": len(scenarios)}
+            "conditions": "로컬에서 앱을 그대로 띄워 실제 API로 투입(격리 테스트 DB), 감사 로그·대화 이력 연결, B 공유·템플릿 라우터 포함, 모델 응답은 가짜(고정 문장)",
+            "scenarios": len(scenarios)}
     (out / "results.csv").write_text(core.render_csv(results), encoding="utf-8")
     (out / "summary.json").write_text(json.dumps({"meta": meta, "metrics": m}, ensure_ascii=False, indent=2),
                                       encoding="utf-8")

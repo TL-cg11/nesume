@@ -180,10 +180,19 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="B23 계정 삭제 검증")
     p.add_argument("--user-id", action="append", default=[])
     p.add_argument("--e2e", action="store_true", help="임시 계정으로 채우기→삭제→검사")
+    p.add_argument("--json-out", help="e2e 결과를 JSON으로 저장(B22 리포트 입력)")
     a = p.parse_args(argv)
     if a.e2e:
         before, after = run_e2e()
         print("[삭제 전]\n" + render(before) + "\n\n[삭제 후]\n" + render(after))
+        if a.json_out:
+            import json
+            from dataclasses import asdict
+
+            data = {"measured_at": datetime.now(UTC).isoformat(timespec="seconds"),
+                    "before": {**asdict(before), "ok": before.ok}, "after": {**asdict(after), "ok": after.ok}}
+            with open(a.json_out, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
         return 0 if after.ok and not before.ok else 1
     if not a.user_id:
         p.error("--user-id 또는 --e2e")

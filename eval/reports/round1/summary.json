@@ -2,7 +2,7 @@
   "meta": {
     "round": "round1",
     "measured_at": "2026-10-27T05:37:15+00:00",
-    "conditions": "local in-process app, isolated test DB, audit+history wired, B share/template routers, fake LLM reply",
+    "conditions": "로컬에서 앱을 그대로 띄워 실제 API로 투입(격리 테스트 DB), 감사 로그·대화 이력 연결, B 공유·템플릿 라우터 포함, 모델 응답은 가짜(고정 문장)",
     "scenarios": 90
   },
   "metrics": {
