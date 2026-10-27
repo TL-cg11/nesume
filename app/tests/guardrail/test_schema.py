@@ -148,8 +148,30 @@ def test_merge_takes_the_heavier_decision() -> None:
     merged = classifier.merge(output)
     assert merged.decision == "block"
     assert merged.stage == "output_guard", "어디서 막혔는지가 로그의 쓸모다"
-    assert merged.query_type == "sensitive", "분류 단계가 정한 값을 유지한다"
+    assert merged.query_type == "sensitive", "막은 쪽이 유형을 정하지 않았으면 앞의 값이 남는다"
     assert merged.flags == ["SENSITIVE", "LEAK_CANARY"]
+
+
+def test_merge_takes_query_type_from_the_heavier_stage() -> None:
+    """★ 막은 쪽이 유형을 정했으면 **그 값**이다.
+
+    A12 가 이력을 보고 탈취로 판정하는 경우다. 전에는 A3 가 이 턴만 보고 내린
+    ``normal`` 이 이겨 감사 로그가 막은 이유를 ``normal`` 로 적었다 (A10-MULTI-04).
+    """
+    single_turn = allow("classifier", query_type="normal")
+    multiturn = Verdict("block", "classifier", (Finding("MT_SLICING", "critical"),),
+                        query_type="exfiltration")
+
+    merged = single_turn.merge(multiturn)
+    assert merged.decision == "block"
+    assert merged.query_type == "exfiltration"
+
+
+def test_merge_keeps_earlier_query_type_on_tie() -> None:
+    """판정이 동률이면 앞쪽 값이다 — 단계를 고르는 규칙과 같다."""
+    a = Verdict("mask", "classifier", query_type="sensitive")
+    b = Verdict("mask", "retriever", query_type="out_of_scope")
+    assert a.merge(b).query_type == "sensitive"
 
 
 def test_merge_keeps_earlier_stage_on_tie() -> None:
