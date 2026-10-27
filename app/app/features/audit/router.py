@@ -9,12 +9,12 @@ import uuid
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.auth import AuthenticatedUser, CurrentUser, Role
+from app.auth import CurrentUser, require_operator_mfa
 from app.db import get_db
 from app.models import AuditLog
 
@@ -22,12 +22,6 @@ DEFAULT_LIMIT = 50
 MAX_LIMIT = 500
 
 router = APIRouter(prefix="/audit-logs", tags=["audit"])
-
-
-def require_operator(user: AuthenticatedUser) -> CurrentUser:
-    if user.role != Role.OPERATOR:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Forbidden")
-    return user
 
 
 class AuditLogOut(BaseModel):
@@ -55,7 +49,8 @@ class AuditLogOut(BaseModel):
 
 @router.get("", response_model=list[AuditLogOut])
 def list_audit_logs(
-    _: Annotated[CurrentUser, Depends(require_operator)],
+    # 운영자 MFA 세션만(D7, 발표 시안 "운영자(MFA)만 조회", part2_guide 4.53). 그 외 역할 403
+    _: Annotated[CurrentUser, Depends(require_operator_mfa)],
     db: Annotated[Session, Depends(get_db)],
     from_: Annotated[datetime | None, Query(alias="from")] = None,
     to: Annotated[datetime | None, Query()] = None,

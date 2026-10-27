@@ -2,6 +2,7 @@
 import asyncio
 import hashlib
 import importlib.util
+import time
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -12,7 +13,9 @@ from fastapi.testclient import TestClient
 from sqlalchemy import delete, select, text, update
 from sqlalchemy.exc import IntegrityError
 
-from app.auth import CurrentUser, Role, get_current_user
+from app.auth import CurrentUser, Role, get_current_user, mfa
+from app.config import get_settings
+from app.core.errors import register_exception_handlers
 from app.db import SessionLocal
 from app.features.audit import retention
 from app.features.audit.router import router as audit_router
@@ -21,6 +24,7 @@ from app.models import AuditLog, User
 
 # main.py(D 소유) 등록은 D팀에 요청. 테스트는 라우터를 테스트 앱에 직접 붙여 검증한다.
 app = FastAPI()
+register_exception_handlers(app)
 app.include_router(audit_router)
 
 
@@ -172,8 +176,13 @@ def _clear_overrides():
     app.dependency_overrides.clear()
 
 
-def _client(role=Role.OPERATOR):
-    app.dependency_overrides[get_current_user] = lambda: CurrentUser(sub=f"op-{uuid.uuid4()}", role=role)
+def _client(role=Role.OPERATOR, *, mfa_required=False, auth_time=None):
+    """기본은 MFA 검사를 끈 상태(로컬과 같음). MFA 동작은 test_operator_mfa_*에서 따로 본다."""
+    now = int(time.time())
+    app.dependency_overrides[get_current_user] = lambda: CurrentUser(
+        sub=f"op-{uuid.uuid4()}", role=role, auth_time=now if auth_time is None else auth_time)
+    app.dependency_overrides[get_settings] = lambda: get_settings().model_copy(
+        update={"operator_mfa_required": mfa_required})
     return TestClient(app)
 
 
@@ -198,6 +207,27 @@ def seeded():
 @pytest.mark.parametrize("role", [Role.USER, Role.MENTOR, Role.SYSTEM])
 def test_non_operator_forbidden(role):
     assert _client(role).get("/audit-logs").status_code == 403
+    assert _client(role, mfa_required=True).get("/audit-logs").status_code == 403
+
+
+def test_operator_mfa_required(monkeypatch):
+    # 운영자라도 TOTP 미등록이면 403 mfa_required(D7 require_operator_mfa)
+    monkeypatch.setattr(mfa, "totp_enrolled", lambda sub: False)
+    res = _client(mfa_required=True).get("/audit-logs")
+    assert res.status_code == 403 and res.json()["code"] == "mfa_required"
+
+
+def test_operator_mfa_session_expired(monkeypatch):
+    # TOTP 등록했어도 로그인한 지 오래되면(MFA 세션 만료) 다시 로그인
+    monkeypatch.setattr(mfa, "totp_enrolled", lambda sub: True)
+    stale = int(time.time()) - (get_settings().mfa_session_minutes + 1) * 60
+    res = _client(mfa_required=True, auth_time=stale).get("/audit-logs")
+    assert res.status_code == 403 and res.json()["code"] == "mfa_session_expired"
+
+
+def test_operator_with_mfa_session_ok(monkeypatch):
+    monkeypatch.setattr(mfa, "totp_enrolled", lambda sub: True)
+    assert _client(mfa_required=True).get("/audit-logs").status_code == 200
 
 
 def test_requires_authentication():

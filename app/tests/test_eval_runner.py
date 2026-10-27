@@ -53,6 +53,9 @@ def env():
         return CurrentUser(sub=accounts.sub(role), role=ROLES[role])
 
     app.dependency_overrides[get_current_user] = current
+    # B11 조회는 운영자 MFA 필수. 러너 테스트는 MFA 검사를 끈다(staging은 TOTP 등록 계정 사용, B16.md)
+    from app.config import get_settings
+    app.dependency_overrides[get_settings] = lambda: get_settings().model_copy(update={"operator_mfa_required": False})
     yield app, accounts
     app.dependency_overrides.clear()
 
