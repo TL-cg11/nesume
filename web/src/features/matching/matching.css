@@ -1,0 +1,62 @@
+/* 공고 매칭 화면 전용 (A11). 값은 theme.css 변수만 사용 (프론트 가이드 8절) */
+
+.mt-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+@media (max-width: 860px) {
+  .mt-grid { grid-template-columns: 1fr; }
+}
+
+.mt-field { width: 100%; line-height: var(--leading); resize: vertical; }
+
+/* 공고를 받는 두 가지 방법 */
+.mt-modes { display: flex; gap: var(--space-1); border-bottom: 1px solid var(--border); }
+.mt-mode {
+  background: transparent; border: 0; border-bottom: 2px solid transparent; border-radius: 0;
+  padding: var(--space-2) var(--space-3); color: var(--muted); font-weight: 600; cursor: pointer;
+}
+.mt-mode:hover { color: var(--fg); background: var(--surface); }
+.mt-mode.on { color: var(--accent-text); border-bottom-color: var(--accent); background: transparent; }
+
+/* 경험 고르기 */
+.mt-exp > li { padding: var(--space-2) 0; }
+
+/* 요약 */
+.mt-summary .list > li { padding: var(--space-1) 0; }
+.mt-rate { font-weight: 700; color: var(--accent-text); }
+
+/* 상태별 묶음. 색만으로 구분하지 않도록 기호를 함께 둔다 (가이드 10절) */
+.mt-group { padding: var(--space-3); }
+.mt-mark {
+  width: 26px; height: 26px; border-radius: var(--radius-pill);
+  display: grid; place-items: center; font-weight: 700; font-size: var(--text-sm);
+  border: 1px solid var(--border-input); color: var(--muted); background: var(--surface);
+}
+.mt-mark.warn { border-color: var(--warning); color: var(--warning); background: var(--warning-soft); }
+.mt-mark.danger { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
+.mt-mark.ok { border-color: var(--success); color: var(--success); background: var(--success-soft); }
+
+.mt-match { padding: var(--space-2) 0; }
+.mt-match .head { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
+.mt-match p { margin: var(--space-1) 0 0; }
+
+.mt-badge {
+  font-size: var(--text-sm); padding: 0 var(--space-2); border-radius: var(--radius-pill);
+  border: 1px solid var(--border-input); color: var(--muted); background: var(--surface);
+}
+.mt-badge.imp-required { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
+.mt-badge.imp-preferred { border-color: var(--accent); color: var(--accent-text); background: var(--accent-soft); }
+.mt-badge.group { border-color: var(--violet); color: var(--violet); background: var(--violet-soft); }
+.mt-badge.check { border-color: var(--warning); color: var(--warning); background: var(--warning-soft); }
+
+/* 문장 제안 — AI 가 만든 글이라 테두리로 원문과 구분한다 (가이드 9절) */
+.mt-hints { padding: var(--space-3); border-color: var(--accent); }
+.mt-hint { padding: var(--space-2) 0; }
+.mt-hint .head { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
+.mt-hint p { margin: var(--space-1) 0 0; line-height: var(--leading); }
+
+.mt-questions { padding: var(--space-3); }
+.mt-questions .list > li { padding: var(--space-2) 0; }

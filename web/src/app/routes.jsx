@@ -1,7 +1,7 @@
 // 라우트 등록 (B1). 각 팀은 자기 기능의 페이지를 web/src/features/<기능>/에 만들고
 // 아래 featureRoutes에 한 줄씩 추가한다(tasks.md 공통 규칙 1). 이 파일 변경은 B 리뷰.
 //
-// A: writing / B: resumes·share·pdf·interview·github·experiences
+// A: writing·matching / B: resumes·share·pdf·interview·github·experiences
 // C: jobs·recommend·learning·applications / D: auth(로그인·MFA), admin
 import Layout from './Layout.jsx'
 import Home from './pages/Home.jsx'
@@ -12,6 +12,7 @@ import ExperiencesPage from '../features/experiences/ExperiencesPage.jsx'
 import InterviewPage from '../features/interview/InterviewPage.jsx'
 import GithubPage from '../features/github/GithubPage.jsx'
 import WritingPage from '../features/writing/WritingPage.jsx'
+import MatchingPage from '../features/matching/MatchingPage.jsx'
 import { AuthProvider } from '../features/auth/useAuth.jsx'
 import LoginPage from '../features/auth/LoginPage.jsx'
 import SignUpPage from '../features/auth/SignUpPage.jsx'
@@ -30,6 +31,7 @@ export const featureRoutes = [
   { path: 'interview', element: <InterviewPage />, nav: '면접 연습' },
   { path: 'github', element: <GithubPage />, nav: 'GitHub 소개' },
   { path: 'writing', element: <WritingPage />, nav: '글 다듬기' },
+  { path: 'matching', element: <MatchingPage />, nav: '공고 매칭' },
   // D7 인증 화면 (nav 없음). 보호 화면은 <RequireAuth> 로 감싼다(features/auth/RequireAuth.jsx).
   { path: 'login', element: <LoginPage /> },
   { path: 'signup', element: <SignUpPage /> },
