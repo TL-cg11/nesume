@@ -15,5 +15,10 @@ Ingress is disabled. Port-forward the web service:
   curl -i http://localhost:8080/api/health
 {{- else }}
 
-Ingress host: https://{{ .Values.ingress.host }}
+{{- if .Values.ingress.host }}
+Ingress host: {{ if .Values.ingress.certificateArn }}https{{ else }}http{{ end }}://{{ .Values.ingress.host }}
+{{- else }}
+Ingress address (ALB DNS, HTTP):
+  kubectl -n {{ .Release.Namespace }} get ingress {{ include "nesume.fullname" . }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+{{- end }}
 {{- end }}

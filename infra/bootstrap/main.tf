@@ -15,8 +15,14 @@ provider "aws" {
   }
 }
 
-variable "region" { default = "ap-northeast-2" }
-variable "project" { default = "nesume" }
+variable "region" {
+  type    = string
+  default = "ap-northeast-2"
+}
+variable "project" {
+  type    = string
+  default = "nesume"
+}
 
 data "aws_caller_identity" "me" {}
 
@@ -29,6 +35,8 @@ resource "aws_s3_bucket_versioning" "tfstate" {
   versioning_configuration { status = "Enabled" }
 }
 
+# trivy 예외: tfstate 버킷은 AWS 관리 키(aws/s3)의 SSE-KMS면 충분하다. CMK를 만들면 bootstrap이 KMS에 의존하게 된다.
+#trivy:ignore:AVD-AWS-0132
 resource "aws_s3_bucket_server_side_encryption_configuration" "tfstate" {
   bucket = aws_s3_bucket.tfstate.id
   rule {
