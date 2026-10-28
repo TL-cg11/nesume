@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.features.roadmap.match import ContentRef, GapContent, select_for_gaps, to_learning_items
 from app.features.roadmap.schedule import WeeklyPlan, build_schedule
+from app.features.roadmap.work24 import WORK24_SOURCE
 from app.features.skill_gap.gap import LearningGap
 from app.models.learning import LearningContent, LearningRoadmap, LearningRoadmapItem
 
@@ -49,7 +50,17 @@ def _to_ref(row: LearningContent) -> ContentRef:
         rating=row.rating,
         certificate=row.certificate,
         provider=row.provider,
+        group=_group_of(row),
     )
+
+
+def _group_of(row: LearningContent) -> str:
+    """같은 과정 묶음 키. 고용24 external_id는 `trprId:회차:기관` → 과정(trprId)·기관 단위로 묶는다."""
+    ext = row.external_id or str(row.id)
+    if row.source == WORK24_SOURCE:
+        parts = ext.split(":")
+        ext = f"{parts[0]}:{parts[-1]}" if len(parts) == 3 else ext
+    return f"{row.source}:{ext}"
 
 
 def index_keys(values: dict) -> list[str]:
