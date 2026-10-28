@@ -8,6 +8,7 @@ import ShareTags from './ShareTags.jsx'
 const MAX_VERSIONS = 50 // 서버 MAX_VERSIONS_PER_QUESTION과 같다(4.56)
 import { experiencesApi } from '../experiences/api.js'
 import { period } from '../experiences/summary.js'
+import { TYPES, normalizeType } from '../experiences/templates.js'
 
 // 문항 편집: 저장할 때마다 새 버전(spec 3.1), 버전 타임라인, 두 버전 비교, 복원
 export default function QuestionEditor({ resumeId, question, onSaved, onDelete, shareRev = 0 }) {
@@ -24,6 +25,7 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete, 
   const [experiences, setExperiences] = useState([])
   const [linked, setLinked] = useState([])
   const [pick, setPick] = useState('')
+  const [pickType, setPickType] = useState('') // 경험 끌어오기: 유형 먼저
   const [showEnded, setShowEnded] = useState(false)
 
   const loadVersions = useCallback(async () => {
@@ -59,6 +61,8 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete, 
   useEffect(() => {
     Promise.all([experiencesApi.list().then(setExperiences), loadLinked()]).catch((e) => setError(e.message))
   }, [loadLinked])
+
+  const candidates = experiences.filter((e) => !linked.some((l) => l.id === e.id)) // 아직 연결 안 한 경험
 
   // 경험 끌어오기: 문항↔경험 연결만 기록한다. 연결한 경험은 AI가 참고할 자료이고 본문에는 넣지 않는다
   // (10/28 사용자 결정, part2_guide 4.65 — 4.22의 '본문 끝에 요약 추가'를 대체)
@@ -214,9 +218,18 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete, 
 
       <h3>경험 끌어오기</h3>
       <div className="row">
-        <select value={pick} onChange={(e) => setPick(e.target.value)} aria-label="끌어올 경험">
-          <option value="">경험 선택</option>
-          {experiences.filter((e) => !linked.some((l) => l.id === e.id)).map((e) => (
+        {/* 유형 먼저 → 그 유형의 경험 중에서 선택(10/28). 이미 연결한 경험은 제외 */}
+        <select value={pickType} onChange={(e) => { setPickType(e.target.value); setPick('') }} aria-label="경험 유형">
+          <option value="">유형 선택</option>
+          {TYPES.map((t) => (
+            <option key={t} value={t}>
+              {t} ({candidates.filter((e) => normalizeType(e.type) === t).length})
+            </option>
+          ))}
+        </select>
+        <select value={pick} onChange={(e) => setPick(e.target.value)} disabled={!pickType} aria-label="끌어올 경험">
+          <option value="">{pickType ? '경험 선택' : '유형을 먼저 선택하세요'}</option>
+          {candidates.filter((e) => normalizeType(e.type) === pickType).map((e) => (
             <option key={e.id} value={e.id}>
               {e.title}
             </option>
