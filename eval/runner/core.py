@@ -127,7 +127,9 @@ def _find_log(client, accounts, request_id: str, user_sub: str, since: datetime)
 
 
 def run_llm(client: httpx.Client, accounts: Accounts, seeder: Seeder, s: dict, r: Result) -> None:
-    seeder.prepare(s)
+    values = seeder.prepare(s)
+    if values.get("_unverified"):  # 사전 조건을 다 갖추지 못함(예: 임베더 없어 인덱싱 생략) → 미확인으로 남긴다
+        r.checks_unverified.append(values["_unverified"])
     method, path, body = ENDPOINTS.get(s["feature"] or "", FALLBACK)
     r.substituted = s["feature"] not in ENDPOINTS
     r.endpoint = f"{method} {path}"

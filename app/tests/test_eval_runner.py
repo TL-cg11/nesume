@@ -21,7 +21,7 @@ from app.pii import InMemoryVaultStore  # noqa: E402
 from tests.guardrail.fakes import FakeProvider  # noqa: E402
 
 if (EVAL / "runner").exists():
-    from runner import core  # noqa: E402
+    from runner import core, seed  # noqa: E402
     from runner.seed import DbSeeder  # noqa: E402
 
 ROLES = {"user": Role.USER, "user2": Role.USER, "mentor": Role.MENTOR, "operator": Role.OPERATOR,
@@ -73,6 +73,35 @@ def test_api_channel_b19_against_real_api(env):
         "B19-SHARE-01": ("block", 404, True), "B19-SHARE-02": ("block", 404, True),
         "B19-SHARE-03": ("block", 404, True), "B19-SHARE-04": ("block", 404, True),
         "B19-SHARE-05": ("allow", 200, True)}  # 5건 모두 api(4.61)
+
+
+class _FakeEmbedder:
+    def embed(self, texts):
+        return [[0.0] * 1024 for _ in texts]
+
+
+def test_user_resume_without_embedder_is_unverified(env):
+    """C11-05: 임베더가 없으면 자소서만 만들고 인덱싱을 건너뛰며, 결과에 '미확인'으로 남긴다(D bge-m3 대기)."""
+    app, accounts = env
+    results, _ = core.run(TestClient(app), accounts, DbSeeder(accounts), _scenarios("C11-AUTHZ-05"))
+    assert seed.RETRIEVAL_SKIPPED in results[0].checks_unverified
+
+
+def test_user_resume_is_indexed_tokenized_with_embedder(env):
+    """임베더가 있으면 저장본(토큰화된 본문)을 개인 인덱스에 넣는다 — 연락처 원문은 인덱스에 없다."""
+    from sqlalchemy import select
+
+    from app.db import SessionLocal
+    from app.models.embedding import UserProfileEmbedding
+    _, accounts = env
+    s = _scenarios("C11-AUTHZ-05")[0]
+    values = DbSeeder(accounts, embedder=_FakeEmbedder()).prepare(s)
+    assert "_unverified" not in values
+    with SessionLocal() as db:
+        row = db.scalar(select(UserProfileEmbedding).where(
+            UserProfileEmbedding.source_id == uuid.UUID(values["user_resume_id"])))
+    assert row.owner_id == accounts.sub("user") and row.source_type == "resume" and row.grade == "personal"
+    assert "010-2345-6789" not in row.content and "[[PHONE" in row.content
 
 
 def test_response_excludes_catches_leak(env):
