@@ -23,9 +23,9 @@
 .home-recent-title:hover, a.home-quick-title:hover { color: var(--accent-text); }
 
 /* 행 전체 클릭: 제목 링크가 행을 덮는다(링크는 행마다 하나 — 낭독기는 제목만 읽음) */
-.home-recent {
-  /* 제목·상태 배지 양옆 여백(10/28 요청). 행 배경이 카드 안쪽에 머물도록 음수 여백은 쓰지 않는다 */
-  position: relative; padding-inline: var(--space-3);
+.home .list > li.home-recent {
+  /* 제목·상태 배지 양옆 여백(10/28 요청). 공용 `.list > li`(좌우 0)보다 우선해야 적용된다 */
+  position: relative; padding-inline: var(--space-5);
   border-radius: var(--radius-sm); cursor: pointer;
 }
 .home-recent:hover { background: color-mix(in srgb, var(--accent-soft) 60%, transparent); }
