@@ -45,6 +45,12 @@ def create_application(
     """지원 기록 추가. status는 5단계 중 하나(모델 CHECK와 동일 검증)."""
     if status not in APPLICATION_STATUSES:
         raise ValueError(f"unknown status: {status}")
+    # 새 카드는 그 열의 맨 아래
+    last = session.execute(
+        select(func.max(Application.position)).where(
+            Application.owner_id == owner_id, Application.status == status
+        )
+    ).scalar()
     app = Application(
         owner_id=owner_id,
         job_posting_id=job_posting_id,
@@ -53,6 +59,7 @@ def create_application(
         status=status,
         applied_at=applied_at,
         memo=memo,
+        position=(last + 1) if last is not None else 0,
     )
     session.add(app)
     return app
@@ -79,9 +86,39 @@ def list_applications(session: Session, *, owner_id: str) -> list[tuple[Applicat
             select(Application, JobPosting)
             .outerjoin(JobPosting, JobPosting.id == Application.job_posting_id)
             .where(Application.owner_id == owner_id)
-            .order_by(Application.updated_at.desc())
+            .order_by(Application.position, Application.updated_at.desc())
         ).all()
     )
+
+
+def reorder(session: Session, *, owner_id: str, status: str, ids: list[uuid.UUID]) -> list[Application]:
+    """칸반 한 열의 순서를 한 번에 저장(호출측 트랜잭션 하나). `ids` 순서 = 위→아래.
+
+    - `ids`는 **전부 본인 기록**이어야 한다 — 하나라도 없거나 남의 것이면 `ApplicationNotFound`(전체 거부).
+    - 다른 열에서 끌어온 카드는 이 `status`로 바뀐다(드래그 이동 = 상태 변경 + 자리).
+    - 이 열에 있었지만 `ids`에 없는 카드는 순서를 유지한 채 뒤로 붙인다(동시 수정으로 빠진 카드 보호).
+    """
+    if status not in APPLICATION_STATUSES:
+        raise ValueError(f"unknown status: {status}")
+    ids = list(dict.fromkeys(ids))
+    rows = {
+        a.id: a
+        for a in session.execute(
+            select(Application).where(Application.owner_id == owner_id, Application.id.in_(ids))
+        ).scalars()
+    }
+    if len(rows) != len(ids):
+        raise ApplicationNotFound
+    rest = session.execute(
+        select(Application)
+        .where(Application.owner_id == owner_id, Application.status == status, Application.id.not_in(ids))
+        .order_by(Application.position, Application.updated_at.desc())
+    ).scalars().all()
+    ordered = [rows[i] for i in ids] + list(rest)
+    for pos, app in enumerate(ordered):
+        app.status = status
+        app.position = pos
+    return ordered
 
 
 def aggregate_by_status(session: Session, *, owner_id: str) -> dict[str, int]:

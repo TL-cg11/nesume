@@ -3,15 +3,16 @@ import { applicationsApi } from './api.js'
 import '../c-common.css'
 import './applications.css'
 
-// 상태 5단계(백엔드 APPLICATION_STATUSES와 동일 순서). [값, 표시 라벨]
+// 상태 4단계(백엔드 APPLICATION_STATUSES와 동일 순서, 2026-10-28 불합격 삭제). [값, 표시 라벨]
 const STATUS = [
   ['applied', '지원'],
   ['document_passed', '서류 합격'],
   ['interview', '면접'],
   ['final', '최종 합격'],
-  ['rejected', '불합격'],
 ]
 const EMPTY_FORM = { status: 'applied', applied_at: '', memo: '' }
+
+const byPosition = (a, b) => (a.position ?? 0) - (b.position ?? 0)
 
 export default function ApplicationsPage() {
   const [items, setItems] = useState(null) // null = 불러오는 중
@@ -20,6 +21,7 @@ export default function ApplicationsPage() {
   const [creating, setCreating] = useState(false)
   const [dragId, setDragId] = useState(null) // 끌고 있는 카드
   const [overCol, setOverCol] = useState(null) // 끌어다 올린 열(강조 표시)
+  const [dropAt, setDropAt] = useState(null) // { status, index } — 놓일 자리(선 표시)
   const [form, setForm] = useState(EMPTY_FORM)
   const [savingId, setSavingId] = useState(null)
   const [error, setError] = useState(null)
@@ -65,16 +67,22 @@ export default function ApplicationsPage() {
     }
   }
 
-  // 드래그로 놓은 열의 상태로 바꾼다. 화면은 먼저 옮기고(낙관적), 실패하면 다시 불러와 되돌린다.
-  const changeStatus = async (app, status) => {
-    if (status === app.status) return
+  // 드래그로 놓은 자리에 넣는다: 그 열의 새 순서를 한 번에 저장(PUT /applications/order).
+  // 다른 열에서 끌어오면 상태도 바뀐다. 화면은 먼저 옮기고(낙관적), 실패하면 다시 불러와 되돌린다.
+  const moveTo = async (app, status, index) => {
+    const column = (items ?? []).filter((a) => a.status === status && a.id !== app.id)
+    const at = Math.max(0, Math.min(index, column.length))
+    const ordered = [...column.slice(0, at), { ...app, status }, ...column.slice(at)]
+    const pos = new Map(ordered.map((a, i) => [a.id, i]))
     setSavingId(app.id)
-    setItems((prev) => prev.map((a) => (a.id === app.id ? { ...a, status } : a)))
+    setItems((prev) =>
+      prev.map((a) => (pos.has(a.id) ? { ...a, status, position: pos.get(a.id) } : a)).sort(byPosition),
+    )
     try {
-      await applicationsApi.updateStatus(app.id, status)
+      await applicationsApi.reorder(status, ordered.map((a) => a.id))
       await load()
     } catch (e) {
-      setError(`단계를 바꾸지 못했습니다: ${e.message}`)
+      setError(`순서를 저장하지 못했습니다: ${e.message}`)
       await load()
     } finally {
       setSavingId(null)
@@ -83,11 +91,20 @@ export default function ApplicationsPage() {
 
   const onDrop = (e, status) => {
     e.preventDefault()
-    setOverCol(null)
     const id = e.dataTransfer.getData('text/plain') || dragId
     const app = (items ?? []).find((a) => a.id === id)
+    const groupLen = (items ?? []).filter((a) => a.status === status && a.id !== id).length
+    const index = dropAt && dropAt.status === status ? dropAt.index : groupLen
+    setOverCol(null)
+    setDropAt(null)
     setDragId(null)
-    if (app) changeStatus(app, status)
+    if (!app) return
+    // 같은 열에서 자기보다 아래 자리로 옮기면, 자기 자신이 빠진 만큼 한 칸 당겨진다
+    const group = (items ?? []).filter((a) => a.status === status)
+    const from = group.findIndex((a) => a.id === id)
+    const adj = from !== -1 && from < index ? index - 1 : index
+    if (from !== -1 && adj === from) return // 제자리
+    moveTo(app, status, adj)
   }
 
   const remove = async (app) => {
@@ -106,10 +123,21 @@ export default function ApplicationsPage() {
     ['applied', 'document_passed', 'interview'].includes(a.status),
   ).length
 
-  const card = (app) => (
+  const card = (app, idx) => (
     <article
       key={app.id}
-      className={`app-card${dragId === app.id ? ' dragging' : ''}${savingId === app.id ? ' saving' : ''}`}
+      className={`app-card${dragId === app.id ? ' dragging' : ''}${savingId === app.id ? ' saving' : ''}${
+        dropAt && dropAt.status === app.status && dropAt.index === idx ? ' drop-before' : ''
+      }${dropAt && dropAt.status === app.status && dropAt.index === idx + 1 && dropAt.last ? ' drop-after' : ''}`}
+      onDragOver={(e) => {
+        // 카드 위쪽 절반이면 그 앞, 아래쪽 절반이면 그 뒤
+        const r = e.currentTarget.getBoundingClientRect()
+        const after = e.clientY > r.top + r.height / 2
+        const index = after ? idx + 1 : idx
+        if (!dropAt || dropAt.status !== app.status || dropAt.index !== index) {
+          setDropAt({ status: app.status, index, last: after })
+        }
+      }}
       draggable={savingId !== app.id}
       onDragStart={(e) => {
         e.dataTransfer.setData('text/plain', app.id)
@@ -119,6 +147,7 @@ export default function ApplicationsPage() {
       onDragEnd={() => {
         setDragId(null)
         setOverCol(null)
+        setDropAt(null)
       }}
     >
       <button className="app-card-x" onClick={() => remove(app)} aria-label="지원 기록 삭제" title="삭제">
@@ -248,9 +277,16 @@ export default function ApplicationsPage() {
                   e.preventDefault()
                   e.dataTransfer.dropEffect = 'move'
                   if (overCol !== v) setOverCol(v)
+                  // 카드가 아닌 빈 곳 위면 열 맨 아래
+                  if (e.target === e.currentTarget && (!dropAt || dropAt.status !== v || dropAt.index !== group.length)) {
+                    setDropAt({ status: v, index: group.length, last: true })
+                  }
                 }}
                 onDragLeave={(e) => {
-                  if (!e.currentTarget.contains(e.relatedTarget)) setOverCol(null)
+                  if (!e.currentTarget.contains(e.relatedTarget)) {
+                    setOverCol(null)
+                    setDropAt(null)
+                  }
                 }}
                 onDrop={(e) => onDrop(e, v)}
               >

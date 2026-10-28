@@ -18,6 +18,7 @@ from app.features.applications import service
 from app.features.applications.rules import DUE_SOON_DAYS, days_until
 from app.features.applications.schemas import (
     ApplicationCreate,
+    ApplicationOrder,
     ApplicationOut,
     ApplicationStatusUpdate,
     PostingBrief,
@@ -78,6 +79,18 @@ def due_soon(
     today = date.today()
     rows = service.due_soon(db, owner_id=user.sub, within_days=within_days, today=today)
     return [_to_out(app, posting, today) for app, posting in rows]
+
+
+@router.put("/order", response_model=list[ApplicationOut])
+def reorder_column(payload: ApplicationOrder, user: AuthenticatedUser, db: Db):
+    """칸반 한 열의 새 순서(드래그 결과). 남의 기록·없는 id가 섞이면 404로 전체 거부."""
+    try:
+        rows = service.reorder(db, owner_id=user.sub, status=payload.status.value, ids=payload.ids)
+    except service.ApplicationNotFound:
+        raise _NOT_FOUND from None
+    db.flush()
+    today = date.today()
+    return [_to_out(app, None, today) for app in rows]
 
 
 @router.patch("/{app_id}", response_model=ApplicationOut)
