@@ -13,7 +13,7 @@ const fmt = (iso) =>
 
 const QUICK = [
   { to: '/resumes', title: '자기소개서 작성', desc: '문항별 초안 작성과 버전 관리' },
-  { to: '/experiences', title: '경험 등록', desc: '프로젝트와 성과를 자산으로 저장' },
+  { to: '/experiences/new', title: '경험 등록', desc: '프로젝트와 성과를 자산으로 저장' }, // 작성 화면으로 바로(10/28)
   { to: '/writing', title: 'AI 글 다듬기', desc: '문장과 STAR 구성 점검' },
   { to: null, title: '공고 추천 · 역량 갭', desc: '요구 역량과 경험의 연결 확인' }, // C 화면 준비 중
 ]
