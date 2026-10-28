@@ -1,0 +1,80 @@
+{{- /* D20 bge-m3 임베딩 서비스(TEI). 전용 노드(taint nesume.io/workload=embedding)에만 뜬다. 내부 전용, Ingress 없음. */ -}}
+{{- if .Values.embedder.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "nesume.fullname" . }}-embedder
+  labels:
+    {{- include "nesume.labels" . | nindent 4 }}
+    app.kubernetes.io/component: embedder
+spec:
+  replicas: {{ .Values.embedder.replicas }}
+  revisionHistoryLimit: 2
+  strategy:
+    # 노드 1대·파드 1개. 롤링(surge)은 두 번째 파드가 들어갈 자리가 없어 Pending 으로 멈춘다 → Recreate.
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "nesume.selectorLabels" (dict "root" . "component" "embedder") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "nesume.selectorLabels" (dict "root" . "component" "embedder") | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false   # AWS·K8s API 를 호출하지 않는다
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        {{- include "nesume.appPodSecurityContext" . | nindent 8 }}
+      {{- with .Values.embedder.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.embedder.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: embedder
+          image: {{ include "nesume.embedderImage" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.embedder.containerPort }}
+          env:
+            - name: PORT
+              value: {{ .Values.embedder.containerPort | quote }}
+            {{- range $k, $v := .Values.embedder.env }}
+            - name: {{ $k }}
+              value: {{ $v | toString | quote }}
+            {{- end }}
+          # 모델 로드(fp32 2.3GB)가 CPU 노드에서 1~2분. startup 이 끝날 때까지 liveness 는 보류된다.
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            failureThreshold: {{ .Values.embedder.startupFailureThreshold }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            failureThreshold: 3
+          securityContext:
+            {{- include "nesume.containerSecurityContext" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.embedder.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi
+{{- end }}

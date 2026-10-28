@@ -37,7 +37,7 @@ from __future__ import annotations
 
 import re
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from app.features.style import length
 from app.features.style import tone as tone_mod
@@ -243,6 +243,11 @@ async def adjust(
 
     while attempts < MAX_REWRITE_ATTEMPTS:
         attempts += 1
+        if attempts > 1:
+            # ★ 감사 로그 PK 가 request_id 다. 같은 값으로 두 번째 시도를 남기면
+            #   UniqueViolation → AuditWriteFailed 로 요청 전체가 500 이 된다(실모델로 확인).
+            #   첫 시도만 HTTP X-Request-ID 와 이어지고, 재시도는 새 ID 를 쓴다
+            ctx = replace(ctx, request_id=uuid.uuid4())
         prompt = _PROMPT.format(
             limit=limit if limit is not None else "제한 없음",
             current=count(source, allow_tokens=True).total,

@@ -1,5 +1,5 @@
 # --- base: 런타임 의존성 + 애플리케이션 코드 ---
-FROM python:3.12.15-slim-bookworm AS base
+FROM python:3.12.16-slim-bookworm AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

@@ -62,6 +62,10 @@ Image references
 {{ include "nesume.image" (dict "root" . "image" .Values.image.web "name" "web") }}
 {{- end }}
 
+{{- define "nesume.embedderImage" -}}
+{{ include "nesume.image" (dict "root" . "image" .Values.image.embedder "name" "embedder") }}
+{{- end }}
+
 {{/*
 Resource names shared across templates
 */}}
@@ -83,6 +87,20 @@ Resource names shared across templates
 
 {{- define "nesume.postgresServiceName" -}}
 {{ include "nesume.fullname" . }}-postgres
+{{- end }}
+
+{{- define "nesume.embedderServiceName" -}}
+{{ include "nesume.fullname" . }}-embedder
+{{- end }}
+
+{{/*
+D20: app·batch 가 쓰는 임베딩 서비스 URL. config.EMBEDDING_URL 이 비어 있으면 차트 안의 embedder Service 를 가리킨다.
+embedder 를 끄고 외부 서빙을 쓰려면 config.EMBEDDING_URL 을 직접 준다.
+*/}}
+{{- define "nesume.embeddingUrl" -}}
+{{- if .Values.config.EMBEDDING_URL }}{{ .Values.config.EMBEDDING_URL }}
+{{- else if .Values.embedder.enabled }}{{ printf "http://%s:%d" (include "nesume.embedderServiceName" .) (int .Values.embedder.service.port) }}
+{{- end }}
 {{- end }}
 
 {{- define "nesume.appServiceAccountName" -}}

@@ -1,0 +1,83 @@
+# D20 embedder 이미지(TEI + bge-m3, ~2.5GB). app·web 과 달리 매 커밋 빌드하지 않는다:
+# main 에서 embedder/ 가 바뀌었을 때, 또는 수동 실행(workflow_dispatch) 때만 arm64 로 빌드해 ECR nesume/embedder:<sha> 로 올린다.
+# 배포는 하지 않는다. up.ps1/deploy.ps1 이 ECR 의 최신 태그를 집어 helm 에 넘긴다.
+name: embedder
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'embedder/**'
+      - '.github/workflows/embedder.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: embedder
+  cancel-in-progress: false
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      id-token: write   # OIDC 로 nesume-github-ci 역할(ci.yml 과 같은 역할)
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: aws-actions/amazon-ecr-login@v2.1.7
+        id: ecr
+
+      - name: image tag = short sha
+        id: tag
+        run: echo "sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      # ECR 태그가 IMMUTABLE 이라 같은 sha 재실행은 건너뛴다.
+      - name: already in ECR?
+        id: exists
+        env:
+          SHA: ${{ steps.tag.outputs.sha }}
+        run: |
+          if aws ecr describe-images --repository-name nesume/embedder --image-ids "imageTag=$SHA" >/dev/null 2>&1; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"; echo "nesume/embedder:$SHA already in ECR"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # 러너 디스크(~14GB 여유)에 모델 2.3GB 가 fetch 스테이지와 최종 이미지에 한 번씩 들어간다. 캐시는 쓰지 않는다(GHA 캐시 10GB 한도).
+      - uses: docker/setup-qemu-action@v4.4.0
+        if: steps.exists.outputs.skip != 'true'
+      - uses: docker/setup-buildx-action@v4.4.1
+        if: steps.exists.outputs.skip != 'true'
+
+      - name: build & push embedder (arm64)
+        if: steps.exists.outputs.skip != 'true'
+        uses: docker/build-push-action@v7.4.0
+        with:
+          context: ./embedder
+          platforms: linux/arm64
+          push: true
+          provenance: false
+          tags: ${{ steps.ecr.outputs.registry }}/nesume/embedder:${{ steps.tag.outputs.sha }}
+
+      - name: trivy image scan (embedder)
+        if: steps.exists.outputs.skip != 'true'
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          image-ref: ${{ steps.ecr.outputs.registry }}/nesume/embedder:${{ steps.tag.outputs.sha }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "0"    # 참고용. 베이스가 TEI 공식 이미지라 우리가 고칠 수 없는 CVE 는 기록만 한다
+
+      - name: summary
+        env:
+          SHA: ${{ steps.tag.outputs.sha }}
+        run: echo "### nesume/embedder:$SHA — next up.ps1/deploy.ps1 picks the newest tag automatically" >> "$GITHUB_STEP_SUMMARY"

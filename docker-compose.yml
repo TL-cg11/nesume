@@ -115,6 +115,14 @@ services:
       COGNITO_JWKS_URL: http://cognito:9229/${COGNITO_USER_POOL_ID}/.well-known/jwks.json
       # D6 admin API(역할 변경)·시드가 cognito-idp 를 호출할 때 쓰는 로컬 엔드포인트. AWS 에서는 미설정.
       COGNITO_LOCAL_ENDPOINT: http://cognito:9229
+      # A2 LLM. 기본 none(규칙 결과만). 실제 Bedrock 을 쓰려면 .env 에 LLM_PROVIDER=bedrock 과
+      # 본인 IAM 키를 넣는다 — 위 AWS_* 는 LocalStack 더미 키라 Bedrock 에 쓸 수 없다.
+      LLM_PROVIDER: ${LLM_PROVIDER:-none}
+      LLM_MODEL_ID: ${LLM_MODEL_ID:-global.amazon.nova-2-lite-v1:0}
+      BEDROCK_REGION: ${BEDROCK_REGION:-ap-northeast-2}
+      BEDROCK_ACCESS_KEY_ID: ${BEDROCK_ACCESS_KEY_ID:-}
+      BEDROCK_SECRET_ACCESS_KEY: ${BEDROCK_SECRET_ACCESS_KEY:-}
+      BEDROCK_SESSION_TOKEN: ${BEDROCK_SESSION_TOKEN:-}
     ports:
       - "${HOST_BIND_IP}:${APP_PORT:?APP_PORT is required}:8000"
     depends_on:
@@ -176,6 +184,29 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # D20 임베딩 서비스(TEI + bge-m3). 메모리 ~3GB 를 쓰므로 profile 로 분리: `docker compose --profile embed up -d embedder`.
+  # 첫 기동 때 모델(~2.3GB)을 내려받아 볼륨에 둔다. 운영 이미지(embedder/Dockerfile)는 모델을 이미지에 굽는다.
+  # 이미지는 PC 아키텍처에 맞춘다: arm64 PC 는 cpu-arm64-1.9, x86 은 cpu-1.9 (.env EMBEDDER_IMAGE).
+  embedder:
+    image: ${EMBEDDER_IMAGE:-ghcr.io/huggingface/text-embeddings-inference:cpu-1.9}
+    profiles: ["embed"]
+    environment:
+      MODEL_ID: BAAI/bge-m3
+      PORT: "8080"
+      MAX_CLIENT_BATCH_SIZE: "64"
+      HF_HUB_DISABLE_TELEMETRY: "1"
+    ports:
+      - "${HOST_BIND_IP}:${EMBEDDER_PORT:-8081}:8080"
+    volumes:
+      - embedder-model:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 40            # 모델 다운로드·로드 10분까지
+    restart: unless-stopped
+
 volumes:
   db-data:
   cognito-data:
+  embedder-model:
