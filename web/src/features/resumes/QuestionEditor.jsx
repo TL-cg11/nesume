@@ -7,7 +7,7 @@ import ShareTags from './ShareTags.jsx'
 
 const MAX_VERSIONS = 50 // 서버 MAX_VERSIONS_PER_QUESTION과 같다(4.56)
 import { experiencesApi } from '../experiences/api.js'
-import { experienceSummary } from '../experiences/summary.js'
+import { period } from '../experiences/summary.js'
 
 // 문항 편집: 저장할 때마다 새 버전(spec 3.1), 버전 타임라인, 두 버전 비교, 복원
 export default function QuestionEditor({ resumeId, question, onSaved, onDelete, shareRev = 0 }) {
@@ -60,14 +60,12 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete, 
     Promise.all([experiencesApi.list().then(setExperiences), loadLinked()]).catch((e) => setError(e.message))
   }, [loadLinked])
 
-  // 경험 끌어오기: 본문 끝에 요약 한 문단 추가 + 문항↔경험 연결 기록(part2_guide 4.18, 4.22)
+  // 경험 끌어오기: 문항↔경험 연결만 기록한다. 연결한 경험은 AI가 참고할 자료이고 본문에는 넣지 않는다
+  // (10/28 사용자 결정, part2_guide 4.65 — 4.22의 '본문 끝에 요약 추가'를 대체)
   const pullExperience = async () => {
-    const e = experiences.find((x) => x.id === pick)
-    if (!e) return
+    if (!pick) return
     try {
-      await experiencesApi.link(resumeId, question.id, e.id)
-      const summary = experienceSummary(e)
-      setBody((cur) => (cur.trim() ? `${cur.replace(/\s+$/, '')}\n\n${summary}` : summary))
+      await experiencesApi.link(resumeId, question.id, pick)
       setPick('')
       await loadLinked()
     } catch (err) {
@@ -218,28 +216,32 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete, 
       <div className="row">
         <select value={pick} onChange={(e) => setPick(e.target.value)} aria-label="끌어올 경험">
           <option value="">경험 선택</option>
-          {experiences.map((e) => (
+          {experiences.filter((e) => !linked.some((l) => l.id === e.id)).map((e) => (
             <option key={e.id} value={e.id}>
               {e.title}
             </option>
           ))}
         </select>
         <button className="secondary" onClick={pullExperience} disabled={!pick}>
-          본문에 추가
+          연결
         </button>
-        <span className="muted">본문 끝에 요약이 추가됩니다. 다듬은 뒤 저장하세요.</span>
+        <span className="muted">AI 참고용으로 문항에 연결합니다. 본문에는 넣지 않습니다.</span>
       </div>
       {linked.length > 0 && (
-        <ul className="timeline">
-          {linked.map((e) => (
-            <li key={e.id}>
-              <span className="grow">{e.title}</span>
-              <button className="secondary" onClick={() => unlinkExperience(e.id)}>
-                연결 해제
-              </button>
-            </li>
-          ))}
-        </ul>
+        <div className="card linked-card">
+          <ul className="list linked-list">
+            {linked.map((e) => (
+              <li key={e.id}>
+                {/* 행을 누르면 경험 열람. 연결 해제 버튼은 덮개 위라 따로 동작 */}
+                <Link to={`/experiences/${e.id}`} className="linked-title">{e.title}</Link>
+                <span className="muted">{period(e) || '기간 없음'}</span>
+                <button className="secondary" onClick={() => unlinkExperience(e.id)}>
+                  연결 해제
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       <div className="row">

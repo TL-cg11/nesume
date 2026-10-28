@@ -77,3 +77,15 @@
 /* 문항 글자 수 제한 입력(10/28): 1~10,000자, 화살표 한 번에 100자 */
 .limit-field { display: inline-flex; align-items: center; gap: var(--space-1); font-size: var(--text-sm); white-space: nowrap; }
 .limit-field input { width: 6.5em; color: var(--fg); }
+
+/* 끌어온(연결한) 경험 목록 — 자소서·경험 목록과 같은 카드 양식(10/28) */
+.linked-card { margin-top: var(--space-3); padding: var(--space-2); }
+.linked-list > li { display: flex; align-items: center; gap: var(--space-3); position: relative;
+  padding-inline: var(--space-5); border-radius: var(--radius-sm); cursor: pointer; }
+.linked-list > li:hover { background: color-mix(in srgb, var(--accent-soft) 60%, transparent); }
+.linked-list > li:focus-within { box-shadow: var(--focus-ring); }
+.linked-list .linked-title { flex: 1; color: var(--fg); font-weight: 600; text-decoration: none; }
+.linked-list .linked-title:hover { color: var(--accent-text); }
+.linked-list .linked-title::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
+.linked-list .linked-title:focus-visible { outline: none; }
+.linked-list button { position: relative; z-index: 1; }
