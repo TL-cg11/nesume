@@ -51,14 +51,25 @@ def _to_ref(row: LearningContent) -> ContentRef:
     )
 
 
-def upsert_contents(session: Session, courses: Iterable[object]) -> dict[str, int]:
-    """K-MOOC 수집 결과(`KmoocCourse`)를 `LearningContent`로 upsert((source, external_id) 기준).
+def upsert_contents(
+    session: Session,
+    courses: Iterable[object],
+    *,
+    source: str | None = None,
+    mode: str = "online",
+) -> dict[str, int]:
+    """수집 결과를 `LearningContent`로 upsert((source, external_id) 기준). K-MOOC·고용24 공용.
 
-    메타(제목·URL·시간·분류·수료증 등)만 갱신하고 **`competency_keys`는 건드리지 않는다** —
-    역량 매칭 키는 별도 색인 단계가 채운다(docs/C14.md). external_id·title·url 없는 건 건너뛴다.
-    반환: {inserted, updated, skipped}. 배치(`app.batch.jobs_collector`)가 호출.
+    `source` 기본은 K-MOOC(기존 호출 그대로). 과정에 `mode`가 있으면(고용24: 원격=online/집체=offline)
+    그 값을, 없으면 인자 `mode`를 쓴다. 과정에 없는 메타(K-MOOC의 est_hours 등)는 None.
+    **`competency_keys`**: 과정이 키를 들고 오면(고용24 — 검색 키워드가 곧 역량 키) 기존 키와 **합집합**,
+    안 들고 오면(K-MOOC) 건드리지 않는다 — 그 키는 별도 색인 단계가 채운다(docs/C14.md).
+    external_id·title·url 없는 건 건너뛴다. 반환: {inserted, updated, skipped}.
     """
-    from app.features.roadmap.kmooc import KMOOC_SOURCE  # 지연 import(순환·망구성 분리)
+    if source is None:
+        from app.features.roadmap.kmooc import KMOOC_SOURCE  # 지연 import(순환·망구성 분리)
+
+        source = KMOOC_SOURCE
 
     counts = {"inserted": 0, "updated": 0, "skipped": 0}
     for c in courses:
@@ -69,28 +80,34 @@ def upsert_contents(session: Session, courses: Iterable[object]) -> dict[str, in
         values = {
             "title": c.title,
             "url": c.url,
-            "provider": c.provider,
-            "est_hours": c.est_hours,
-            "weeks": c.weeks,
-            "summary": c.summary,
-            "classfy": c.classfy,
-            "rating": c.rating,
-            "certificate": c.certificate,
-            "mode": "online",
+            "provider": getattr(c, "provider", None),
+            "est_hours": getattr(c, "est_hours", None),
+            "weeks": getattr(c, "weeks", None),
+            "summary": getattr(c, "summary", None),
+            "classfy": getattr(c, "classfy", None),
+            "rating": getattr(c, "rating", None),
+            "certificate": getattr(c, "certificate", None),
+            "mode": getattr(c, "mode", None) or mode,
             "is_active": True,
         }
+        keys = list(getattr(c, "competency_keys", None) or ())
         existing = session.execute(
             select(LearningContent).where(
-                LearningContent.source == KMOOC_SOURCE,
+                LearningContent.source == source,
                 LearningContent.external_id == external_id,
             )
         ).scalars().first()
         if existing is None:
-            session.add(LearningContent(source=KMOOC_SOURCE, external_id=external_id, **values))
+            session.add(
+                LearningContent(source=source, external_id=external_id, competency_keys=keys, **values)
+            )
             counts["inserted"] += 1
         else:
             for k, v in values.items():
                 setattr(existing, k, v)
+            if keys:
+                current = list(existing.competency_keys or [])
+                existing.competency_keys = current + [k for k in keys if k not in current]
             counts["updated"] += 1
     return counts
 
