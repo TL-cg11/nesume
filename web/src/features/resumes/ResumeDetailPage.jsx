@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router'
+import { useLocation, useNavigate, useParams } from 'react-router'
 import { resumesApi } from './api.js'
 import QuestionEditor from './QuestionEditor.jsx'
 import SharePanel from './SharePanel.jsx'
@@ -11,6 +11,7 @@ const RESUME_STATUSES = ['작성 중', '검토 중', '완료']
 export default function ResumeDetailPage() {
   const { resumeId } = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
   const [resume, setResume] = useState(null)
   const [selectedId, setSelectedId] = useState(null)
   const [newQuestion, setNewQuestion] = useState({ title: '', char_limit: '' })
@@ -76,6 +77,9 @@ export default function ResumeDetailPage() {
         <input
           className="title-input"
           defaultValue={resume.title}
+          // 목록의 '자소서 작성'으로 막 만든 경우: 제목 칸을 선택해 두어 바로 입력하게 한다
+          autoFocus={location.state?.focusTitle}
+          onFocus={(e) => location.state?.focusTitle && e.target.select()}
           maxLength={200}
           onBlur={(e) => e.target.value.trim() && e.target.value !== resume.title && saveMeta('title', e.target.value.trim())}
           aria-label="자소서 제목"
