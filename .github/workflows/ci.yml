@@ -21,6 +21,7 @@ env:
 jobs:
   changes:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
       pull-requests: read   # paths-filter 가 PR 변경 파일 목록을 API 로 읽는다
