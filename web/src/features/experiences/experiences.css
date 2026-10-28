@@ -15,6 +15,8 @@
 .exp-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); margin: var(--space-3) 0; }
 .exp-form .full { grid-column: 1 / -1; }
 .exp-form label { display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-sm); color: var(--muted); }
+/* 입력한 글자는 본문 색. 공용 규칙(color: inherit) 때문에 칸 제목의 회색을 물려받던 문제(10/28) */
+.exp-form input, .exp-form textarea, .exp-form select { color: var(--fg); font-size: var(--text-md); }
 .exp-form select { min-height: 40px; }
 .exp-github { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); border: 1px dashed var(--border-input); border-radius: var(--radius-sm); }
 .exp-github p { margin: 0; }
