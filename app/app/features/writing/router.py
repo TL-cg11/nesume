@@ -15,7 +15,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.auth import AuthenticatedUser
+from app.auth import AuthenticatedUser, CurrentUser, require_interactive
 from app.db import get_db
 from app.features.profile.router import get_store as get_profile_store
 from app.features.profile.store import ProfileStore
@@ -114,8 +114,11 @@ def apply(payload: ApplyRequest, user: AuthenticatedUser) -> ApplyResponse:
 @router.post("/rewrite", response_model=RewriteResponse)
 async def rewrite_selection(
     payload: RewriteRequest,
-    user: AuthenticatedUser,
     db: Db,
+    # ★ 대화형 엔드포인트다. 시스템 계정은 호출할 수 없다 —
+    #   matrix.yaml 의 "system 대화형 불가" 를 D7 require_interactive 가 막는다.
+    #   D7 의 독스트링이 "대화형 엔드포인트(리라이팅·면접 등)" 이라고 가리키는 자리다.
+    user: CurrentUser = Depends(require_interactive),
     guard: Guardrail = Depends(get_guardrail),
     store: ProfileStore = Depends(get_profile_store),
     session_id: str | None = Depends(session_header),
@@ -137,8 +140,10 @@ async def rewrite_selection(
 @router.post("/rewrite/apply", response_model=RewriteApplyResponse, status_code=status.HTTP_201_CREATED)
 def apply_rewrite(
     payload: RewriteApplyRequest,
-    user: AuthenticatedUser,
     db: Db,
+    # 만들기와 **같은 조건**으로 막는다. 한쪽만 막으면 나머지가 열린 길이 된다
+    # (A7 /writing/apply · A13 /style/apply 와 같은 판단, PR #11).
+    user: CurrentUser = Depends(require_interactive),
 ) -> RewriteApplyResponse:
     """고른 후보를 새 버전으로 저장한다 (B4, `source="ai"`).
 

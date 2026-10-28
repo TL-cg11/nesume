@@ -7,7 +7,13 @@ DB·모델을 부르지 않는다. B9 템플릿 읽기와 A14 프로필 읽기�
 from __future__ import annotations
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
+from app.auth import CurrentUser, Role, get_current_user
+from app.core.errors import register_exception_handlers
+from app.db import get_db
+from app.features.profile.router import get_store as get_profile_store
 from app.features.writing import rewrite_service
 from app.features.writing.rewrite import (
     CANDIDATE_COUNT,
@@ -25,8 +31,10 @@ from app.features.writing.rewrite import (
     parse_candidates,
     split_selection,
 )
+from app.features.writing.router import router as writing_router
 from app.features.writing.schemas import RewriteRequest, RewriteResponse
 from app.guardrail import DEFAULT_MAX_CALLS, Guardrail, LlmClient
+from app.guardrail.fastapi import get_guardrail
 from app.pii import InMemoryVaultStore
 from tests.guardrail.fakes import FakeProvider
 
@@ -336,3 +344,47 @@ def test_response_hides_nothing_about_what_went_to_the_model() -> None:
     out = RewriteResponse.of("원문", result)
     assert out.instructions == "- 문체는 합니다체로 씁니다."
     assert out.original_char_count == 2
+
+
+# ---------------------------------------------------------------- 대화형 제한
+
+def _client(role: Role) -> TestClient:
+    """A6 두 라우트만 띄운 작은 앱. `test_fastapi_adapter.py` 를 건드리지 않으려고
+    여기에 따로 둔다 — 그 파일은 다른 PR 이 고치고 있다."""
+    app = FastAPI()
+    register_exception_handlers(app)
+    app.include_router(writing_router)
+    app.dependency_overrides[get_current_user] = lambda: CurrentUser(sub="u1", role=role)
+    app.dependency_overrides[get_db] = lambda: None
+    app.dependency_overrides[get_profile_store] = lambda: None
+    app.dependency_overrides[get_guardrail] = lambda: Guardrail(
+        llm=LlmClient(provider=FakeProvider(reply=_reply())), vault=InMemoryVaultStore(),
+    )
+    return TestClient(app)
+
+
+@pytest.mark.parametrize("path, body", [
+    ("/writing/rewrite", {"text": "다시 써 주세요"}),
+    ("/writing/rewrite/apply", {
+        "resume_id": "3f0c1b7a-5e21-4a9d-9c3e-0b8f6d2a1e44",
+        "question_id": "8a2b1c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d",
+        "body": "다시 쓴 글입니다",
+    }),
+])
+def test_system_account_cannot_call_rewrite(path, body) -> None:
+    """★ matrix.yaml 의 "system 대화형 불가". D7 `require_interactive` 가 막는다.
+
+    만들기와 저장을 **같은 조건**으로 막는다 — 한쪽만 막으면 나머지가 열린 길이 된다.
+    """
+    r = _client(Role.SYSTEM).post(path, json=body)
+
+    assert r.status_code == 403
+    assert r.json()["code"] == "interactive_only"
+
+
+def test_a_normal_user_is_not_blocked(no_template) -> None:
+    """막는 쪽만 시험하면 **전부 막아도 통과한다.** 정상 사용자가 지나가는지도 본다."""
+    r = _client(Role.USER).post("/writing/rewrite", json={"text": "다시 써 주세요"})
+
+    assert r.status_code == 200
+    assert len(r.json()["candidates"]) == CANDIDATE_COUNT
