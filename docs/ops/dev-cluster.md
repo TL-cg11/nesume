@@ -64,6 +64,8 @@ kubectl -n dev describe pod <이름>                         # Pending·CrashLoo
 kubectl top pods -n dev                                   # CPU·메모리
 helm -n dev history nesume                                # 배포 이력
 kubectl -n dev get externalsecret,secret                  # 비밀값 동기화 상태
+kubectl -n dev get pods -l app.kubernetes.io/component=embedder   # D20 임베딩 서비스(1/1). 전용 노드가 뜨고 모델 로드까지 3~5분
+kubectl -n dev port-forward svc/nesume-embedder 8081:8080         # 로컬에서 POST :8081/embed 로 직접 확인
 ```
 
 DB에 직접 붙어야 하면 app 파드를 통한다(RDS는 클러스터 SG에서만 열려 있다):
@@ -83,6 +85,7 @@ kubectl -n dev rollout restart deploy/nesume-app
 ```
 
 - 배치 파드(`nesume-batch` SA)는 Secrets Manager만 접근 가능하다. S3가 필요하면 D에게 역할 정책 추가 요청.
+- 임베딩(D20): `EMBEDDING_URL`(`http://nesume-embedder:8080`)·`EMBEDDING_MODEL`(`bge-m3`)이 ConfigMap으로 들어간다. 서비스는 클러스터 안에서만 열려 있고 `POST /embed {"inputs":[...]}`로 1024차원 벡터를 준다. 전용 노드(`nesume-dev-embedding`, 온디맨드 1대)에서만 돌며 다른 파드는 그 노드에 올라가지 않는다. 자세한 것은 `embedder/README.md`.
 - 로그는 D14 전까지 `kubectl logs`. 이후 CloudWatch `/nesume/dev/app`.
 
 ## 7. 자주 나는 오류
@@ -106,3 +109,4 @@ kubectl -n dev rollout restart deploy/nesume-app
 - D11 전까지는 D가 로컬에서 빌드·푸시·`infra/scripts/up.ps1`.
 - 마이그레이션은 `pre-upgrade` hook으로 앱보다 먼저 돈다. 되돌릴 수 없는 마이그레이션은 사전에 B와 합의(`docs/dev/backend-guide.md`).
 - 롤백은 `helm -n dev rollback nesume <REVISION>`. 마이그레이션은 되돌리지 않는다.
+- embedder 이미지(D20)는 별도 워크플로 `embedder.yml`이 `embedder/` 변경 시에만 `nesume/embedder:<sha>`로 올린다. `up.ps1`/`deploy.ps1`은 ECR 최신 embedder 태그를 자동으로 집고, 저장소가 비어 있으면 `embedder.enabled=false`로 배포한다.

@@ -176,6 +176,29 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # D20 임베딩 서비스(TEI + bge-m3). 메모리 ~3GB 를 쓰므로 profile 로 분리: `docker compose --profile embed up -d embedder`.
+  # 첫 기동 때 모델(~2.3GB)을 내려받아 볼륨에 둔다. 운영 이미지(embedder/Dockerfile)는 모델을 이미지에 굽는다.
+  # 이미지는 PC 아키텍처에 맞춘다: arm64 PC 는 cpu-arm64-1.9, x86 은 cpu-1.9 (.env EMBEDDER_IMAGE).
+  embedder:
+    image: ${EMBEDDER_IMAGE:-ghcr.io/huggingface/text-embeddings-inference:cpu-1.9}
+    profiles: ["embed"]
+    environment:
+      MODEL_ID: BAAI/bge-m3
+      PORT: "8080"
+      MAX_CLIENT_BATCH_SIZE: "64"
+      HF_HUB_DISABLE_TELEMETRY: "1"
+    ports:
+      - "${HOST_BIND_IP}:${EMBEDDER_PORT:-8081}:8080"
+    volumes:
+      - embedder-model:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 40            # 모델 다운로드·로드 10분까지
+    restart: unless-stopped
+
 volumes:
   db-data:
   cognito-data:
+  embedder-model:

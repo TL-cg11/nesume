@@ -49,6 +49,10 @@ module "eks" {
   ci_role_arn        = local.base.ci_role_arn
   team_user_arns     = [for u in var.team_user_names : "arn:aws:iam::${local.base.account_id}:user/${u}"]
 
+  # D20 임베딩 노드(bge-m3 embedder 전용, 온디맨드 1대). 비용만 쓸 때는 -var embedding_node_enabled=false
+  embedding_node_enabled  = var.embedding_node_enabled
+  embedding_capacity_type = var.embedding_capacity_type
+
   # SA 이름은 D5 차트 helpers(nesume.appServiceAccountName = <fullname>-app)와 글자 하나까지 같아야 한다.
   # release 이름이 nesume 이므로 fullname = nesume.
   pod_identities = {

@@ -1,0 +1,17 @@
+{{- if .Values.embedder.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "nesume.embedderServiceName" . }}
+  labels:
+    {{- include "nesume.labels" . | nindent 4 }}
+    app.kubernetes.io/component: embedder
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "nesume.selectorLabels" (dict "root" . "component" "embedder") | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.embedder.service.port }}
+      targetPort: http
+{{- end }}

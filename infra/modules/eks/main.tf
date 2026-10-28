@@ -64,6 +64,43 @@ resource "aws_eks_node_group" "default" {
   depends_on = [aws_eks_addon.pre_node]
 }
 
+# D20 임베딩(bge-m3) 전용 노드. embedder 파드 1개가 메모리 ~3GB 라 default(t4g.medium 스팟, 4GB)에는 안 들어간다.
+# 온디맨드 1대: 스팟 회수 때 모델 재로드(1분+) 동안 임베딩이 전면 중단되는 것을 피한다.
+# taint 로 embedder 파드만 올라온다. 관리형 애드온 DaemonSet(vpc-cni·kube-proxy·pod-identity-agent)은 기본 toleration 이 있다.
+# 끄기: -var embedding_node_enabled=false (compute 비용 절약). 차트 쪽은 embedder.enabled=false.
+resource "aws_eks_node_group" "embedding" {
+  count           = var.embedding_node_enabled ? 1 : 0
+  cluster_name    = aws_eks_cluster.this.name
+  node_group_name = "${var.name}-embedding"
+  node_role_arn   = var.node_role_arn
+  subnet_ids      = var.private_subnet_ids
+
+  instance_types = var.embedding_instance_types
+  ami_type       = "AL2023_ARM_64_STANDARD"
+  capacity_type  = var.embedding_capacity_type
+  disk_size      = 30 # embedder 이미지(모델 내장) ~2.5GB + app·web 이미지
+
+  scaling_config {
+    desired_size = 1
+    min_size     = 1
+    max_size     = 1
+  }
+
+  update_config {
+    max_unavailable = 1
+  }
+
+  labels = { "nesume.io/workload" = "embedding" }
+
+  taint {
+    key    = "nesume.io/workload"
+    value  = "embedding"
+    effect = "NO_SCHEDULE"
+  }
+
+  depends_on = [aws_eks_addon.pre_node]
+}
+
 # 노드가 있어야 Running이 되는 애드온. 노드 전에 만들면 타임아웃.
 resource "aws_eks_addon" "post_node" {
   for_each                    = toset(["coredns", "metrics-server"])

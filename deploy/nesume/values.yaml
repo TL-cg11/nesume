@@ -13,6 +13,9 @@ image:
   web:
     repository: nesume/web
     tag: ""
+  embedder:                          # D20. embedder/ 를 바꾼 커밋의 sha. 매 커밋 빌드하지 않으므로 app·web 과 태그가 다르다
+    repository: nesume/embedder
+    tag: ""
   pullPolicy: IfNotPresent           # kind: Never
 
 app:
@@ -57,6 +60,8 @@ config:
   DB_PORT: "5432"
   DB_NAME: nesume
   DB_USER: nesume
+  EMBEDDING_MODEL: bge-m3            # D20/C3. 차원 1024 와 짝(app/app/models/embedding.py MODEL_VERSION)
+  EMBEDDING_URL: ""                  # 비우면 차트 안의 embedder Service(http://<release>-embedder:8080). 외부 서빙이면 여기에
 
 # 비밀값. externalSecrets.enabled=true 면 Secrets Manager에서 가져오고 이 맵은 무시된다.
 # false(kind)일 때만 secret.yaml 이 이 값으로 Secret을 만든다. 운영 values에 값을 적지 않는다.
@@ -95,6 +100,30 @@ cronjobs:
   resources:
     requests: { cpu: 100m, memory: 128Mi }
     limits: { cpu: 500m, memory: 512Mi }
+
+# D20 bge-m3 임베딩 서비스(embedder/Dockerfile, TEI). C3 파이프라인·C8 추천이 EMBEDDING_URL 로 호출한다.
+# fp32 CPU 서빙: RSS ~3GB. 전용 노드그룹(infra eks: aws_eks_node_group.embedding, taint nesume.io/workload=embedding)에 올린다.
+embedder:
+  enabled: true
+  replicas: 1                        # 노드 1대. 늘리려면 노드그룹 desired 도 같이
+  containerPort: 8080
+  service:
+    port: 8080
+  resources:
+    requests: { cpu: "1", memory: 2560Mi }
+    limits: { cpu: "2", memory: 3584Mi }
+  startupFailureThreshold: 60        # 5s x 60 = 5분. 모델 로드가 이보다 길면 노드가 너무 작다
+  env:                               # TEI 설정. 이미지 ENV 기본값을 덮는다
+    MAX_CLIENT_BATCH_SIZE: "64"
+    MAX_BATCH_TOKENS: "16384"
+    MAX_CONCURRENT_REQUESTS: "64"
+  nodeSelector:
+    nesume.io/workload: embedding
+  tolerations:
+    - key: nesume.io/workload
+      operator: Equal
+      value: embedding
+      effect: NoSchedule
 
 seed:                                # D6. staging 만 true
   enabled: false

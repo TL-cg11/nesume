@@ -48,9 +48,14 @@ if (-not $Sha -or $Sha -eq "None") { throw "no image in ECR nesume/app. Push one
 $WebTags = aws ecr describe-images --repository-name nesume/web --query 'imageDetails[].imageTags[]' --output text
 if ($WebTags -notmatch $Sha) { throw "ECR nesume/web has no tag $Sha (app has it). Push web image first." }
 
+# D20 embedder 이미지는 embedder/ 가 바뀔 때만 올라오므로 app 과 태그가 다르다. ECR 최신 태그를 쓰고, 저장소가 비면 끈다.
+# cmd 로 감싼다: PS 5.1 + Stop 에서 네이티브 stderr(저장소 없음 등)가 예외로 바뀐다(deploy.ps1 docker 체크와 같은 이유).
+$EmbTag = (cmd /c "aws ecr describe-images --repository-name nesume/embedder --query ""sort_by(imageDetails,&imagePushedAt)[-1].imageTags[0]"" --output text 2>nul" | Out-String).Trim()
+if ($EmbTag -and $EmbTag -ne "None") { $EmbSet = @("--set-string", "image.embedder.tag=$EmbTag") }
+else { Write-Warning "ECR nesume/embedder is empty. Deploying with embedder.enabled=false (no embeddings until an image is pushed; see embedder/README.md)"; $EmbSet = @("--set", "embedder.enabled=false") }
 # --set-string: sha 가 숫자로만 되면(예: 6462796) --set 은 int 로 읽어 이미지 이름이 %!s(int64=...) 로 깨진다(10-27 실측).
 helm upgrade --install nesume (Join-Path $Repo "deploy\nesume") -n dev -f (Join-Path $Repo "deploy\nesume\values-dev.yaml") `
-  --set-string config.DB_HOST=$DbHost --set-string image.app.tag=$Sha --set-string image.web.tag=$Sha --wait --timeout 10m
+  --set-string config.DB_HOST=$DbHost --set-string image.app.tag=$Sha --set-string image.web.tag=$Sha @EmbSet --wait --timeout 10m
 Check "helm upgrade --install"
 
 $Alb = $null
