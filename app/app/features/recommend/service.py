@@ -35,11 +35,16 @@ RequiredExtractor = Callable[[dict[str, str | None]], list[str]]
 
 
 def _a11_required_keys(fields: dict[str, str | None]) -> list[str]:
-    """A11 규칙 추출기로 공고 요구 역량 키를 뽑는다(통합 seam). A11 머지 후 동작."""
+    """A11 규칙 추출기로 공고 요구 역량 키를 뽑는다(통합 seam). **사전 기술만**(`category != "other"`).
+
+    `other`는 사전 밖 문장 조각(병역·학력·경력 연수 등)이라 사용자 보유 키(사전 키만 나옴)와
+    **구조적으로 일치할 수 없다** → 분모만 키워 키워드율이 늘 낮았다(docs/C8.md 키워드 점수 보정).
+    """
     from app.features.matching import PostingFields, extract  # 지연 import
 
     allowed = {f.name for f in PostingFields.__dataclass_fields__.values()}
-    return [kw.key for kw in extract(PostingFields(**{k: v for k, v in fields.items() if k in allowed}))]
+    found = extract(PostingFields(**{k: v for k, v in fields.items() if k in allowed}))
+    return [kw.key for kw in found if kw.category != "other"]
 
 
 def gather_query_vectors(

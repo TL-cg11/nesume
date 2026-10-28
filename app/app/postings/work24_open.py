@@ -15,6 +15,7 @@
 """
 from __future__ import annotations
 
+import html
 import os
 import re
 import urllib.parse
@@ -57,10 +58,14 @@ def parse_xml(body: bytes) -> ET.Element:
 
 
 def _text(node: ET.Element | None, tag: str) -> str | None:
+    """태그 글. 원문이 이중 인코딩(`&amp;apos;`)이라 XML 해석 뒤에도 `&apos;` 등이 남는다 → 한 번 더 푼다.
+
+    푼 결과는 **텍스트로만** 저장·표시한다(화면이 HTML로 렌더링하지 않으므로 `<` 등이 생겨도 안전).
+    """
     if node is None:
         return None
     value = node.findtext(tag)
-    value = value.strip() if value else ""
+    value = html.unescape(value).strip() if value else ""
     return value or None
 
 

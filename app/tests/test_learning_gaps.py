@@ -198,3 +198,22 @@ def test_roadmap_explain_uses_shared_guardrail_with_audit():
     g = roadmap_guardrail()
     assert g is shared()
     assert g.audit is not None
+
+
+def test_required_keys_only_vocab_terms():
+    """키워드율 분모 = 사전 기술만. 병역·경력 연수 같은 other 조각은 빠진다."""
+    from app.features.recommend.service import _a11_required_keys
+
+    keys = _a11_required_keys({
+        "title": "백엔드 개발자",
+        "job_content": "Python, SQL 사용. 병역필 또는 면제자. 경력 3년 이상",
+        "certificates": None, "preferred": None, "major": None, "computer_skills": None, "job_name": None,
+    })
+    assert {"python", "sql"} <= set(keys)
+    assert not any("병역" in k or "경력" in k for k in keys)
+
+
+def test_work24_open_unescapes_double_encoded_entities():
+    xml = (b"<dhsOpenEmpInfoDetailRoot><empSeqno>1</empSeqno>"
+           b"<empWantedTitle>A&amp;apos;s &amp;amp; B</empWantedTitle></dhsOpenEmpInfoDetailRoot>")
+    assert parse_detail(parse_xml(xml))["title"] == "A's & B"
