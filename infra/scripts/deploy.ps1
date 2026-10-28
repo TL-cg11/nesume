@@ -25,6 +25,8 @@ $Sha = git rev-parse --short HEAD
 Write-Host "deploying $Sha ($(git log -1 --format=%s))"
 
 if (-not $SkipBuild) {
+  docker info 2>$null | Out-Null
+  if ($LASTEXITCODE) { throw "docker daemon is not running. Start Docker Desktop and wait until it says Running, then re-run." }
   # PS 5.1: --password-stdin 파이프는 토큰을 깨뜨려 400. 이 PC 는 ARM64 라 그대로 arm64 이미지(x86 이면 --platform linux/arm64).
   docker login --username AWS --password (aws ecr get-login-password --region $Region) $Ecr; Check "docker login"
   docker build -f app/Dockerfile --target runtime --build-arg APP_VERSION=$Sha -t "$Ecr/nesume/app:$Sha" ./app; Check "docker build app"
