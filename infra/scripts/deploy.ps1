@@ -24,21 +24,30 @@ if (-not $SkipPull) {
 $Sha = git rev-parse --short HEAD
 Write-Host "deploying $Sha ($(git log -1 --format=%s))"
 
-if (-not $SkipBuild) {
+# ECR 태그는 IMMUTABLE. 같은 sha 를 다시 push 하면 거부되므로(재실행·부분 실패 뒤) 이미 있는 저장소는 건너뛴다.
+function Has-EcrTag($repo, $tag) {
+  $tags = aws ecr describe-images --repository-name "nesume/$repo" --query 'imageDetails[].imageTags[]' --output text 2>$null
+  return ($tags -split '\s+') -contains $tag
+}
+$Builds = @(
+  @{ repo = "app"; args = @("-f", "app/Dockerfile", "--target", "runtime", "--build-arg", "APP_VERSION=$Sha", "./app") },
+  @{ repo = "web"; args = @("-f", "web/Dockerfile", "./web") }
+)
+$needBuild = @($Builds | Where-Object { -not (Has-EcrTag $_.repo $Sha) })
+if ($SkipBuild -and $needBuild) { throw "ECR nesume/$($needBuild[0].repo) has no tag $Sha. Run without -SkipBuild." }
+if ($needBuild) {
   # PS 5.1 + $ErrorActionPreference=Stop 에서는 네이티브 명령의 stderr 리다이렉트가 예외로 바뀐다. cmd 로 감싼다.
   cmd /c "docker info >nul 2>&1"
   if ($LASTEXITCODE) { throw "docker daemon is not reachable. Start Docker Desktop, wait until the whale icon says Running (30s~1m), then re-run." }
   # PS 5.1: --password-stdin 파이프는 토큰을 깨뜨려 400. 이 PC 는 ARM64 라 그대로 arm64 이미지(x86 이면 --platform linux/arm64).
   docker login --username AWS --password (aws ecr get-login-password --region $Region) $Ecr; Check "docker login"
-  docker build -f app/Dockerfile --target runtime --build-arg APP_VERSION=$Sha -t "$Ecr/nesume/app:$Sha" ./app; Check "docker build app"
-  docker build -f web/Dockerfile -t "$Ecr/nesume/web:$Sha" ./web; Check "docker build web"
-  docker push "$Ecr/nesume/app:$Sha"; Check "docker push app"
-  docker push "$Ecr/nesume/web:$Sha"; Check "docker push web"
-} else {
-  foreach ($r in "app", "web") {
-    $tags = aws ecr describe-images --repository-name nesume/$r --query 'imageDetails[].imageTags[]' --output text
-    if ($tags -notmatch $Sha) { throw "ECR nesume/$r has no tag $Sha. Run without -SkipBuild." }
+  foreach ($b in $needBuild) {
+    $image = "$Ecr/nesume/$($b.repo):$Sha"
+    docker build @($b.args) -t $image; Check "docker build $($b.repo)"
+    docker push $image; Check "docker push $($b.repo)"
   }
+} else {
+  Write-Host "ECR already has nesume/app:$Sha and nesume/web:$Sha. Skipping build."
 }
 
 $clusters = aws eks list-clusters --query clusters --output text
