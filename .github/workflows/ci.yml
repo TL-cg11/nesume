@@ -1,0 +1,177 @@
+# D11 CI. PR 마다 lint·test·security 가 돈다. main 푸시 시 build-deploy 는 2단계에서 추가.
+# Actions 분 절약: test 는 app/web/compose 변경이 있을 때만 돈다(changes job).
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  TERRAFORM_VERSION: "1.16.x"
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read   # paths-filter 가 PR 변경 파일 목록을 API 로 읽는다
+    outputs:
+      app: ${{ steps.filter.outputs.app }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            app:
+              - 'app/**'
+              - 'web/**'
+              - 'eval/**'
+              - 'init/**'
+              - 'docker-compose.yml'
+              - '.github/workflows/ci.yml'
+
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # ruff: 처음엔 D 소유 경로만. 다른 팀 경로는 각자 맞춘 뒤 여기에 추가한다.
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install ruff==0.17.0
+      - name: ruff (D paths)
+        run: >
+          ruff check --no-cache
+          app/app/auth app/app/core app/app/policy
+          app/app/config.py app/app/db.py app/app/aws.py app/app/main.py
+
+      - uses: azure/setup-helm@v4
+      - name: helm lint
+        run: helm lint deploy/nesume -f deploy/nesume/values-kind.yaml
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+      - name: terraform fmt
+        run: terraform fmt -recursive -check infra
+      - name: terraform validate (base, compute)
+        run: |
+          for d in infra/envs/dev/base infra/envs/dev/compute; do
+            terraform -chdir="$d" init -backend=false -input=false >/dev/null
+            terraform -chdir="$d" validate
+          done
+
+      # web 빌드는 빠르고 외부 서비스가 필요 없어 lint 에 둔다.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: web build
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+  test:
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      # README ".env 로컬 예시" 와 같은 값. 토큰만 Secrets 에서.
+      - name: write .env
+        env:
+          LOCALSTACK_AUTH_TOKEN: ${{ secrets.LOCALSTACK_AUTH_TOKEN }}
+        run: |
+          cat > .env <<ENV
+          APP_ENV=test
+          HOST_BIND_IP=127.0.0.1
+          WEB_PORT=8080
+          APP_PORT=8000
+          LOCALSTACK_PORT=4566
+          COGNITO_PORT=9229
+          DB_NAME=nesume
+          DB_USER=nesume
+          DB_PASSWORD=ci-only
+          LOCALSTACK_AUTH_TOKEN=${LOCALSTACK_AUTH_TOKEN}
+          AWS_REGION=ap-northeast-2
+          AWS_ACCESS_KEY_ID=test
+          AWS_SECRET_ACCESS_KEY=test
+          S3_BUCKET_NAME=nesume-local-docs
+          KMS_KEY_ALIAS=alias/nesume-local-pii
+          APP_SECRET_NAME=nesume/local/app
+          COGNITO_ISSUER_DOMAIN=http://localhost:9229
+          COGNITO_USER_POOL_ID=local_nesume
+          COGNITO_CLIENT_ID=nesumelocalclient00000001
+          OPERATOR_MFA_REQUIRED=false
+          ENV
+
+      - name: start db, localstack, cognito
+        run: docker compose up -d db localstack cognito --wait --wait-timeout 300
+
+      - name: build test image
+        run: docker compose --profile test build test
+
+      - name: pytest
+        run: docker compose run --rm -T test
+
+      - name: logs on failure
+        if: failure()
+        run: docker compose logs --no-color --tail=200
+
+      - name: teardown
+        if: always()
+        run: docker compose --profile test down -v --remove-orphans
+
+  security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read   # gitleaks-action 이 PR 커밋 목록을 API 로 읽는다
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }   # gitleaks 가 PR 커밋 범위를 본다
+
+      - name: LLM direct import check
+        run: bash scripts/check_llm_imports.sh
+
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: pip-audit
+        run: |
+          pip install pip-audit
+          pip-audit -r app/requirements.txt
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - name: npm audit
+        working-directory: web
+        run: npm audit --audit-level=high
+
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: aquasecurity/trivy-action@0.35.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
