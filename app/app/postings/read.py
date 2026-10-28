@@ -55,3 +55,19 @@ def get_posting_fields(
     if posting.owner_user_id is not None and posting.owner_user_id != user_id:
         return None
     return {name: getattr(posting, name) for name in POSTING_FIELDS}
+
+
+def get_posting_link(
+    session: Session, posting_id: uuid.UUID, *, user_id: str
+) -> dict[str, str | None] | None:
+    """추천 화면용 출처·원문 링크(`source`, `source_url`). 권한 규칙은 `get_posting_fields`와 같다.
+
+    `POSTING_FIELDS`에 넣지 않고 따로 둔다 — A11은 그 dict로 `PostingIn(**fields)`(extra="forbid")를
+    만들어서, 키를 늘리면 A 쪽이 깨진다. 링크는 서울시 공고엔 없어 None(공채속보만 있음).
+    """
+    posting = session.get(JobPosting, posting_id)
+    if posting is None:
+        return None
+    if posting.owner_user_id is not None and posting.owner_user_id != user_id:
+        return None
+    return {"source": posting.source, "source_url": posting.source_url}

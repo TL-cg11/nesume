@@ -36,6 +36,10 @@ class PostingBrief(BaseModel):
     model_config = ConfigDict(extra="forbid")
     title: str | None = None
     job_name: str | None = None
+    #: 출처(seoul / work24_open …) — 화면 출처 문구용(서울시는 "서울특별시 공공데이터" 표시 의무).
+    source: str | None = None
+    #: 원문 링크(공채속보만, 기업별 외부 도메인·http/https만 저장). 서울시는 None → 화면은 접수방법 안내.
+    url: str | None = None
 
 
 class RecommendationOut(BaseModel):

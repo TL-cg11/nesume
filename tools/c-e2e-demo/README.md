@@ -9,6 +9,7 @@ C 담당 기능(공고 추천·학습 로드맵·지원 현황)을 **로컬에�
 | `seed_e2e.py` | 데모용 시드: job_postings + JobPostingEmbedding(합성 벡터) + UserProfileEmbedding + LearningContent |
 | `collect_kmooc.py` | 실제 K-MOOC(`apis.data.go.kr`) 강좌 수집 → `LearningContent(source=kmooc, mode=online)`, 실제 강좌 링크 |
 | `collect_work24.py` | 실제 WORK24 국민내일배움카드 훈련과정 수집 → `LearningContent(source=work24, mode=offline)`, 실제 과정 링크 |
+| `embed_work24_open_demo.py` | 수집한 **실제** 공채속보 공고에 합성 벡터 부착 → 추천 화면에 원문 링크와 함께 뜨게 함(순서 무의미, 운영 임베더 없을 때만) |
 
 ## 실행 (Docker 스택 기동 후)
 
@@ -18,6 +19,7 @@ C 담당 기능(공고 추천·학습 로드맵·지원 현황)을 **로컬에�
 docker compose exec -T app python - < tools/c-e2e-demo/seed_e2e.py
 docker compose exec -T -e KMOOC_API_KEY=... app python - < tools/c-e2e-demo/collect_kmooc.py
 docker compose exec -T -e WORK24_TRAINING_API_KEY=... app python - < tools/c-e2e-demo/collect_work24.py
+docker compose exec -T app python - < tools/c-e2e-demo/embed_work24_open_demo.py   # jobs_collector --source work24_open 이후
 ```
 
 ## 주의
