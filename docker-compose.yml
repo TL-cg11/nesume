@@ -193,7 +193,8 @@ services:
     environment:
       MODEL_ID: BAAI/bge-m3
       PORT: "8080"
-      MAX_CLIENT_BATCH_SIZE: "64"
+      MAX_CLIENT_BATCH_SIZE: "32"
+      MAX_BATCH_TOKENS: "2048"       # 8192 로 워밍업하면 OOM(운영 이미지와 같은 값). 메모리 ~4.5GB 필요
       HF_HUB_DISABLE_TELEMETRY: "1"
     ports:
       - "${HOST_BIND_IP}:${EMBEDDER_PORT:-8081}:8080"
