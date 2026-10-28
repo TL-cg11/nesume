@@ -46,14 +46,55 @@ def collect_work24_open(session: Session) -> dict:
     return run_collection(session, rows, source=SOURCE_WORK24_OPEN, parse=dict)
 
 
-def collect_kmooc(session: Session) -> dict:
-    """K-MOOC 강좌 전량 수집(list→detail 보강) → LearningContent upsert(C14)."""
-    from app.features.roadmap.kmooc import collect, fetch_course_detail, fetch_list_page
-    from app.features.roadmap.service import upsert_contents
+#: K-MOOC 상세(courseDetail)는 1회 수집에 이만큼만 — 전량 ~8,900건이라 1일 1만 한도 안에서 며칠에 나눠 채운다.
+KMOOC_DETAIL_CAP = 3000
 
-    courses = collect(fetch_list_page, fetch_course_detail)
-    logger.info("kmooc: collected %d courses", len(courses))
-    return upsert_contents(session, courses)
+
+def collect_kmooc(session: Session, *, detail_cap: int = KMOOC_DETAIL_CAP) -> dict:
+    """K-MOOC 목록 전량 → **새 강좌만** 상세 보강(상한) → upsert. 이미 있는 강좌는 역량 키만 보강(C14).
+
+    이미 있는 강좌를 목록 값으로 덮어쓰면 상세에서 온 시간·요약이 지워지므로 upsert하지 않고,
+    제목으로 A11 사전 키만 더한다(`index_keys`, 합집합). 상한에 걸린 새 강좌는 다음 실행에서 이어진다.
+    """
+    from sqlalchemy import select
+
+    from app.features.roadmap.kmooc import (
+        KMOOC_SOURCE,
+        collect,
+        detail_results,
+        fetch_course_detail,
+        fetch_list_page,
+        merge_detail,
+    )
+    from app.features.roadmap.service import index_keys, upsert_contents
+    from app.models.learning import LearningContent
+
+    listed = collect(fetch_list_page)  # 목록만(상세 없음)
+    known = {
+        r.external_id: r
+        for r in session.execute(
+            select(LearningContent).where(LearningContent.source == KMOOC_SOURCE)
+        ).scalars()
+    }
+    new = [c for c in listed if c.external_id not in known][:detail_cap]
+    enriched = [merge_detail(c, detail_results(fetch_course_detail(c.external_id))) for c in new]
+    summary = upsert_contents(session, enriched)
+
+    reindexed = 0
+    for c in listed:
+        row = known.get(c.external_id)
+        if row is None:
+            continue
+        add = [k for k in index_keys({"title": row.title, "summary": row.summary, "classfy": row.classfy})
+               if k not in (row.competency_keys or [])]
+        if add:
+            row.competency_keys = [*(row.competency_keys or []), *add]
+            reindexed += 1
+    pending = len([c for c in listed if c.external_id not in known]) - len(new)
+    logger.info(
+        "kmooc: listed %d, new %d (pending %d), reindexed %d", len(listed), len(new), pending, reindexed
+    )
+    return {**summary, "listed": len(listed), "pending_detail": pending, "reindexed": reindexed}
 
 
 def collect_work24(session: Session) -> dict:

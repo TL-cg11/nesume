@@ -29,14 +29,39 @@ LIST_PATH = "/cm/openApi/call/hr/callOpenApiSvcInfo310L01.do"
 _ALLOWED_HOST = "work24.go.kr"
 _MAX_BYTES = 5 * 1024 * 1024  # 응답 크기 상한(100건 JSON은 수백 KB)
 
-#: 역량 키(A11 정규화 키워드) → 고용24 과정명 검색어. 데모 5개로 시작(docs/C14.md 결정 3).
-KEYWORDS: Mapping[str, str] = {
-    "aws": "클라우드",
-    "security": "정보보안",
+#: 사전 밖이지만 수요가 큰 분야(초기 데모 키 유지)
+_EXTRA_KEYWORDS: Mapping[str, str] = {"security": "정보보안", "network": "네트워크"}
+
+#: 과정명에 한국어 표기가 흔한 것만 덮어쓴다. 나머지는 정식 이름(SQL·Docker …) — 사전 별칭은
+#: "에스큐엘"·"씨샵" 같은 발음 표기라 과정명 검색어로 맞지 않는다.
+_SEARCH_OVERRIDES: Mapping[str, str] = {
     "python": "파이썬",
-    "network": "네트워크",
+    "java": "자바",
+    "javascript": "자바스크립트",
     "linux": "리눅스",
+    "aws": "클라우드",
 }
+
+
+def _search_term(term) -> str:
+    return _SEARCH_OVERRIDES.get(term.key, term.canonical)
+
+
+def build_keywords() -> dict[str, str]:
+    """역량 키(**A11 사전 키** — 공고 갭과 같은 키) → 고용24 과정명 검색어. 사전 전 항목 + 추가 2개.
+
+    키를 사전에서 만들어야 수집한 과정이 공고 갭과 바로 맞는다(docs/C14.md 강좌 역량 키 색인 3).
+    """
+    from app.features.matching.vocab import TERMS  # 지연 import(A11 사전)
+
+    out = {t.key: _search_term(t) for t in TERMS}
+    for k, v in _EXTRA_KEYWORDS.items():
+        out.setdefault(k, v)
+    return out
+
+
+#: 기본 검색어 묶음(모듈 로드 시 1회). 테스트는 collect에 작은 dict를 직접 넘긴다.
+KEYWORDS: Mapping[str, str] = build_keywords()
 #: 수집 기간(오늘부터 개강 예정 과정). 이미 시작한 과정은 신청할 수 없어 뺀다.
 DEFAULT_WINDOW_DAYS = 180
 
