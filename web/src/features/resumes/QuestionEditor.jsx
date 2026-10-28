@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { resumesApi } from './api.js'
 import DiffView from './DiffView.jsx'
+import { BODY_MAX, LIMIT_STEP, clampLimit } from './limits.js'
 import ShareTags from './ShareTags.jsx'
 
 const MAX_VERSIONS = 50 // 서버 MAX_VERSIONS_PER_QUESTION과 같다(4.56)
@@ -12,6 +13,7 @@ import { experienceSummary } from '../experiences/summary.js'
 export default function QuestionEditor({ resumeId, question, onSaved, onDelete, shareRev = 0 }) {
   const [body, setBody] = useState('')
   const [savedBody, setSavedBody] = useState('')
+  const [limitInput, setLimitInput] = useState(String(question.char_limit ?? BODY_MAX))
   const [versions, setVersions] = useState([])
   const [compare, setCompare] = useState({ from: '', to: '' })
   const [diff, setDiff] = useState(null)
@@ -125,8 +127,23 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete, 
     }
   }
 
-  const limit = question.char_limit
-  const over = limit && body.length > limit
+  // 예전 문항(글자수 미설정)은 상한 10,000자로 본다
+  const limit = question.char_limit ?? BODY_MAX
+  const over = body.length > limit // 글자수를 줄여 기존 본문이 넘친 경우 — 지우지 않고 저장만 막는다
+  const atLimit = body.length === limit
+
+  const saveLimit = async (raw) => {
+    const next = clampLimit(raw, limit)
+    setLimitInput(String(next))
+    if (next === question.char_limit) return
+    try {
+      await resumesApi.updateQuestion(resumeId, question.id, { char_limit: next })
+      onSaved()
+      setError(null)
+    } catch (e) {
+      setError(e.message)
+    }
+  }
 
   return (
     <div className="editor">
@@ -138,17 +155,38 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete, 
           문항 삭제
         </button>
       </div>
-      <textarea rows={12} value={body} onChange={(e) => setBody(e.target.value)} aria-label="본문" />
+      {/* 설정 글자수에서 더 입력되지 않는다(붙여넣기도 잘림, 10/28) */}
+      <textarea rows={12} value={body} maxLength={limit} onChange={(e) => setBody(e.target.value)} aria-label="본문" />
       <div className="row">
-        <span className={over ? 'error' : 'muted'}>
-          {body.length}
-          {limit ? ` / ${limit}자` : '자'} (공백 포함)
+        <span className={over || atLimit ? 'error' : 'muted'}>
+          {body.length.toLocaleString()} / {limit.toLocaleString()}자 (공백 포함)
         </span>
-        <button onClick={save} disabled={body === savedBody}>
+        <label className="muted limit-field">
+          글자 수 제한
+          <input
+            type="number"
+            min="1"
+            max={BODY_MAX}
+            step={LIMIT_STEP}
+            value={limitInput}
+            onChange={(e) => setLimitInput(e.target.value)}
+            onBlur={(e) => saveLimit(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+            aria-label="글자 수 제한"
+          />
+          자
+        </label>
+        <button onClick={save} disabled={body === savedBody || over}>
           새 버전으로 저장
         </button>
       </div>
       {body !== savedBody && <p className="muted">저장하지 않은 수정이 있습니다. 글 다듬기로 가기 전에 저장해 주세요.</p>}
+      {atLimit && <p className="error">설정한 글자 수({limit.toLocaleString()}자)에 도달해 더 입력할 수 없습니다.</p>}
+      {over && (
+        <p className="error">
+          설정한 글자 수보다 {(body.length - limit).toLocaleString()}자 많습니다. 줄인 뒤 저장해 주세요.
+        </p>
+      )}
       {notice && <p className="notice">{notice}</p>}
       {error && <p className="error">{error}</p>}
 

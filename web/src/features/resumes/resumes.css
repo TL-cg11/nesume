@@ -73,3 +73,7 @@
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
 }
 .share-comment-body { white-space: pre-wrap; }
+
+/* 문항 글자 수 제한 입력(10/28): 1~10,000자, 화살표 한 번에 100자 */
+.limit-field { display: inline-flex; align-items: center; gap: var(--space-1); font-size: var(--text-sm); white-space: nowrap; }
+.limit-field input { width: 6.5em; color: var(--fg); }

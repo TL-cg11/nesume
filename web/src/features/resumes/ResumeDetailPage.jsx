@@ -3,6 +3,7 @@ import { useLocation, useNavigate, useParams } from 'react-router'
 import { resumesApi } from './api.js'
 import QuestionEditor from './QuestionEditor.jsx'
 import SharePanel from './SharePanel.jsx'
+import { BODY_MAX, DEFAULT_LIMIT, LIMIT_STEP, TITLE_MAX, clampLimit } from './limits.js'
 import './resumes.css'
 
 // 자소서 상태(발표 시안, 4.54). 서버 schemas.RESUME_STATUSES와 같다
@@ -14,7 +15,7 @@ export default function ResumeDetailPage() {
   const location = useLocation()
   const [resume, setResume] = useState(null)
   const [selectedId, setSelectedId] = useState(null)
-  const [newQuestion, setNewQuestion] = useState({ title: '', char_limit: '' })
+  const [newQuestion, setNewQuestion] = useState({ title: '', char_limit: String(DEFAULT_LIMIT) })
   const [error, setError] = useState(null)
   const [shareRev, setShareRev] = useState(0) // 공유가 바뀌면 버전 태그를 다시 불러온다
 
@@ -42,10 +43,10 @@ export default function ResumeDetailPage() {
   const addQuestion = async (e) => {
     e.preventDefault()
     const payload = { title: newQuestion.title.trim() }
-    if (newQuestion.char_limit) payload.char_limit = Number(newQuestion.char_limit)
+    payload.char_limit = clampLimit(newQuestion.char_limit) // 비우면 기본 1,000자, 최대 10,000자
     try {
       const q = await resumesApi.createQuestion(resumeId, payload)
-      setNewQuestion({ title: '', char_limit: '' })
+      setNewQuestion({ title: '', char_limit: String(DEFAULT_LIMIT) })
       setSelectedId(q.id)
       load()
     } catch (err) {
@@ -129,16 +130,24 @@ export default function ResumeDetailPage() {
           <form className="stack" onSubmit={addQuestion}>
             <input
               placeholder="문항 제목"
+              maxLength={TITLE_MAX}
               value={newQuestion.title}
               onChange={(e) => setNewQuestion({ ...newQuestion, title: e.target.value })}
             />
-            <input
-              type="number"
-              min="1"
-              placeholder="글자 수 제한(선택)"
-              value={newQuestion.char_limit}
-              onChange={(e) => setNewQuestion({ ...newQuestion, char_limit: e.target.value })}
-            />
+            <label className="muted limit-field">
+              글자 수 제한
+              <input
+                type="number"
+                min="1"
+                max={BODY_MAX}
+                step={LIMIT_STEP}
+                value={newQuestion.char_limit}
+                onChange={(e) => setNewQuestion({ ...newQuestion, char_limit: e.target.value })}
+                onBlur={(e) => setNewQuestion({ ...newQuestion, char_limit: String(clampLimit(e.target.value)) })}
+                aria-label="글자 수 제한"
+              />
+              자 (최대 {BODY_MAX.toLocaleString()}자)
+            </label>
             <button type="submit" disabled={!newQuestion.title.trim()}>
               문항 추가
             </button>
