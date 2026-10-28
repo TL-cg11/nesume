@@ -9,7 +9,29 @@
 .chip.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 
 .exp-list .head { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
-.exp-list .head strong { flex: 1; }
+.exp-list .head .exp-title { flex: 1; color: var(--fg); font-weight: 650; text-decoration: none; }
+.exp-list .exp-title:hover { color: var(--accent-text); }
+/* 행 전체 클릭(자소서 목록과 같은 방식). 버튼은 덮개 위로 올려 따로 누를 수 있게 */
+.exp-list > li:has(.exp-title) { position: relative; padding-inline: var(--space-5); border-radius: var(--radius-sm); cursor: pointer; }
+.exp-list > li:has(.exp-title):hover { background: color-mix(in srgb, var(--accent-soft) 60%, transparent); }
+.exp-list > li:has(.exp-title):focus-within { box-shadow: var(--focus-ring); }
+.exp-list .exp-title::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
+.exp-list .exp-title:focus-visible { outline: none; }
+.exp-list .head button { position: relative; z-index: 1; }
+
+/* 경험 열람 */
+.exp-detail-head { display: flex; justify-content: space-between; align-items: flex-end; gap: var(--space-3); flex-wrap: wrap; }
+.exp-detail-head h1 { margin: var(--space-1) 0 0; }
+.exp-type {
+  font-size: var(--text-sm); font-weight: 700; color: var(--accent-text); background: var(--accent-soft);
+  padding: calc(var(--space-1) / 2) var(--space-2); border-radius: var(--radius-pill);
+}
+.exp-detail { margin: var(--space-4) 0 0; padding: var(--space-2) var(--space-5); }
+.exp-detail-row { display: grid; grid-template-columns: 8em 1fr; gap: var(--space-3); padding: var(--space-3) 0; border-bottom: 1px solid var(--border); }
+.exp-detail-row:last-child { border-bottom: 0; }
+.exp-detail dt { color: var(--muted); font-size: var(--text-sm); }
+.exp-detail dd { margin: 0; color: var(--fg); white-space: pre-wrap; }
+@media (max-width: 720px) { .exp-detail-row { grid-template-columns: 1fr; gap: var(--space-1); } }
 .exp-list p { margin: var(--space-1) 0 0; }
 
 .exp-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); margin: var(--space-3) 0; }

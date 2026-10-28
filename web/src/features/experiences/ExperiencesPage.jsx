@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 import { experiencesApi } from './api.js'
 import { period } from './summary.js'
 import './experiences.css'
@@ -68,7 +68,8 @@ export default function ExperiencesPage() {
         {items.map((e) => (
           <li key={e.id}>
             <div className="head">
-              <strong>{e.title}</strong>
+              {/* 제목 링크가 행 전체를 덮는다 → 빈 곳을 눌러도 열람. 수정·삭제 버튼은 그 위에 있어 따로 동작 */}
+              <Link to={`/experiences/${e.id}`} className="exp-title">{e.title}</Link>
               <span className="muted">
                 {e.type}
                 {e.role && ` · ${e.role}`}

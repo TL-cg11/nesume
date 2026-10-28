@@ -10,6 +10,7 @@ import ResumesPage from '../features/resumes/ResumesPage.jsx'
 import ResumeDetailPage from '../features/resumes/ResumeDetailPage.jsx'
 import ExperiencesPage from '../features/experiences/ExperiencesPage.jsx'
 import ExperienceEditPage from '../features/experiences/ExperienceEditPage.jsx'
+import ExperienceDetailPage from '../features/experiences/ExperienceDetailPage.jsx'
 import InterviewPage from '../features/interview/InterviewPage.jsx'
 import WritingPage from '../features/writing/WritingPage.jsx'
 import { AuthProvider } from '../features/auth/useAuth.jsx'
@@ -31,6 +32,7 @@ export const featureRoutes = [
   // 작성·수정은 별도 주소 — 메뉴 '경험'을 누르면 목록(초기 화면)으로 돌아간다(10/28)
   { path: 'experiences/new', element: <ExperienceEditPage /> },
   { path: 'experiences/:experienceId/edit', element: <ExperienceEditPage /> },
+  { path: 'experiences/:experienceId', element: <ExperienceDetailPage /> }, // 열람(행 클릭)
   { path: 'interview', element: <InterviewPage />, nav: '면접 연습' },
   { path: 'writing', element: <WritingPage />, nav: '글 다듬기' },
   // D7 인증 화면 (nav 없음). 보호 화면은 <RequireAuth> 로 감싼다(features/auth/RequireAuth.jsx).
