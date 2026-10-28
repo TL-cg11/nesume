@@ -6,7 +6,10 @@ DB·모델을 부르지 않는다. B9 템플릿 읽기와 A14 프로필 읽기�
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
+import yaml
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -388,3 +391,30 @@ def test_a_normal_user_is_not_blocked(no_template) -> None:
 
     assert r.status_code == 200
     assert len(r.json()["candidates"]) == CANDIDATE_COUNT
+
+
+# ---------------------------------------------------------------- 시트와의 계약
+
+def test_feature_name_matches_the_shared_sheet() -> None:
+    """★ 감사 로그의 `feature` 는 B15 취합 시트가 쓰는 값과 같아야 한다.
+
+    러너는 시트의 `feature` 로 **보낼 API** 를 고르고, 판정은 **감사 로그**에서 읽는다.
+    두 값이 어긋나면 보내기는 맞게 보내도 로그를 찾지 못한다. 실제로 어긋나 있었고
+    (시트 `rewrite.generate` / 구현 `writing.rewrite`) 14건이 그 때문에 A7 엔드포인트로
+    대체 투입됐다.
+
+    시트는 B 소유라 여기서는 **읽기만** 한다. 없으면 건너뛴다.
+    """
+    # tests/writing/ → tests/ → app/ → 저장소 뿌리
+    sheet = Path(__file__).resolve().parents[3] / "eval" / "scenarios_sheet.yaml"
+    if not sheet.exists():
+        pytest.skip("취합 시트를 찾을 수 없다 (B 소유, 저장소 밖에서 돌리는 경우)")
+
+    features = {
+        s.get("feature")
+        for s in yaml.safe_load(sheet.read_text(encoding="utf-8"))["scenarios"]
+    }
+    assert rewrite_service.FEATURE in features, (
+        f"시트에 없는 feature 다: {rewrite_service.FEATURE!r}. "
+        f"시트의 리라이팅 관련 값을 확인하고 B 와 맞출 것"
+    )
