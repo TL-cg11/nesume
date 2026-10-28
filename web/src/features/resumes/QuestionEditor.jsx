@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { resumesApi } from './api.js'
 import DiffView from './DiffView.jsx'
@@ -14,6 +14,7 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete, 
   const [body, setBody] = useState('')
   const [savedBody, setSavedBody] = useState('')
   const [limitInput, setLimitInput] = useState(String(question.char_limit ?? BODY_MAX))
+  const composing = useRef(false) // 한글 등 입력기 조합 중
   const [versions, setVersions] = useState([])
   const [compare, setCompare] = useState({ from: '', to: '' })
   const [diff, setDiff] = useState(null)
@@ -129,8 +130,11 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete, 
 
   // 예전 문항(글자수 미설정)은 상한 10,000자로 본다
   const limit = question.char_limit ?? BODY_MAX
-  const over = body.length > limit // 글자수를 줄여 기존 본문이 넘친 경우 — 지우지 않고 저장만 막는다
-  const atLimit = body.length === limit
+  // 글자수를 줄여 기존 본문이 넘친 경우 — 지우지 않고 저장만 막는다. 한글 조합 중 잠깐 1자 넘는 것은 경고하지 않는다
+  const over = body.length > limit && !composing.current
+  const atLimit = body.length === limit || (composing.current && body.length > limit)
+  // 새로 늘어난 부분만 잘라 낸다. 글자수를 줄여 이미 넘친 본문은 지우지 않는다(위 over 경고)
+  const cut = (v) => (v.length > limit && v.length > body.length ? v.slice(0, Math.max(limit, body.length)) : v)
 
   const saveLimit = async (raw) => {
     const next = clampLimit(raw, limit)
@@ -155,8 +159,19 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete, 
           문항 삭제
         </button>
       </div>
-      {/* 설정 글자수에서 더 입력되지 않는다(붙여넣기도 잘림, 10/28) */}
-      <textarea rows={12} value={body} maxLength={limit} onChange={(e) => setBody(e.target.value)} aria-label="본문" />
+      {/* 설정 글자수에서 더 입력되지 않는다(붙여넣기도 잘림, 10/28).
+          maxLength를 쓰지 않는다 — 한글 조합 중인 글자를 미리 세서 999자에서 멈춘다. 조합이 끝난 뒤 자른다 */}
+      <textarea
+        rows={12}
+        value={body}
+        onChange={(e) => setBody(composing.current ? e.target.value : cut(e.target.value))}
+        onCompositionStart={() => (composing.current = true)}
+        onCompositionEnd={(e) => {
+          composing.current = false
+          setBody(cut(e.currentTarget.value))
+        }}
+        aria-label="본문"
+      />
       <div className="row">
         <span className={over || atLimit ? 'error' : 'muted'}>
           {body.length.toLocaleString()} / {limit.toLocaleString()}자 (공백 포함)
