@@ -127,7 +127,8 @@ export default function ResumeDetailPage() {
               </li>
             ))}
           </ul>
-          <form className="stack" onSubmit={addQuestion}>
+          {/* noValidate: 브라우저 숫자칸 검사(step 기준값)로 1,000·950 같은 값이 막히지 않게. 범위는 clampLimit이 맞춘다 */}
+          <form className="stack" onSubmit={addQuestion} noValidate>
             <input
               placeholder="문항 제목"
               maxLength={TITLE_MAX}
@@ -138,7 +139,7 @@ export default function ResumeDetailPage() {
               글자 수 제한
               <input
                 type="number"
-                min="1"
+                min="0"
                 max={BODY_MAX}
                 step={LIMIT_STEP}
                 value={newQuestion.char_limit}

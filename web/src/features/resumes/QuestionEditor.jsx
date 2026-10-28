@@ -165,7 +165,7 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete, 
           글자 수 제한
           <input
             type="number"
-            min="1"
+            min="0" // 화살표가 100 단위(0 기준)로 움직이게. 0·빈 값은 clampLimit이 보정
             max={BODY_MAX}
             step={LIMIT_STEP}
             value={limitInput}
