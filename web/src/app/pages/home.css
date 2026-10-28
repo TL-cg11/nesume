@@ -24,15 +24,15 @@
 .home-recent-title:hover, a.home-quick-title:hover { color: var(--accent-text); }
 
 /* 행 전체 클릭: 제목 링크가 행을 덮는다(링크는 행마다 하나 — 낭독기는 제목만 읽음) */
-.home .list > li.home-recent {
+.home .list > li.home-recent, .home .list > li.home-quick {
   /* 제목·상태 배지 양옆 여백(10/28 요청). 공용 `.list > li`(좌우 0)보다 우선해야 적용된다 */
   position: relative; padding-inline: var(--space-5);
   border-radius: var(--radius-sm); cursor: pointer;
 }
-.home-recent:hover { background: color-mix(in srgb, var(--accent-soft) 60%, transparent); }
-.home-recent:focus-within { box-shadow: var(--focus-ring); }
-.home-recent-title::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
-.home-recent-title:focus-visible { outline: none; }
+.home-recent:hover, .home-quick:hover { background: color-mix(in srgb, var(--accent-soft) 60%, transparent); }
+.home-recent:focus-within, .home-quick:focus-within { box-shadow: var(--focus-ring); }
+.home-recent-title::after, .home-quick > a.home-quick-title::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
+.home-recent-title:focus-visible, .home-quick > a.home-quick-title:focus-visible { outline: none; }
 .home-badge {
   font-size: var(--text-sm); font-weight: 700; white-space: nowrap;
   padding: calc(var(--space-1) / 2) var(--space-2); border-radius: var(--radius-pill);

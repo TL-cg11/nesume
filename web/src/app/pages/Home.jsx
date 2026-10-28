@@ -126,7 +126,7 @@ export default function Home() {
                 <p className="muted">취업 준비를 효율적으로 시작하세요.</p>
                 <ul className="list">
                   {QUICK.map((q) => (
-                    <li key={q.title}>
+                    <li key={q.title} className={q.to ? 'home-quick' : undefined}>
                       {q.to ? (
                         <Link to={q.to} className="home-quick-title">
                           {q.title}
