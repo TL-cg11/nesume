@@ -27,8 +27,12 @@ export default function SharePanel({ resumeId, onChanged }) {
 
   const load = useCallback(() => sharesApi.list(resumeId).then(setShares), [resumeId])
 
+  // 공유 API가 서버에 아직 없으면(main.py 라우터 등록 전, D) 404 → 오류 대신 준비 중 안내(10/28 사용자 결정).
+  // 자소서는 이미 불러온 뒤라 여기서의 404는 연결 누락뿐이다. 등록되면 자동으로 정상 패널이 보인다
+  const [unavailable, setUnavailable] = useState(false)
+
   useEffect(() => {
-    load().catch((e) => setError(e.message))
+    load().catch((e) => (e.status === 404 ? setUnavailable(true) : setError(e.message)))
   }, [load])
 
   // 성공하면 true. 목록과 버전 태그·자소서 요약을 다시 불러온다
@@ -97,6 +101,15 @@ export default function SharePanel({ resumeId, onChanged }) {
 
   const visible = shares.filter((s) => showEnded || s.status === 'active')
   const canCreate = form.mentor_id.trim() && form.mentor_label.trim() && form.end_date
+
+  if (unavailable) {
+    return (
+      <div className="card share-panel">
+        <h2>멘토 공유</h2>
+        <p className="muted">멘토 공유 기능은 준비 중입니다.</p>
+      </div>
+    )
+  }
 
   return (
     <div className="card share-panel">
