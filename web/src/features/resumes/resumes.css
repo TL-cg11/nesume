@@ -3,6 +3,16 @@
 .resume-list a { color: var(--fg); font-weight: 600; text-decoration: none; }
 .resume-list a:hover { color: var(--accent-text); }
 
+/* 행 전체 클릭: 제목 링크가 행을 덮는다(링크는 행마다 하나 — 낭독기는 제목만 읽음). 글자 위치는 그대로 */
+.resume-list > li:has(> a) {
+  position: relative; margin-inline: calc(var(--space-2) * -1); padding-inline: var(--space-2);
+  border-radius: var(--radius-sm); cursor: pointer;
+}
+.resume-list > li:has(> a):hover { background: color-mix(in srgb, var(--accent-soft) 60%, transparent); }
+.resume-list > li:has(> a):focus-within { box-shadow: var(--focus-ring); }
+.resume-list > li > a::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
+.resume-list > li > a:focus-visible { outline: none; }
+
 .title-input { flex: 1; min-width: 200px; font-size: var(--text-lg); font-weight: 650; }
 .status-input { width: 120px; }
 
