@@ -117,6 +117,7 @@ jobs:
           COGNITO_ISSUER_DOMAIN=http://localhost:9229
           COGNITO_USER_POOL_ID=local_nesume
           COGNITO_CLIENT_ID=nesumelocalclient00000001
+          OPERATOR_MFA_REQUIRED=false
           ENV
 
       - name: start db, localstack, cognito
@@ -139,6 +140,9 @@ jobs:
   security:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read   # gitleaks-action 이 PR 커밋 목록을 API 로 읽는다
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }   # gitleaks 가 PR 커밋 범위를 본다
