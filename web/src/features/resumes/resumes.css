@@ -31,6 +31,13 @@
 .question-list li { display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-2); border-radius: var(--radius-sm); }
 .question-list li.active { background: var(--accent-soft); }
 .question-list li.active button.link { color: var(--accent-text); font-weight: 600; }
+/* 문항 행 전체 클릭(10/28): 제목 버튼이 행을 덮는다 */
+.question-list li { position: relative; cursor: pointer; }
+.question-list li:not(.active):hover { background: color-mix(in srgb, var(--accent-soft) 60%, transparent); }
+.question-list li:has(:focus-visible) { box-shadow: var(--focus-ring); }
+.question-list li button.link { text-align: left; }
+.question-list li button.link::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
+.question-list li button.link:focus-visible { box-shadow: none; }
 
 .editor textarea { width: 100%; }
 .editor h2 { flex: 1; margin: 0; }
@@ -142,4 +149,12 @@
 @media (max-width: 720px) {
   .diff2-grid { grid-template-columns: minmax(0, 1fr); }
   .diff2-head + .diff2-head, .diff2-cell + .diff2-cell { border-left: 0; }
+}
+
+/* 체크박스 + 문구 한 줄(10/28): 공용 입력칸 규칙(최소 높이·여백)이 체크박스를 키워 문구가 다음 줄로 밀리던 문제 */
+.share-toggle, .ver-pop-head label, .diff2-summary label {
+  display: inline-flex; align-items: center; gap: var(--space-1); white-space: nowrap; cursor: pointer;
+}
+.share-toggle input[type='checkbox'], .ver-pop-head input[type='checkbox'], .diff2-summary input[type='checkbox'] {
+  min-height: 0; padding: 0; margin: 0; width: auto;
 }
