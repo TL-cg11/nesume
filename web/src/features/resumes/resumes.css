@@ -108,3 +108,38 @@
 }
 .timeline li:hover .ver-delete, .timeline li:has(:focus-visible) .ver-delete { opacity: 1; }
 .timeline .ver-delete:hover { filter: none; background: var(--danger-soft); border-radius: var(--radius-sm); }
+
+/* 버전 버튼·펼침 목록(10/28): 문항 제목 옆 */
+.ver-menu { position: relative; }
+.ver-menu-btn { white-space: nowrap; }
+.ver-pop {
+  position: absolute; right: 0; top: calc(100% + var(--space-1)); z-index: 20;
+  width: min(560px, 90vw); max-height: 360px; overflow-y: auto;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md, var(--shadow-sm)); padding: var(--space-2);
+}
+.ver-pop-head { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-3) var(--space-2); }
+.ver-pop-head label { margin-left: auto; font-size: var(--text-sm); }
+
+/* 버전 비교(10/28): 요약 + 이전|이후 나란히, 문단 맞춤 */
+.diff2-pick { display: inline-flex; align-items: center; gap: var(--space-2); }
+.diff2 { margin-top: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); overflow: hidden; }
+.diff2-summary { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); flex-wrap: wrap;
+  padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); font-size: var(--text-sm); }
+.diff2-added { color: var(--success); font-weight: 650; }
+.diff2-removed { color: var(--danger); font-weight: 650; }
+.diff2 > p { padding: var(--space-4); margin: 0; }
+.diff2-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.diff2-head { padding: var(--space-2) var(--space-4); font-size: var(--text-sm); font-weight: 650; color: var(--muted); border-bottom: 1px solid var(--border); }
+.diff2-head + .diff2-head, .diff2-cell + .diff2-cell { border-left: 1px solid var(--border); }
+.diff2-row { display: contents; }
+.diff2-cell { padding: var(--space-3) var(--space-4); line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; border-bottom: 1px solid var(--border); }
+.diff2-row.changed .diff2-cell { background: color-mix(in srgb, var(--accent-soft) 35%, transparent); }
+.diff2-fold { grid-column: 1 / -1; padding: var(--space-2) var(--space-4); text-align: center; font-size: var(--text-sm); color: var(--muted); border-bottom: 1px solid var(--border); }
+.diff2 mark { color: inherit; border-radius: 3px; padding: 0 1px; }
+.diff2 mark.diff-del { background: var(--danger-soft); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--danger) 60%, transparent); }
+.diff2 mark.diff-ins { background: var(--success-soft); }
+@media (max-width: 720px) {
+  .diff2-grid { grid-template-columns: minmax(0, 1fr); }
+  .diff2-head + .diff2-head, .diff2-cell + .diff2-cell { border-left: 0; }
+}

@@ -3,7 +3,7 @@ import { Link } from 'react-router'
 import { resumesApi } from './api.js'
 import DiffView from './DiffView.jsx'
 import { BODY_MAX, LIMIT_STEP, clampLimit } from './limits.js'
-import ShareTags from './ShareTags.jsx'
+import VersionMenu from './VersionMenu.jsx'
 
 const MAX_VERSIONS = 50 // 서버 MAX_VERSIONS_PER_QUESTION과 같다(4.56)
 import { experiencesApi } from '../experiences/api.js'
@@ -138,13 +138,25 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete, 
     }
   }
 
-  const showDiff = async () => {
-    try {
-      setDiff(await resumesApi.diff(resumeId, question.id, compare.from, compare.to))
-    } catch (e) {
-      setError(e.message)
-    }
-  }
+  // 비교 기본값: 지금 보는 버전과 그 직전 버전(보는 게 가장 오래된 버전이면 그다음 버전과)
+  useEffect(() => {
+    if (versions.length < 2) return setDiff(null)
+    const idx = Math.max(0, versions.findIndex((v) => v.id === loaded?.id))
+    const to = versions[idx === versions.length - 1 ? idx - 1 : idx]
+    const from = versions[idx === versions.length - 1 ? idx : idx + 1]
+    setCompare({ from: String(from.version_no), to: String(to.version_no) })
+  }, [versions, loaded?.id])
+
+  // 두 버전을 고르면 바로 비교
+  useEffect(() => {
+    if (!compare.from || !compare.to || compare.from === compare.to) return setDiff(null)
+    let alive = true
+    resumesApi.diff(resumeId, question.id, compare.from, compare.to)
+      .then((d) => alive && setDiff(d))
+      .catch((e) => alive && setError(e.message))
+    return () => { alive = false }
+  }, [resumeId, question.id, compare.from, compare.to])
+
 
   // 예전 문항(글자수 미설정)은 상한 10,000자로 본다
   const limit = question.char_limit ?? BODY_MAX
@@ -179,6 +191,8 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete, 
     <div className="editor">
       <div className="row">
         <h2 className="grow">{question.title}</h2>
+        <VersionMenu versions={versions} loadedId={loaded?.id} max={MAX_VERSIONS} showEnded={showEnded}
+          onToggleEnded={setShowEnded} onOpen={openVersion} onDelete={removeVersion} />
         {/* A6 리라이팅: 고른 후보를 이 문항의 새 버전으로 저장할 수 있게 자소서·문항 ID를 넘긴다(A 요청 10/28) */}
         <Link to={`/writing?${new URLSearchParams({ resume: resumeId, question: question.id })}`}>글 다듬기</Link>
         <button className="danger" onClick={onDelete}>
@@ -272,40 +286,16 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete, 
         </div>
       )}
 
-      <div className="row">
-        <h3 className="grow">
-          버전 기록 <span className="muted">{versions.length}/{MAX_VERSIONS}</span>
-        </h3>
-        <label className="muted share-toggle">
-          <input type="checkbox" checked={showEnded} onChange={(e) => setShowEnded(e.target.checked)} />
-          지난 공유 보기
-        </label>
-      </div>
-      <ul className="timeline">
-        {versions.map((v) => (
-          <li key={v.id} className={loaded?.id === v.id ? 'on' : undefined}>
-            {/* 버전명·행 빈 곳을 누르면 불러오기(덮개). 공유 태그·삭제는 덮개 위라 따로 동작 */}
-            <button type="button" className="ver-open" onClick={() => openVersion(v)}>v{v.version_no}</button>
-            <span className="muted">
-              {v.source === 'ai' ? 'AI' : '수동'}
-              {v.restored_from && ` · v${versions.find((x) => x.id === v.restored_from)?.version_no ?? '?'}에서 복원`}
-              {' · '}
-              {v.char_count}자 · {new Date(v.created_at).toLocaleString()}
-            </span>
-            <ShareTags shares={v.shares} />
-            <button type="button" className="ver-delete" onClick={() => removeVersion(v)}
-              aria-label={`v${v.version_no} 삭제`} title="삭제">×</button>
-          </li>
-        ))}
-        {versions.length === 0 && <li className="muted">저장된 버전이 없습니다.</li>}
-      </ul>
-
       {versions.length >= 2 && (
         <>
           <h3>버전 비교</h3>
+          {/* 고르면 바로 비교(10/28). 기본은 '지금 보는 버전'과 그 직전 버전 */}
           <div className="row">
-            {['from', 'to'].map((k) => (
-              <select key={k} value={compare[k]} onChange={(e) => setCompare({ ...compare, [k]: e.target.value })}>
+            {['from', 'to'].map((k, i) => (
+              <span key={k} className="diff2-pick">
+                {i === 1 && <span aria-hidden="true">→</span>}
+              <select value={compare[k]} onChange={(e) => setCompare({ ...compare, [k]: e.target.value })}
+                aria-label={k === 'from' ? '이전 버전' : '이후 버전'}>
                 <option value="">{k === 'from' ? '이전' : '이후'}</option>
                 {versions.map((v) => (
                   <option key={v.id} value={v.version_no}>
@@ -313,10 +303,8 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete, 
                   </option>
                 ))}
               </select>
+              </span>
             ))}
-            <button className="secondary" onClick={showDiff} disabled={!compare.from || !compare.to}>
-              비교
-            </button>
           </div>
           {diff && <DiffView diff={diff} />}
         </>
