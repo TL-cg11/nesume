@@ -25,14 +25,23 @@ export default function SharePanel({ resumeId, onChanged }) {
   const [error, setError] = useState(null)
   const [comments, setComments] = useState({}) // share_id → 코멘트 목록(펼친 공유만)
 
-  const load = useCallback(() => sharesApi.list(resumeId).then(setShares), [resumeId])
+  // 목록을 한 번이라도 받았으면 API가 연결된 것 → 이후 404(끝난 공유 등)는 서버 문구 그대로
+  const [connected, setConnected] = useState(false)
+  const errorText = (e) =>
+    e.status === 404 && !connected ? '공유 기능이 아직 서버에 연결되지 않았습니다.' : e.message
 
-  // 공유 API가 서버에 아직 없으면(main.py 라우터 등록 전, D) 404 → 오류 대신 준비 중 안내(10/28 사용자 결정).
-  // 자소서는 이미 불러온 뒤라 여기서의 404는 연결 누락뿐이다. 등록되면 자동으로 정상 패널이 보인다
-  const [unavailable, setUnavailable] = useState(false)
+  const load = useCallback(
+    () => sharesApi.list(resumeId).then((list) => {
+      setShares(list)
+      setConnected(true)
+    }),
+    [resumeId],
+  )
 
+  // 공유 API가 서버에 아직 없으면(main.py 라우터 등록 전, D) 404. 패널은 그대로 두고 목록 404만 조용히 넘긴다
+  // (10/28 사용자 결정). 자소서는 이미 불러온 뒤라 여기서의 404는 연결 누락뿐 — 등록되면 그대로 정상 동작
   useEffect(() => {
-    load().catch((e) => (e.status === 404 ? setUnavailable(true) : setError(e.message)))
+    load().catch((e) => e.status !== 404 && setError(errorText(e)))
   }, [load])
 
   // 성공하면 true. 목록과 버전 태그·자소서 요약을 다시 불러온다
@@ -44,7 +53,7 @@ export default function SharePanel({ resumeId, onChanged }) {
       onChanged()
       return true
     } catch (e) {
-      setError(e.message)
+      setError(errorText(e))
       return false
     }
   }
@@ -85,7 +94,7 @@ export default function SharePanel({ resumeId, onChanged }) {
       const list = await sharesApi.comments(sid)
       setComments((cur) => ({ ...cur, [sid]: list }))
     } catch (e) {
-      setError(e.message)
+      setError(errorText(e))
     }
   }
 
@@ -95,21 +104,12 @@ export default function SharePanel({ resumeId, onChanged }) {
       setComments((cur) => ({ ...cur, [sid]: cur[sid].map((x) => (x.id === cid ? c : x)) }))
       await load()
     } catch (e) {
-      setError(e.message)
+      setError(errorText(e))
     }
   }
 
   const visible = shares.filter((s) => showEnded || s.status === 'active')
   const canCreate = form.mentor_id.trim() && form.mentor_label.trim() && form.end_date
-
-  if (unavailable) {
-    return (
-      <div className="card share-panel">
-        <h2>멘토 공유</h2>
-        <p className="muted">멘토 공유 기능은 준비 중입니다.</p>
-      </div>
-    )
-  }
 
   return (
     <div className="card share-panel">
