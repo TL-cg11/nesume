@@ -20,6 +20,7 @@ import pytest
 import yaml
 
 from app.guardrail import Guardrail, LlmClient, RequestContext
+from app.guardrail.multiturn import InMemoryTurnStore
 from app.pii import InMemoryVaultStore
 from tests.guardrail.fakes import FakeProvider
 
@@ -39,15 +40,25 @@ KNOWN_MISSES = [s for s in SCENARIOS if s.get("known_miss")]
 def _guard() -> tuple[Guardrail, FakeProvider]:
     # 모델 응답은 평범한 문장으로 고정한다. 여기서 재는 것은 입력·분류·출력 검사와,
     # **모델에게 무엇이 갔는가** 다.
+    #
+    # ★ 대화 이력을 **준다.** 운영 경로(`guardrail/fastapi.py`)가 주는 것과 같은
+    #   구현이다. 전에는 주지 않아 멀티턴 5건이 A12 를 거치지 않고 돌았고,
+    #   **하네스만 통과하고 실제 API 는 막지 못하는 상태**를 만들었다
+    #   (B16 1차 측정에서 A10-MULTI-04 가 그렇게 드러났다).
     provider = FakeProvider(reply="문장을 다듬었습니다.")
-    return Guardrail(llm=LlmClient(provider=provider), vault=InMemoryVaultStore()), provider
+    guard = Guardrail(
+        llm=LlmClient(provider=provider),
+        vault=InMemoryVaultStore(),
+        history=InMemoryTurnStore(),
+    )
+    return guard, provider
 
 
 async def run_scenario(s: dict) -> dict:
     """마지막 턴의 판정을 돌려준다.
 
-    대화 이력을 모델에 넘기는 기능은 아직 없다(A12). 지금은 턴마다 독립으로 돈다 —
-    그 한계가 A10-MULTI-04 가 실패하는 이유다.
+    턴은 **같은 세션으로** 차례로 보낸다. A12 가 이력을 보고 판정하므로 세션이
+    갈리면 멀티턴 5건이 뜻을 잃는다 — B16 평가 러너도 시나리오마다 한 세션을 쓴다.
     """
     guard, provider = _guard()
     # feature 는 YAML 이 정한다 (B15 취합 요청, 2026-10-26) — 평가 러너가 어느 API 로
