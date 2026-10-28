@@ -27,7 +27,13 @@ resource "aws_iam_role" "ci" {
       Action    = "sts:AssumeRoleWithWebIdentity"
       Condition = {
         StringEquals = { "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com" }
-        StringLike   = { "token.actions.githubusercontent.com:sub" = "repo:${var.github_repo}:ref:refs/heads/${var.github_branch}" }
+        StringLike = {
+          # 이름형(기본)과 immutable subject(id 포함)형 둘 다 허용. 저장소 이름이 바뀌어도 id 형은 유지된다.
+          "token.actions.githubusercontent.com:sub" = [
+            "repo:${var.github_repo}:ref:refs/heads/${var.github_branch}",
+            "repo:${split("/", var.github_repo)[0]}@${var.github_owner_id}/${split("/", var.github_repo)[1]}@${var.github_repo_id}:ref:refs/heads/${var.github_branch}",
+          ]
+        }
       }
     }]
   })
