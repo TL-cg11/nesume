@@ -1,29 +1,28 @@
-# C 기능 로컬 E2E 데모 스크립트
+# C 기능 로컬 E2E 데모 도구
 
-C 담당 기능(공고 추천·학습 로드맵·지원 현황)을 **로컬에서 처음부터 끝까지(E2E)** 돌려보기 위한 데모용 수집·시드 스크립트입니다. 제품 코드(`app/`)가 아니라 로컬 데모 도구입니다.
+운영 기능이 아직 없는 부분을 **로컬에서만** 메우는 임시 도구입니다. 제품 코드(`app/`)가 아니며,
+아래 "없어지는 조건"이 충족되면 해당 파일을 삭제합니다.
 
-## 스크립트
+| 파일 | 역할 | 없어지는 조건 |
+|---|---|---|
+| `demo_vectors.py` | 사용자 프로필 + 실제 공고(활성)에 **합성 벡터** 부착 → 추천 화면이 뜨게 함(순서 무의미) | D 임베더(bge-m3 서빙) 연결 → C3 실임베딩 경로가 대신 |
+| `collect_kmooc.py` | K-MOOC 수집 + 제목으로 역량 키(`competency_keys`) 태깅 → 로드맵 매칭 | K-MOOC 역량 키 색인이 제품 코드에 들어올 때 |
 
-| 파일 | 역할 |
-|---|---|
-| `seed_e2e.py` | 데모용 시드: job_postings + JobPostingEmbedding(합성 벡터) + UserProfileEmbedding + LearningContent |
-| `collect_kmooc.py` | 실제 K-MOOC(`apis.data.go.kr`) 강좌 수집 → `LearningContent(source=kmooc, mode=online)`, 실제 강좌 링크 |
-| `collect_work24.py` | 실제 WORK24 국민내일배움카드 훈련과정 수집 → `LearningContent(source=work24, mode=offline)`, 실제 과정 링크 |
-| `embed_work24_open_demo.py` | 수집한 **실제** 공채속보 공고에 합성 벡터 부착 → 추천 화면에 원문 링크와 함께 뜨게 함(순서 무의미, 운영 임베더 없을 때만) |
+실제 공고·훈련과정 수집은 제품 배치를 씁니다: `python -m app.batch.jobs_collector --source work24_open|work24|kmooc|seoul`.
 
 ## 실행 (Docker 스택 기동 후)
 
-컨테이너 내부에서 실행합니다. 외부 API 키는 환경변수로 주입(커밋 금지):
-
 ```bash
-docker compose exec -T app python - < tools/c-e2e-demo/seed_e2e.py
-docker compose exec -T -e KMOOC_API_KEY=... app python - < tools/c-e2e-demo/collect_kmooc.py
-docker compose exec -T -e WORK24_TRAINING_API_KEY=... app python - < tools/c-e2e-demo/collect_work24.py
-docker compose exec -T app python - < tools/c-e2e-demo/embed_work24_open_demo.py   # jobs_collector --source work24_open 이후
+set -a; . ./.env; set +a
+# 1) 실제 공채속보 공고 수집(제품 배치)
+docker compose exec -T -e WORK24_JOB_API_KEY -e WORK24_API_BASE_URL app python -m app.batch.jobs_collector --source work24_open
+# 2) 합성 벡터(사용자 sub 지정)
+docker compose exec -T app python - <사용자 sub> < tools/c-e2e-demo/demo_vectors.py
+# 3) K-MOOC 강좌 + 역량 키(로드맵용)
+docker compose exec -T -e KMOOC_API_KEY app python - < tools/c-e2e-demo/collect_kmooc.py
 ```
 
 ## 주의
 
-- **API 키는 `.env`(gitignore)로만** 주입하고 커밋하지 않습니다.
-- 합성 벡터·시드 데이터는 데모 전용이며 제품 데이터가 아닙니다.
-- `collect_work24.py`는 데모 품질입니다. 정식 제품 기능으로 승격 시 별도 Plan + PR이 필요합니다.
+- API 키는 `.env`(gitignore)로만 주입하고 커밋하지 않습니다.
+- 합성 벡터는 데모 전용이며 `[DEMO]`로 표시됩니다(재실행 시 이것만 지우고 다시 만듦).
