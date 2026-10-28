@@ -105,7 +105,7 @@ export default function Home() {
               </ul>
             </div>
 
-            <div className="stack home-side">
+            <div className="home-side">
               <div className="card">
                 <h2>빠른 시작</h2>
                 <p className="muted">취업 준비를 효율적으로 시작하세요.</p>

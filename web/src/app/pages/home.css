@@ -9,12 +9,14 @@
 }
 .home-cta:hover { filter: brightness(1.08); }
 
-.home-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-3); }
+/* 카드 사이 간격은 모두 --space-4 하나로 통일(세로·가로·열 안) */
+.home-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-4); }
 .home-stat { display: flex; flex-direction: column; gap: var(--space-1); }
 .home-stat-value { font-size: var(--text-xl); color: var(--fg); }
 
 .home-grid { display: grid; grid-template-columns: 2fr 1fr; gap: var(--space-4); align-items: start; }
-.home-side { margin-top: 0; gap: var(--space-4); }
+/* 공용 .stack(위 여백 있음)을 쓰지 않는다 — 불러오는 순서에 따라 여백이 살아나 이 열만 내려갔다 */
+.home-side { display: flex; flex-direction: column; gap: var(--space-4); }
 .home-recent { display: flex; align-items: center; gap: var(--space-3); }
 .home-recent p, .home .list p { margin: var(--space-1) 0 0; }
 .home-recent-title, .home-quick-title { color: var(--fg); font-weight: 650; text-decoration: none; }
