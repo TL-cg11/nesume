@@ -5,7 +5,6 @@ import { shortDate } from './ShareTags.jsx'
 import './resumes.css'
 
 const MAX_RESUMES = 50 // 서버 MAX_RESUMES_PER_USER와 같다(4.56). 넘으면 서버가 안내 문구로 거부
-const UNTITLED = '제목 없는 자기소개서' // 작성 버튼으로 바로 만들 때의 제목. 상세 화면에서 바꾼다
 
 export default function ResumesPage() {
   const navigate = useNavigate()
@@ -29,7 +28,7 @@ export default function ResumesPage() {
   const create = async () => {
     setCreating(true)
     try {
-      const r = await resumesApi.create({ title: UNTITLED })
+      const r = await resumesApi.createUntitled()
       navigate(`/resumes/${r.id}`, { state: { focusTitle: true } })
     } catch (err) {
       setError(err.message)
@@ -47,7 +46,7 @@ export default function ResumesPage() {
         </h1>
         <button onClick={create} disabled={creating || items === null || full}
           title={full ? `자기소개서는 ${MAX_RESUMES}개까지 만들 수 있습니다` : undefined}>
-          {creating ? '만드는 중…' : '자소서 작성'}
+          {creating ? '만드는 중…' : '자기소개서 작성'}
         </button>
       </div>
       {error && <p className="error">{error}</p>}
@@ -55,7 +54,7 @@ export default function ResumesPage() {
       {items?.length === 0 && (
         <div className="card resume-empty">
           <p>아직 작성한 자기소개서가 없습니다.</p>
-          <p className="muted">오른쪽 위 ‘자소서 작성’을 눌러 첫 자기소개서를 시작하세요.</p>
+          <p className="muted">오른쪽 위 ‘자기소개서 작성’을 눌러 첫 자기소개서를 시작하세요.</p>
         </div>
       )}
       {items?.length > 0 && (

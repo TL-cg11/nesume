@@ -77,7 +77,7 @@ export default function ResumeDetailPage() {
         <input
           className="title-input"
           defaultValue={resume.title}
-          // 목록의 '자소서 작성'으로 막 만든 경우: 제목 칸을 선택해 두어 바로 입력하게 한다
+          // '자기소개서 작성' 버튼(목록·홈)으로 막 만든 경우: 제목 칸을 선택해 두어 바로 입력하게 한다
           autoFocus={location.state?.focusTitle}
           onFocus={(e) => location.state?.focusTitle && e.target.select()}
           maxLength={200}

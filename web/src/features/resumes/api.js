@@ -3,12 +3,16 @@ import { api } from '../../app/api/client.js'
 
 const q = (rid, qid) => `/resumes/${rid}/questions/${qid}`
 
+// '자기소개서 작성' 버튼(목록·홈)이 바로 만들 때의 제목. 상세 화면에서 바꾼다(10/28 결정)
+export const UNTITLED = '제목 없는 자기소개서'
+
 export const resumesApi = {
   // 사용자당 자소서는 최대 50개(4.56)라 한 번에 모두 받는다(API 최대 100)
   list: () => api.get('/resumes?limit=100'),
   // 홈 대시보드 집계(B, 4.54)
   dashboard: (opts) => api.get('/resumes/dashboard', opts),
   create: (data) => api.post('/resumes', data),
+  createUntitled: () => api.post('/resumes', { title: UNTITLED }),
   get: (rid) => api.get(`/resumes/${rid}`),
   update: (rid, data) => api.patch(`/resumes/${rid}`, data),
   remove: (rid) => api.delete(`/resumes/${rid}`),
