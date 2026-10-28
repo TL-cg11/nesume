@@ -21,6 +21,7 @@ LABEL = "평가 러너"
 class DbSeeder:
     def __init__(self, accounts, session_factory=SessionLocal):
         self.accounts, self.session_factory = accounts, session_factory
+        self._base: dict | None = None  # 사전 조건이 없는 시나리오가 같이 쓰는 시드 자소서(자소서 50개 상한, 4.56)
 
     def _resume(self, db, owner: str, body: str = "평가 러너 시드 문단") -> tuple:
         resume_service.ensure_user(db, owner)
@@ -56,6 +57,8 @@ class DbSeeder:
                 r2, _ = self._resume(db, other, "다른 사용자 자소서")
                 values["other_resume_id"] = str(r2.id)
             if "resume_id" not in values:
-                r, q = self._resume(db, owner)
-                values.update(resume_id=str(r.id), question_id=str(q.id))
+                if self._base is None:
+                    r, q = self._resume(db, owner)
+                    self._base = {"resume_id": str(r.id), "question_id": str(q.id)}
+                values.update(self._base)
         return values

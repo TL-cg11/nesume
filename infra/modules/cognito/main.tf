@@ -2,7 +2,7 @@
 # 환경 디렉터리(infra/envs/<env>)에서 모듈로 호출한다(D8). apply는 AWS 크레딧 뒤.
 # 그 전에는 init -backend=false / validate / fmt -check 까지만 확인한다.
 terraform {
-  required_version = ">= 1.9"
+  required_version = ">= 1.10"
   required_providers {
     aws = { source = "hashicorp/aws", version = "~> 6.0" }
   }
@@ -65,7 +65,7 @@ resource "aws_cognito_user_pool_client" "web" {
   name                          = "web"
   user_pool_id                  = aws_cognito_user_pool.this.id
   generate_secret               = false
-  explicit_auth_flows           = ["ALLOW_USER_SRP_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"]
+  explicit_auth_flows           = ["ALLOW_USER_SRP_AUTH"]
   prevent_user_existence_errors = "ENABLED"
   enable_token_revocation       = true
 
@@ -89,7 +89,7 @@ resource "aws_cognito_user_pool_client" "runner" {
   name                          = "runner"
   user_pool_id                  = aws_cognito_user_pool.this.id
   generate_secret               = false
-  explicit_auth_flows           = ["ALLOW_USER_PASSWORD_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"]
+  explicit_auth_flows           = ["ALLOW_USER_PASSWORD_AUTH"]
   prevent_user_existence_errors = "ENABLED"
   enable_token_revocation       = true
 

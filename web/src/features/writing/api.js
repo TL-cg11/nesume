@@ -59,3 +59,41 @@ export const profileApi = {
   build: (text, signal) => api.put('/profile/writing', { text }, { signal }),
   remove: (signal) => api.delete('/profile/writing', { signal }),
 }
+
+// ── A6 리라이팅
+//
+// ★ 다른 셋과 달리 **고른 구간**을 다룬다. 그래서 상한이 MAX_TEXT_LEN 과 다르다 —
+//   서버 rewrite.py 의 MAX_SELECTION_LEN(5,000 × 4조각)과 같아야 한다.
+export const MAX_SELECTION_LEN = 20000
+
+// 한 번에 모델로 보내는 조각 크기. 이보다 길면 서버가 나눠 보낸다.
+export const CHUNK_CHARS = 5000
+
+// 돌려받는 후보 수 (서버 CANDIDATE_COUNT).
+export const CANDIDATE_COUNT = 3
+
+// 길이 옵션. 서버 rewrite.py 의 LENGTH_NAMES 와 같아야 한다.
+export const LENGTH_NAMES = {
+  shorter: '짧게',
+  similar: '비슷하게',
+  longer: '길게',
+}
+
+// 키워드 개수·길이 상한 (서버 MAX_KEYWORDS · MAX_KEYWORD_LEN).
+export const MAX_KEYWORDS = 10
+export const MAX_KEYWORD_LEN = 30
+
+export const rewriteApi = {
+  // useLlm=false 면 모델을 부르지 않고 지시문만 돌려준다. 옵션을 바꿔 보는 데 쓴다.
+  rewrite: ({ text, tone = 'formal', length = 'similar', keywords = [], useLlm = true }, signal) =>
+    api.post('/writing/rewrite', { text, tone, length, keywords, use_llm: useLlm }, { signal }),
+
+  // 고른 후보를 새 버전으로 저장한다 (B4, source="ai").
+  // 문항 맥락이 있을 때만 쓸 수 있다 — 글 다듬기 화면은 기본적으로 저장하지 않는다.
+  apply: ({ resumeId, questionId, body }, signal) =>
+    api.post(
+      '/writing/rewrite/apply',
+      { resume_id: resumeId, question_id: questionId, body },
+      { signal },
+    ),
+}

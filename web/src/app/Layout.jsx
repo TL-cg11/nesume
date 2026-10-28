@@ -13,8 +13,11 @@ const NAV_META = {
   writing: { icon: 'spark', group: 'AI 도구' },
   interview: { icon: 'msg', group: 'AI 도구' },
   github: { icon: 'git', group: '소개' },
+  // B17 멘토 공유, B9 프롬프트 템플릿(발표 시안의 '관리' 그룹)
+  mentor: { icon: 'user', group: '관리' },
+  templates: { icon: 'shield', group: '관리' },
 }
-const GROUP_ORDER = ['워크스페이스', 'AI 도구', '소개', '기타']
+const GROUP_ORDER = ['워크스페이스', 'AI 도구', '소개', '관리', '기타']
 
 function groupNav(navItems) {
   const groups = new Map()

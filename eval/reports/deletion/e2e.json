@@ -1,0 +1,61 @@
+{
+  "measured_at": "2026-10-27T06:01:44+00:00",
+  "before": {
+    "user_id": "verify-dd1caa70f513",
+    "rows": {
+      "audit_logs.user_id": 1,
+      "users.id": 1,
+      "download_tokens.owner_id": 1,
+      "job_postings.owner_user_id": 0,
+      "learning_roadmaps.owner_id": 0,
+      "pii_vaults.owner_id": 2,
+      "user_keys.user_id": 1,
+      "user_profile_embeddings.owner_id": 2,
+      "user_profile_embeddings.shared_with": 0,
+      "writing_profiles.owner_id": 0,
+      "experiences.owner_id": 1,
+      "resumes.owner_id": 1,
+      "resumes.shared_with": 1,
+      "applications.owner_id": 0,
+      "questions.owner_id": 1,
+      "shares.owner_id": 1,
+      "shares.shared_with": 1,
+      "question_experiences.owner_id": 0,
+      "share_comments.owner_id": 1,
+      "versions.owner_id": 1
+    },
+    "s3_objects": 1,
+    "cognito": "skipped",
+    "allowed": {},
+    "ok": false
+  },
+  "after": {
+    "user_id": "verify-dd1caa70f513",
+    "rows": {
+      "audit_logs.user_id": 0,
+      "users.id": 0,
+      "download_tokens.owner_id": 0,
+      "job_postings.owner_user_id": 0,
+      "learning_roadmaps.owner_id": 0,
+      "pii_vaults.owner_id": 0,
+      "user_keys.user_id": 0,
+      "user_profile_embeddings.owner_id": 0,
+      "user_profile_embeddings.shared_with": 0,
+      "writing_profiles.owner_id": 0,
+      "experiences.owner_id": 0,
+      "resumes.owner_id": 0,
+      "resumes.shared_with": 0,
+      "applications.owner_id": 0,
+      "questions.owner_id": 0,
+      "shares.owner_id": 0,
+      "shares.shared_with": 0,
+      "question_experiences.owner_id": 0,
+      "share_comments.owner_id": 0,
+      "versions.owner_id": 0
+    },
+    "s3_objects": 0,
+    "cognito": "absent",
+    "allowed": {},
+    "ok": true
+  }
+}

@@ -4,7 +4,10 @@ import { api } from '../../app/api/client.js'
 const q = (rid, qid) => `/resumes/${rid}/questions/${qid}`
 
 export const resumesApi = {
-  list: () => api.get('/resumes'),
+  // 사용자당 자소서는 최대 50개(4.56)라 한 번에 모두 받는다(API 최대 100)
+  list: () => api.get('/resumes?limit=100'),
+  // 홈 대시보드 집계(B, 4.54)
+  dashboard: (opts) => api.get('/resumes/dashboard', opts),
   create: (data) => api.post('/resumes', data),
   get: (rid) => api.get(`/resumes/${rid}`),
   update: (rid, data) => api.patch(`/resumes/${rid}`, data),
@@ -21,6 +24,8 @@ export const resumesApi = {
   getVersion: (rid, qid, vid) => api.get(`${q(rid, qid)}/versions/${vid}`),
   diff: (rid, qid, from, to) => api.get(`${q(rid, qid)}/versions/diff?from=${from}&to=${to}`),
   restore: (rid, qid, vid) => api.post(`${q(rid, qid)}/versions/${vid}/restore`),
+  // 문항당 50개 상한이라 사용자가 골라 지운다(4.56). 지원 기록·공유 중인 버전은 409
+  removeVersion: (rid, qid, vid) => api.delete(`${q(rid, qid)}/versions/${vid}`),
 }
 
 // B10 멘토 공유(작성자용)

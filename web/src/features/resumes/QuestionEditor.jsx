@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { resumesApi } from './api.js'
 import DiffView from './DiffView.jsx'
 import ShareTags from './ShareTags.jsx'
+
+const MAX_VERSIONS = 50 // 서버 MAX_VERSIONS_PER_QUESTION과 같다(4.56)
 import { experiencesApi } from '../experiences/api.js'
 import { experienceSummary } from '../experiences/summary.js'
 
@@ -80,7 +82,7 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete, 
   const afterSave = async (v) => {
     setBody(v.body)
     setSavedBody(v.body)
-    setNotice(v.over_limit ? '버전이 50개를 넘었습니다. 오래된 버전 정리 방식은 추후 제공됩니다.' : null)
+    setNotice(null)
     await loadVersions()
     onSaved()
   }
@@ -99,6 +101,18 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete, 
       await afterSave(await resumesApi.restore(resumeId, question.id, vid))
     } catch (e) {
       setError(e.message)
+    }
+  }
+
+  const removeVersion = async (v) => {
+    if (!window.confirm(`v${v.version_no}을(를) 삭제할까요? 되돌릴 수 없습니다.`)) return
+    try {
+      await resumesApi.removeVersion(resumeId, question.id, v.id)
+      await loadVersions()
+      onSaved()
+      setError(null)
+    } catch (e) {
+      setError(e.message) // 지원 기록·공유 중이면 서버 안내 문구
     }
   }
 
@@ -163,7 +177,9 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete, 
       )}
 
       <div className="row">
-        <h3 className="grow">버전 기록</h3>
+        <h3 className="grow">
+          버전 기록 <span className="muted">{versions.length}/{MAX_VERSIONS}</span>
+        </h3>
         <label className="muted share-toggle">
           <input type="checkbox" checked={showEnded} onChange={(e) => setShowEnded(e.target.checked)} />
           지난 공유 보기
@@ -185,6 +201,9 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete, 
                 이 버전으로 복원
               </button>
             )}
+            <button className="danger" onClick={() => removeVersion(v)}>
+              삭제
+            </button>
           </li>
         ))}
         {versions.length === 0 && <li className="muted">저장된 버전이 없습니다.</li>}

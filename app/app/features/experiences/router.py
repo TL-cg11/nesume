@@ -113,3 +113,10 @@ def unlink_experience(
     db.delete(link)
     db.flush()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# B14 GitHub 프로젝트 소개(/experiences/github/draft). 결과는 경험 데이터로 저장하므로 경험 API 아래에 둔다.
+# main.py(D) 등록 없이 동작하도록 이 라우터에 붙인다(part2_guide 4.60).
+from app.features.github.router import router as _github_router  # noqa: E402
+
+router.include_router(_github_router)

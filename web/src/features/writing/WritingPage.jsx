@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import ProfilePanel from './ProfilePanel.jsx'
 import ProofreadPanel from './ProofreadPanel.jsx'
+import RewritePanel from './RewritePanel.jsx'
 import StylePanel from './StylePanel.jsx'
 import { MAX_TEXT_LEN } from './api.js'
 import './writing.css'
@@ -22,6 +23,7 @@ import './writing.css'
 const TABS = [
   { id: 'proofread', label: '맞춤법·STAR', hint: '틀린 곳과 빠진 요소' },
   { id: 'style', label: '글자수·문체', hint: '분량과 말투 통일' },
+  { id: 'rewrite', label: '리라이팅', hint: '고른 부분을 다시 쓰기' },
   { id: 'profile', label: '내 말투', hint: 'AI 가 흉내 낼 문체' },
 ]
 
@@ -30,6 +32,8 @@ export default function WritingPage() {
   const [tab, setTab] = useState('proofread')
   const [proofreadResult, setProofreadResult] = useState(null)
   const [styleResult, setStyleResult] = useState(null)
+  // 리라이팅 탭이 보는 드래그 구간. 본문에서만 바뀐다
+  const [selection, setSelection] = useState(null)
   const [isBusy, setIsBusy] = useState(false)
   const [error, setError] = useState(null)
   const [done, setDone] = useState(null)
@@ -45,6 +49,7 @@ export default function WritingPage() {
     // 글이 바뀌면 두 탭의 제안이 모두 무효다
     setProofreadResult(null)
     setStyleResult(null)
+    setSelection(null)
     setDone(null)
   }
 
@@ -116,6 +121,10 @@ export default function WritingPage() {
             value={text}
             maxLength={MAX_TEXT_LEN}
             onChange={(e) => changeText(e.target.value)}
+            // 드래그한 구간을 리라이팅 탭이 쓴다. 마우스·키보드 양쪽에서 같은 이벤트가 온다
+            onSelect={(e) =>
+              setSelection({ start: e.target.selectionStart, end: e.target.selectionEnd })
+            }
             placeholder="자소서 문항 본문을 붙여 넣으십시오."
             aria-label="자소서 본문"
           />
@@ -148,6 +157,7 @@ export default function WritingPage() {
           {tab === 'style' && (
             <StylePanel {...shared} result={styleResult} setResult={setStyleResult} />
           )}
+          {tab === 'rewrite' && <RewritePanel {...shared} selection={selection} />}
           {tab === 'profile' && <ProfilePanel text={text} run={run} isBusy={isBusy} />}
         </div>
       </div>
