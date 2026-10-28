@@ -7,7 +7,7 @@
 ARG TEI_IMAGE=ghcr.io/huggingface/text-embeddings-inference:cpu-arm64-1.9
 
 # --- fetch: 모델 가중치·토크나이저만 내려받는다(ONNX·colbert·sparse 헤드·이미지 제외, ~2.3GB) ---
-FROM python:3.12.15-slim-bookworm AS fetch
+FROM python:3.12.16-slim-bookworm AS fetch
 ARG MODEL_ID=BAAI/bge-m3
 ARG MODEL_REVISION=main
 ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1 HF_HUB_DISABLE_TELEMETRY=1
