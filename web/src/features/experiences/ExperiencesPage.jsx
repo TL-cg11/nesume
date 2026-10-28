@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router'
 import { experiencesApi } from './api.js'
-import ExperienceForm from './ExperienceForm.jsx'
+import { period } from './summary.js'
 import './experiences.css'
 
 export default function ExperiencesPage() {
   const [all, setAll] = useState([])
   const [items, setItems] = useState([])
   const [selectedTags, setSelectedTags] = useState([])
-  const [editing, setEditing] = useState(null) // null | 'new' | experience
+  const navigate = useNavigate() // 작성·수정은 별도 화면(/experiences/new, /:id/edit, 10/28)
   const [error, setError] = useState(null)
 
   const load = useCallback(async () => {
@@ -33,17 +34,6 @@ export default function ExperiencesPage() {
   const toggleTag = (t) =>
     setSelectedTags((cur) => (cur.includes(t) ? cur.filter((x) => x !== t) : [...cur, t]))
 
-  const save = async (data) => {
-    try {
-      if (editing === 'new') await experiencesApi.create(data)
-      else await experiencesApi.update(editing.id, data)
-      setEditing(null)
-      load()
-    } catch (e) {
-      setError(e.message)
-    }
-  }
-
   const remove = async (e) => {
     if (!window.confirm(`'${e.title}'을(를) 삭제할까요? 30일 후 완전히 삭제됩니다.`)) return
     await experiencesApi.remove(e.id)
@@ -54,17 +44,9 @@ export default function ExperiencesPage() {
     <section>
       <div className="row">
         <h1 className="grow">경험</h1>
-        {editing === null && <button onClick={() => setEditing('new')}>경험 추가</button>}
+        <button onClick={() => navigate('/experiences/new')}>경험 추가</button>
       </div>
       {error && <p className="error">{error}</p>}
-      {editing && (
-        <ExperienceForm
-          key={editing === 'new' ? 'new' : editing.id}
-          initial={editing === 'new' ? undefined : editing}
-          onSubmit={save}
-          onCancel={() => setEditing(null)}
-        />
-      )}
 
       {allTags.length > 0 && (
         <div className="exp-filter" aria-label="태그 필터 (하나라도 포함)">
@@ -90,9 +72,9 @@ export default function ExperiencesPage() {
               <span className="muted">
                 {e.type}
                 {e.role && ` · ${e.role}`}
-                {(e.period_start || e.period_end) && ` · ${e.period_start ?? ''}~${e.period_end ?? ''}`}
+                {period(e) && ` · ${period(e)}`}
               </span>
-              <button className="secondary" onClick={() => setEditing(e)}>
+              <button className="secondary" onClick={() => navigate(`/experiences/${e.id}/edit`)}>
                 수정
               </button>
               <button className="danger" onClick={() => remove(e)}>

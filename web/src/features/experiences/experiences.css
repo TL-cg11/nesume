@@ -15,4 +15,11 @@
 .exp-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); margin: var(--space-3) 0; }
 .exp-form .full { grid-column: 1 / -1; }
 .exp-form label { display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-sm); color: var(--muted); }
-@media (max-width: 720px) { .exp-form { grid-template-columns: 1fr; } }
+.exp-form select { min-height: 40px; }
+.exp-github { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); border: 1px dashed var(--border-input); border-radius: var(--radius-sm); }
+.exp-github p { margin: 0; }
+.exp-github ol { margin: var(--space-1) 0 0; padding-left: 1.4em; }
+.exp-github-input { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.exp-github-input input { flex: 1 1 200px; min-width: 0; }
+.exp-github-input input:first-child { flex-basis: 100%; font-family: var(--font-mono); }
+@media (max-width: 720px) { .exp-form { grid-template-columns: 1fr; } .exp-form > span:empty { display: none; } }
