@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { experiencesApi } from './api.js'
 import { period } from './summary.js'
+import { TYPES, normalizeType } from './templates.js'
 import './experiences.css'
 
 // 경험 목록(10/28): 자소서 목록과 같은 양식 — 이름과 기간만. 상세·수정·삭제는 행을 눌러 들어간 열람 화면에서
@@ -10,6 +11,7 @@ export default function ExperiencesPage() {
   const [all, setAll] = useState([])
   const [items, setItems] = useState(null) // null = 불러오는 중
   const [selectedTags, setSelectedTags] = useState([])
+  const [type, setType] = useState('') // 유형 필터(10/28). '' = 전체. 예전 자유 입력 유형은 기타
   const [error, setError] = useState(null)
 
   const load = useCallback(async () => {
@@ -32,6 +34,9 @@ export default function ExperiencesPage() {
 
   const allTags = useMemo(() => [...new Set(all.flatMap((e) => e.tags))].sort(), [all])
 
+  const shown = items && (type ? items.filter((e) => normalizeType(e.type) === type) : items)
+  const countOf = (t) => (items ?? []).filter((e) => normalizeType(e.type) === t).length
+
   const toggleTag = (t) =>
     setSelectedTags((cur) => (cur.includes(t) ? cur.filter((x) => x !== t) : [...cur, t]))
 
@@ -44,6 +49,20 @@ export default function ExperiencesPage() {
         <button onClick={() => navigate('/experiences/new')}>경험 추가</button>
       </div>
       {error && <p className="error">{error}</p>}
+
+      {all.length > 0 && (
+        <div className="exp-filter" aria-label="유형 필터">
+          <span className="muted">유형</span>
+          <button className={`chip ${type === '' ? 'on' : ''}`} onClick={() => setType('')}>
+            전체 {items?.length ?? 0}
+          </button>
+          {TYPES.map((t) => (
+            <button key={t} className={`chip ${type === t ? 'on' : ''}`} onClick={() => setType(t)}>
+              {t} {countOf(t)}
+            </button>
+          ))}
+        </div>
+      )}
 
       {allTags.length > 0 && (
         <div className="exp-filter" aria-label="태그 필터 (하나라도 포함)">
@@ -62,10 +81,10 @@ export default function ExperiencesPage() {
       )}
 
       {items === null && !error && <p className="muted">불러오는 중...</p>}
-      {items?.length === 0 && (
+      {shown?.length === 0 && (
         <div className="card exp-empty">
-          {selectedTags.length ? (
-            <p>선택한 태그의 경험이 없습니다.</p>
+          {selectedTags.length || type ? (
+            <p>선택한 조건의 경험이 없습니다.</p>
           ) : (
             <>
               <p>아직 등록한 경험이 없습니다.</p>
@@ -74,10 +93,10 @@ export default function ExperiencesPage() {
           )}
         </div>
       )}
-      {items?.length > 0 && (
+      {shown?.length > 0 && (
         <div className="card exp-list-card">
           <ul className="list exp-list">
-            {items.map((e) => (
+            {shown.map((e) => (
               <li key={e.id}>
                 {/* 제목 링크가 행 전체를 덮는다 → 빈 곳을 눌러도 열람 */}
                 <Link to={`/experiences/${e.id}`} className="exp-title">{e.title}</Link>
