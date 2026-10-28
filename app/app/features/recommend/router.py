@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.auth import AuthenticatedUser
@@ -34,10 +34,19 @@ _COLD_START_NOTICE = "자소서·경험을 등록하면 더 정확하게 추천�
 @router.post("", response_model=RecommendResponse)
 def recommend(payload: RecommendRequest, user: AuthenticatedUser, db: Db):
     """맞춤 공고 추천. 개인 벡터가 없으면 cold_start=true + 안내(items 빈 목록)."""
+    held_keys = list(payload.held_keys)
+    if payload.resume_id is not None:
+        from app.features.skill_gap.evidence import gather_evidence, held_keys_of
+
+        evidence = gather_evidence(db, owner_id=user.sub, resume_id=payload.resume_id)
+        if evidence is None:  # 없음/남의 자소서 구분 안 함
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "자소서를 찾을 수 없습니다")
+        held_keys = sorted(set(held_keys) | set(held_keys_of(evidence)))
     recs = service.recommend(
         db,
         user_id=user.sub,
-        held_keys=payload.held_keys,
+        held_keys=held_keys,
+        resume_id=payload.resume_id,
         region_codes=payload.region_codes or None,
         job_codes=payload.job_codes or None,
         top_k=payload.top_k,

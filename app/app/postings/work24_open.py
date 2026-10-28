@@ -106,6 +106,12 @@ def _first_job(root: ET.Element) -> tuple[str | None, str | None]:
     return None, None
 
 
+def _recruit_values(root: ET.Element, tag: str) -> str | None:
+    """모집분야별 값(경력·학력)을 중복 없이 ' / '로. 분야마다 다를 수 있다."""
+    vals = [v for v in (_text(i, tag) for i in root.iter("empRecrListInfo")) if v]
+    return " / ".join(dict.fromkeys(vals)) or None
+
+
 def _join(*parts: str | None) -> str | None:
     text = "\n\n".join(p for p in parts if p)
     return text or None
@@ -138,6 +144,8 @@ def parse_detail(root: ET.Element) -> dict[str, Any]:
         "industry_name": _text(node, "coClcdNm"),  # 기업 구분(대기업·공공기관 등)
         "region_name": _text(recr, "workRegionNm") or _text(node, "workRegionNm"),
         "emp_type_text": _text(node, "empWantedTypeNm"),
+        "career_text": _recruit_values(root, "empWantedCareerNm"),
+        "edu_text": _recruit_values(root, "empWantedEduNm"),
         "job_content": _join(  # 모집분야·직무 + 지원자격 + 요약(A1 mask는 run_collection이 적용)
             _recruit_lines(root),
             _text(node, "recrCommCont"),

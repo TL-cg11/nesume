@@ -68,6 +68,14 @@ def _extract_salary(text: str | None) -> tuple[int | None, int | None]:
     return min(amounts), (max(amounts) if len(amounts) > 1 else None)
 
 
+def _edu_range(lo: str | None, hi: str | None) -> str | None:
+    """학력 글 범위(예: "대졸(4년)~석사"). 같거나 한쪽만 있으면 그 값."""
+    lo, hi = (lo or "").strip(), (hi or "").strip()
+    if lo and hi and lo != hi:
+        return f"{lo}~{hi}"
+    return lo or hi or None
+
+
 def parse_seoul_row(row: dict[str, Any]) -> dict[str, Any]:
     """서울시 recMntList 응답 1건 → `JobPosting` 필드 dict(순수). 연락처 필드는 담지 않는다."""
     close_text = row.get("CLOSE_DT")
@@ -85,6 +93,8 @@ def parse_seoul_row(row: dict[str, Any]) -> dict[str, Any]:
         "region_name": row.get("REGION"),
         "work_address": row.get("WORK_REGION"),
         "career_code": row.get("ENTER_TP_CD"),
+        "career_text": row.get("CAREER") or None,
+        "edu_text": _edu_range(row.get("MIN_EDUBG"), row.get("MAX_EDUBG")),
         "min_edu_code": row.get("MIN_EDUBG_ICD"),
         "max_edu_code": row.get("MAX_EDUBG_ICD"),
         "emp_type_code": row.get("EMP_TP_CD"),

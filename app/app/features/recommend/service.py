@@ -42,14 +42,24 @@ def _a11_required_keys(fields: dict[str, str | None]) -> list[str]:
     return [kw.key for kw in extract(PostingFields(**{k: v for k, v in fields.items() if k in allowed}))]
 
 
-def gather_query_vectors(session: Session, user_id: str) -> list[list[float]]:
-    """멀티벡터 쿼리 소스 = 사용자 본인 자소서·경험 임베딩(삭제·버전 제외)."""
-    rows = session.execute(
+def gather_query_vectors(
+    session: Session, user_id: str, resume_id: uuid.UUID | None = None
+) -> list[list[float]]:
+    """멀티벡터 쿼리 소스 = 사용자 본인 자소서·경험 임베딩(삭제·버전 제외).
+
+    `resume_id`를 주면 **그 자소서의 청크만**(본인 소유 조건은 그대로) — 맞춤 학습의 자소서별 추천.
+    """
+    stmt = (
         select(UserProfileEmbedding.embedding)
         .where(UserProfileEmbedding.owner_id == user_id)
         .where(UserProfileEmbedding.deleted_at.is_(None))
         .where(UserProfileEmbedding.model_version == MODEL_VERSION)
-    ).all()
+    )
+    if resume_id is not None:
+        stmt = stmt.where(
+            UserProfileEmbedding.source_type == "resume", UserProfileEmbedding.source_id == resume_id
+        )
+    rows = session.execute(stmt).all()
     return [row[0] for row in rows]
 
 
@@ -64,6 +74,7 @@ def recommend(
     candidates: int = DEFAULT_CANDIDATES,
     query_vectors: Sequence[Sequence[float]] | None = None,
     required_extractor: RequiredExtractor | None = None,
+    resume_id: uuid.UUID | None = None,
 ) -> list[Recommendation]:
     """맞춤 공고 상위 top_k. 개인 벡터가 없으면 콜드스타트([]) — 호출측이 스킬태그 폴백·안내.
 
@@ -73,7 +84,10 @@ def recommend(
     # C6가 지역·직무 필터를 WHERE로 거는 건 사전 필터라 import만 지연 — 순수 테스트 시 미사용.
     from app.retrieval.search import search_public
 
-    vectors = list(query_vectors) if query_vectors is not None else gather_query_vectors(session, user_id)
+    if query_vectors is not None:
+        vectors = list(query_vectors)
+    else:
+        vectors = gather_query_vectors(session, user_id, resume_id)
     if not vectors:
         return []  # 콜드스타트: 개인 벡터 없음 → 호출측 폴백(스킬태그 쿼리 주입 또는 인기·최신)
 

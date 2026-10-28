@@ -16,6 +16,7 @@ import uuid
 from app.db import SessionLocal
 from app.models.embedding import EMBED_DIM, JobPostingEmbedding, UserProfileEmbedding
 from app.models.posting import JobPosting
+from app.models.resume import Resume
 
 _IT = ("소프트웨어", "SW", "개발", "IT", "정보", "보안", "클라우드", "데이터", "AI", "인공지능", "전산", "네트워크", "시스템")
 _MARK = "[DEMO]"
@@ -55,15 +56,21 @@ def main(sub: str) -> None:
             UserProfileEmbedding.owner_id == sub, UserProfileEmbedding.content.like(f"{_MARK}%")
         ).delete(synchronize_session=False)
 
-        # ① 사용자 프로필 벡터(추천 쿼리)
-        s.add(UserProfileEmbedding(
-            owner_id=sub,
-            source_type="resume",
-            source_id=uuid.uuid4(),
-            chunk_index=0,
-            content=f"{_MARK} AWS와 Docker로 보안 인프라를 운영한 경험",
-            embedding=A,
-        ))
+        # ① 사용자 프로필 벡터(추천 쿼리) — **실제 자소서마다** 1개(자소서별 추천이 로컬에서도 동작).
+        #    자소서마다 A에서 조금씩 다르게 섞어 추천 결과가 자소서별로 달라지게 한다. 자소서가 없으면 1개.
+        resumes = (
+            s.query(Resume).filter(Resume.owner_id == sub, Resume.deleted_at.is_(None)).all()
+        )
+        targets = [(r.id, r.title) for r in resumes] or [(uuid.uuid4(), "자소서 없음")]
+        for j, (rid, title) in enumerate(targets):
+            s.add(UserProfileEmbedding(
+                owner_id=sub,
+                source_type="resume",
+                source_id=rid,
+                chunk_index=0,
+                content=f"{_MARK} {title}",
+                embedding=_mix(A, _unit(500 + j), 0.85, 0.15),
+            ))
 
         # ② 실제 공고(활성)마다 공고 벡터
         postings = s.query(JobPosting).filter(JobPosting.is_active.is_(True)).all()
@@ -76,7 +83,7 @@ def main(sub: str) -> None:
                 embedding=_mix(A, _unit(10_000 + i), w, 1 - w),
             ))
         s.commit()
-        print(f"데모 벡터: 프로필 1건(owner={sub}) + 공고 {len(postings)}건"
+        print(f"데모 벡터: 프로필 {len(targets)}건(자소서별, owner={sub}) + 공고 {len(postings)}건"
               f" (원문 링크 있음 {sum(1 for p in postings if p.source_url)}건)")
     finally:
         s.close()

@@ -28,6 +28,9 @@ class RecommendRequest(BaseModel):
     region_codes: list[str] = Field(default_factory=list, max_length=MAX_FILTER_CODES)
     job_codes: list[str] = Field(default_factory=list, max_length=MAX_FILTER_CODES)
     top_k: int = Field(default=20, ge=1, le=MAX_TOP_K)
+    #: 맞춤 학습: 이 자소서 기준으로 추천(쿼리 벡터 = 그 자소서 청크, 보유 역량 = 그 자소서 본문 + 경험).
+    #: 본인 자소서만(남의 것·없음 → 404). 비우면 지금처럼 전체 프로필 기준.
+    resume_id: uuid.UUID | None = None
 
 
 class PostingBrief(BaseModel):
