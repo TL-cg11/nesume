@@ -87,7 +87,8 @@ terraform -chdir="infra/envs/dev/base" plan      # No changes
 | `docker login` 400 Bad Request | PS 5.1 파이프 `--password-stdin`이 토큰을 깨뜨린다. `--password (aws ecr get-login-password --region ap-northeast-2)` |
 | migrate Job `serviceaccount "nesume-app" not found` | pre-install hook이 release의 SA보다 먼저 돈다. 차트는 첫 설치에서 hook을 끈다(`.Release.IsInstall`) |
 | helm install `Ingress ... NotFound` | uninstall 직후 재설치. `kubectl -n dev wait --for=delete ingress/nesume` 후 설치 |
-| ESO release failed, `service "external-secrets-webhook" not found`, 이어서 ClusterSecretStore·ExternalSecret 생성 실패 | ALB 컨트롤러의 Service 뮤테이팅 웹훅이 엔드포인트도 없이 ESO의 webhook Service 생성을 막음(동시 설치 경쟁). `enableServiceMutatorWebhook = false`. 실패한 release는 `helm uninstall` 후 재apply |
+| ESO release failed, `service "external-secrets-webhook" not found`, 이어서 ClusterSecretStore·ExternalSecret 생성 실패 | ALB 컨트롤러의 Service 뮤테이팅 웹훅이 엔드포인트도 없이 ESO의 webhook Service 생성을 막음(동시 설치 경쟁). `enableServiceMutatorWebhook = false`. 실패한 release는 `helm uninstall` 후 재apply(`up.ps1`이 자동으로 한다) |
+| ESO release `failed`, `Timeout: request did not complete within requested timeout`, CRD 하나(`clustersecretstores`)만 없음 | 막 올라온 컨트롤플레인이 큰 CRD 생성 요청을 타임아웃. 일시적. `up.ps1`이 failed 릴리스를 uninstall 하고 apply 를 최대 3회 재시도 |
 | ClusterSecretStore webhook `no endpoints available` | 노드가 없다(스팟 미배치). `kubectl get nodes` 먼저 |
 | ALB 컨트롤러·ESO `AccessDenied`/`NoCredentialProviders` | Pod Identity 연결의 namespace/SA 이름 불일치, `eks-pod-identity-agent` 없음, 또는 연결보다 파드가 먼저 뜸(파드 재시작) |
 | `aws_eks_addon coredns` 타임아웃 | 노드 전에 생성. `depends_on = [aws_eks_node_group.default]` |

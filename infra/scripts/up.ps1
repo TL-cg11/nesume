@@ -11,7 +11,31 @@ $Repo    = (Resolve-Path "$PSScriptRoot\..\..").Path
 $Compute = Join-Path $Repo "infra\envs\dev\compute"
 
 terraform -chdir="$Compute" init -input=false; Check "terraform init"
-terraform -chdir="$Compute" apply -auto-approve -input=false; Check "terraform apply"
+# apply 는 최대 3회. 실패하면 helm 릴리스(ALB 컨트롤러·ESO) 중 failed/pending 인 것을 지우고 다시 돈다.
+# 10-28 실측: 막 올라온 컨트롤플레인이 ESO 의 큰 CRD 생성 요청을 타임아웃시켜 릴리스가 failed 로 남고,
+# 그 상태에서는 다음 apply 도 같은 릴리스에서 막힌다. 실패한 릴리스를 지워야 provider 가 새로 만든다.
+$Releases = @(@("kube-system", "aws-load-balancer-controller"), @("external-secrets", "external-secrets"))
+$applied = $false
+for ($try = 1; $try -le 3 -and -not $applied; $try++) {
+  terraform -chdir="$Compute" apply -auto-approve -input=false
+  if (-not $LASTEXITCODE) { $applied = $true; break }
+  Write-Warning "terraform apply failed (attempt $try/3). Checking helm releases..."
+  $clusters = aws eks list-clusters --query clusters --output text
+  if ($clusters -notmatch $Cluster) { throw "terraform apply failed before the cluster existed. See the error above." }
+  aws eks update-kubeconfig --name $Cluster --region $Region | Out-Null
+  $cleaned = $false
+  foreach ($r in $Releases) {
+    $status = helm -n $r[0] status $r[1] -o json 2>$null | ConvertFrom-Json
+    if ($status -and $status.info.status -ne "deployed") {
+      Write-Warning "helm release $($r[0])/$($r[1]) is '$($status.info.status)'. Uninstalling so apply can recreate it."
+      helm -n $r[0] uninstall $r[1] --wait --timeout 3m
+      $cleaned = $true
+    }
+  }
+  if (-not $cleaned) { throw "terraform apply failed and no helm release is in a failed state. See the error above." }
+  Start-Sleep 30   # 컨트롤플레인이 숨 돌릴 시간
+}
+if (-not $applied) { throw "terraform apply failed 3 times" }
 $DbHost = terraform -chdir="$Compute" output -raw rds_address
 
 aws eks update-kubeconfig --name $Cluster --region $Region; Check "update-kubeconfig"

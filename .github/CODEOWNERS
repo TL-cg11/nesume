@@ -1,0 +1,8 @@
+infra/**              @TL-cg11
+deploy/**             @TL-cg11
+.github/**            @TL-cg11
+scripts/**            @TL-cg11
+app/app/core/**       @TL-cg11
+app/app/auth/**       @TL-cg11
+app/app/policy/**     @TL-cg11
+docs/policy/**        @TL-cg11
