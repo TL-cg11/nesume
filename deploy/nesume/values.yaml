@@ -56,6 +56,10 @@ config:
   COGNITO_JWKS_URL: ""
   OPERATOR_MFA_REQUIRED: "true"      # D7: 운영자 보호 API 에 TOTP 등록 + 최근 로그인 요구
   MFA_SESSION_MINUTES: "15"
+  # A2 LLM. 자격증명은 IRSA(app 역할의 bedrock:InvokeModel). 모델 교체는 LLM_MODEL_ID 한 줄
+  LLM_PROVIDER: bedrock
+  LLM_MODEL_ID: global.amazon.nova-2-lite-v1:0   # Anthropic 게이트가 열리면 global.anthropic.claude-haiku-5-5
+  BEDROCK_REGION: ap-northeast-2
   DB_HOST: ""
   DB_PORT: "5432"
   DB_NAME: nesume

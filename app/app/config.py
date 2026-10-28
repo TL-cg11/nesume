@@ -35,6 +35,18 @@ class Settings(BaseSettings):
     kms_key_alias: str | None = None
     app_secret_name: str | None = None
 
+    # A2 LLM 제공자. none 이면 호출 시 LlmUnavailable → 기능들이 규칙 결과만 돌려준다(테스트 기본).
+    llm_provider: Literal["none", "bedrock"] = "none"
+    # Converse API 라 모델 교체는 이 값 하나. 10-28 현재 Anthropic 은 계정 게이트로 거부 →
+    # 임시 Nova 2 Lite. 열리면 global.anthropic.claude-haiku-5-5 (IAM 은 둘 다 허용).
+    llm_model_id: str = "global.amazon.nova-2-lite-v1:0"
+    bedrock_region: str = "ap-northeast-2"
+    # 로컬 전용. compose 의 AWS_* 는 LocalStack 더미 키라 Bedrock 에 못 쓴다.
+    # AWS(EKS)에서는 비워 두고 IRSA(기본 자격증명 체인)를 쓴다.
+    bedrock_access_key_id: str | None = None
+    bedrock_secret_access_key: str | None = None
+    bedrock_session_token: str | None = None
+
     cognito_user_pool_id: str | None = None
     cognito_client_id: str | None = None
     # D6/D7: 앱 클라이언트가 web·runner 둘이라 복수 허용(쉼표 구분). 비어 있으면 cognito_client_id 하나.
