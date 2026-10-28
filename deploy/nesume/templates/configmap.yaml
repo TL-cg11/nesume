@@ -6,5 +6,9 @@ metadata:
     {{- include "nesume.labels" . | nindent 4 }}
 data:
   {{- range $k, $v := .Values.config }}
+  {{- if ne $k "EMBEDDING_URL" }}
   {{ $k }}: {{ $v | toString | quote }}
   {{- end }}
+  {{- end }}
+  # D20: 비어 있으면 차트 안의 embedder Service. 값이 있으면 그대로(외부 서빙).
+  EMBEDDING_URL: {{ include "nesume.embeddingUrl" . | quote }}

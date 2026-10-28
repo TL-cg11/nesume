@@ -43,5 +43,8 @@ serviceAccount:
 hpa:
   enabled: false
 
+embedder:
+  enabled: true                      # up.ps1/deploy.ps1 이 ECR nesume/embedder 최신 태그를 --set-string image.embedder.tag 로 넘긴다. 저장소가 비면 false 로 배포
+
 pdb:
   enabled: true                      # minAvailable 1(기본값). replicas 1 로 내리면 drain 이 막히니 같이 끈다
