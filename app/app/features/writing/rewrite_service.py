@@ -42,7 +42,13 @@ from app.guardrail import Guardrail, LlmUnavailable, PipelineResult, RequestCont
 TEMPLATE_NAME = "rewrite-default"
 
 #: 이 기능이 감사 로그에 남기는 이름.
-FEATURE = "writing.rewrite"
+#:
+#: ★ **B15 취합 시트(`eval/scenarios_sheet.yaml`)가 쓰는 값과 같아야 한다.**
+#:   평가 러너는 시트의 `feature` 로 보낼 API 를 고르고, 판정은 감사 로그에서 읽는다.
+#:   두 값이 어긋나면 보내기는 맞게 보내도 **로그를 찾지 못한다.**
+#:   시트가 `rewrite.generate` 로 적어 두었으므로 그쪽에 맞춘다
+#:   (`matching.analyze`·`style.adjust` 와 같은 `<기능>.<동작>` 꼴이기도 하다).
+FEATURE = "rewrite.generate"
 
 
 @dataclass(frozen=True)
