@@ -8,9 +8,10 @@ app 이미지에는 torch·모델이 들어가지 않는다(`app/app/retrieval/e
 | 서비스 주소(클러스터 안) | `http://nesume-embedder:8080` → 환경변수 `EMBEDDING_URL` (ConfigMap, 차트가 채운다) |
 | 임베딩 | `POST /embed` 본문 `{"inputs": ["텍스트", ...], "normalize": true, "truncate": true}` → `[[1024 floats], ...]` |
 | 헬스 | `GET /health` 200 |
-| 모델 | `EMBEDDING_MODEL=bge-m3`, 1024차원, 코사인(정규화 출력), 최대 8192 토큰(CPU 처리량을 위해 512~1024 토큰 청크 권장) |
-| 배치 | 요청 1개에 최대 64 텍스트(`MAX_CLIENT_BATCH_SIZE`) |
-| 리소스 | fp32 CPU: RSS ~3GB, 2 vCPU 기준 1~3 문서/s. 전용 노드그룹 `nesume-dev-embedding`(taint `nesume.io/workload=embedding`) |
+| 모델 | `EMBEDDING_MODEL=bge-m3`, 1024차원, 코사인(정규화 출력). **입력은 2048 토큰에서 잘린다**(`MAX_BATCH_TOKENS`). C 는 512~1024 토큰 청크로 보낸다 |
+| 배치 | 요청 1개에 최대 32 텍스트(`MAX_CLIENT_BATCH_SIZE`). 백엔드(ORT)는 내부적으로 8개씩 처리 |
+| 리소스 | fp32 ONNX(onnxruntime) CPU. 10-28 로컬 실측(arm64 8코어 VM): 기동 65s, RSS 4.4GB, 피크 4.45GB, 800토큰×32건 61s. 전용 노드그룹 `nesume-dev-embedding`(m7g.large, taint `nesume.io/workload=embedding`), requests 4.5Gi / limits 6Gi |
+| 왜 ONNX | 같은 모델을 `pytorch_model.bin`(candle 백엔드)으로 돌리면 CPU 에서 3배 이상 느렸다(같은 배치 205s). 모델 최대 길이 8192 로 워밍업하면 어텐션 메모리가 7GB 를 넘어 OOM → 2048 로 제한 |
 
 ## 이미지 빌드·푸시
 
