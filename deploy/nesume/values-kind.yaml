@@ -31,6 +31,7 @@ config:
   COGNITO_ISSUER: ""
   COGNITO_JWKS_URL: ""
   OPERATOR_MFA_REQUIRED: "false"
+  LLM_PROVIDER: none                 # kind 에는 IRSA 가 없다. 매니페스트 검증용이라 규칙 결과만
 
 # kind 에서만 values 에 비밀번호를 적는다.
 secrets:

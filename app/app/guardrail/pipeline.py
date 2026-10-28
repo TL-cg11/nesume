@@ -38,7 +38,14 @@ from typing import Awaitable, Callable, Mapping, Protocol, Sequence
 
 from app.guardrail.classifier import PolicyLike, classify
 from app.guardrail.multiturn import TurnStore, check_multiturn, make_turn
-from app.guardrail.llm_client import LlmClient, LlmRequest, LlmResponse, Usage, ZERO_USAGE
+from app.guardrail.llm_client import (
+    DEFAULT_SPLIT_MAX_OUTPUT_TOKENS,
+    ZERO_USAGE,
+    LlmClient,
+    LlmRequest,
+    LlmResponse,
+    Usage,
+)
 from app.guardrail.output_guard import OutputContext, check_output
 from app.guardrail.schema import Finding, Verdict, allow, worse_decision
 from app.pii import (
@@ -390,7 +397,10 @@ class Guardrail:
 
         # 4. 조각별 프롬프트. 호출 횟수 상한은 A2 가 **부르기 전에** 본다
         requests = [
-            LlmRequest(prompt=prompt, system=DEFAULT_SYSTEM_PROMPT)
+            LlmRequest(
+                prompt=prompt, system=DEFAULT_SYSTEM_PROMPT,
+                max_output_tokens=DEFAULT_SPLIT_MAX_OUTPUT_TOKENS,
+            )
             for prompt in parts(tokenized.text)
         ]
         responses, usage = await self.llm.generate_split(requests)

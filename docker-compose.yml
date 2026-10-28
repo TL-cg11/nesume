@@ -115,6 +115,14 @@ services:
       COGNITO_JWKS_URL: http://cognito:9229/${COGNITO_USER_POOL_ID}/.well-known/jwks.json
       # D6 admin API(역할 변경)·시드가 cognito-idp 를 호출할 때 쓰는 로컬 엔드포인트. AWS 에서는 미설정.
       COGNITO_LOCAL_ENDPOINT: http://cognito:9229
+      # A2 LLM. 기본 none(규칙 결과만). 실제 Bedrock 을 쓰려면 .env 에 LLM_PROVIDER=bedrock 과
+      # 본인 IAM 키를 넣는다 — 위 AWS_* 는 LocalStack 더미 키라 Bedrock 에 쓸 수 없다.
+      LLM_PROVIDER: ${LLM_PROVIDER:-none}
+      LLM_MODEL_ID: ${LLM_MODEL_ID:-global.amazon.nova-2-lite-v1:0}
+      BEDROCK_REGION: ${BEDROCK_REGION:-ap-northeast-2}
+      BEDROCK_ACCESS_KEY_ID: ${BEDROCK_ACCESS_KEY_ID:-}
+      BEDROCK_SECRET_ACCESS_KEY: ${BEDROCK_SECRET_ACCESS_KEY:-}
+      BEDROCK_SESSION_TOKEN: ${BEDROCK_SESSION_TOKEN:-}
     ports:
       - "${HOST_BIND_IP}:${APP_PORT:?APP_PORT is required}:8000"
     depends_on:
