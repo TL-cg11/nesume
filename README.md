@@ -97,6 +97,7 @@ app/                 백엔드 (FastAPI)
   migrations/        Alembic 마이그레이션
   tests/             pytest
 web/                 프론트엔드 (React + Vite, nginx)
+embedder/            D20 임베딩 서비스 이미지 (TEI + bge-m3, 모델 내장). 사용법은 embedder/README.md
 infra/
   bootstrap/         Terraform: tfstate 버킷·잠금 테이블·ECR (D4, apply는 크레딧 뒤)
 docs/dev/            개발 가이드 (backend-guide.md)
@@ -166,7 +167,8 @@ docker compose run --rm migrate alembic upgrade head
 
 ## 이미지 태그 규칙 (ECR)
 
-- 저장소: `<ECR>/nesume/app`, `<ECR>/nesume/web`. `<ECR>`은 `<account>.dkr.ecr.ap-northeast-2.amazonaws.com`.
+- 저장소: `<ECR>/nesume/app`, `<ECR>/nesume/web`, `<ECR>/nesume/embedder`(D20). `<ECR>`은 `<account>.dkr.ecr.ap-northeast-2.amazonaws.com`.
+- `embedder`만 예외로 매 커밋 빌드하지 않는다(모델 내장 ~2.5GB). `embedder/`가 바뀐 main 커밋 또는 수동 실행(`embedder.yml`)에서만 올리고, 배포 스크립트가 ECR 최신 태그를 집는다.
 - 태그는 **git sha 하나**: `<ECR>/nesume/app:<git sha>`. `latest`·브랜치명 태그 금지. ECR은 `IMMUTABLE`이라 같은 태그를 덮어쓸 수 없다.
 - 환경 승격(dev → staging → prod)은 재빌드가 아니라 **같은 sha를 Helm values의 `image.tag`에 적는 방식**으로 한다.
 - 빌드 시 `--build-arg APP_VERSION=<git sha>`를 넣으면 `/health`의 `version`으로 어떤 빌드가 떠 있는지 확인할 수 있다. 로컬 빌드는 `dev`.
