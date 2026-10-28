@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router'
 import { resumesApi } from './api.js'
 import DiffView from './DiffView.jsx'
 import ShareTags from './ShareTags.jsx'
@@ -130,7 +131,9 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete, 
   return (
     <div className="editor">
       <div className="row">
-        <h2>{question.title}</h2>
+        <h2 className="grow">{question.title}</h2>
+        {/* A6 리라이팅: 고른 후보를 이 문항의 새 버전으로 저장할 수 있게 자소서·문항 ID를 넘긴다(A 요청 10/28) */}
+        <Link to={`/writing?${new URLSearchParams({ resume: resumeId, question: question.id })}`}>글 다듬기</Link>
         <button className="danger" onClick={onDelete}>
           문항 삭제
         </button>
@@ -145,6 +148,7 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete, 
           새 버전으로 저장
         </button>
       </div>
+      {body !== savedBody && <p className="muted">저장하지 않은 수정이 있습니다. 글 다듬기로 가기 전에 저장해 주세요.</p>}
       {notice && <p className="notice">{notice}</p>}
       {error && <p className="error">{error}</p>}
 
