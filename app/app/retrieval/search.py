@@ -6,13 +6,26 @@ C2 정책 로더가 만든 WHERE를 벡터 검색에 **강제로** 붙인다. �
 
 런타임 동작은 `poc/c3_c6_e2e_poc.py`로 검증됨(실 A1 mask + bge-m3(1024) + pgvector + C2 필터, ALL PASS).
 유사도는 코사인(bge-m3 정규화) → `cosine_distance`. 필터+HNSW 조합은 iterative_scan으로 정확도 유지(C1 결론).
+
+가드레일(A8) 연결: spec §8.2 시그니처 `search(query, role, user_id, top_k)`는 `PersonalRetriever`가
+A8 `Retriever` 규약 그대로 구현한다(질의문 → 임베딩 → `search_personal` → `Chunk`). docs/C6.md.
 """
+from __future__ import annotations
+
+import asyncio
+from collections.abc import Callable
+from contextlib import AbstractContextManager
+from dataclasses import dataclass
+
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
+from app.db import SessionLocal
+from app.guardrail.pipeline import Chunk
 from app.models.embedding import MODEL_VERSION, JobPostingEmbedding, UserProfileEmbedding
 from app.models.posting import JobPosting
 from app.policy.policy import Policy, build_where, default_matrix_path
+from app.retrieval.embedder import Embedder
 
 #: 정책 매트릭스 1회 로드. 경로는 env `POLICY_MATRIX_PATH`(D2 공식본) 우선, 없으면 번들.
 _policy = Policy.load(default_matrix_path())
@@ -85,6 +98,9 @@ def search_personal(
             UserProfileEmbedding.id,
             UserProfileEmbedding.source_type,
             UserProfileEmbedding.source_id,
+            UserProfileEmbedding.chunk_index,
+            UserProfileEmbedding.content,  # B가 저장 때 토큰화한 본문(spec §8.3) — 원문 PII 없음
+            UserProfileEmbedding.grade,
             dist.label("distance"),
         )
         # 정책 조건은 OR 묶음이라 괄호로 감싼다. 없으면 뒤의 AND가 마지막 OR 항에만 걸린다(C6 괄호 수정)
@@ -95,3 +111,75 @@ def search_personal(
         .limit(top_k)
     )
     return session.execute(stmt).all()
+
+
+# --------------------------------------------------------------------------
+# 가드레일(A8) 연결 — spec §8.2 `search(query, role, user_id, top_k)`
+# --------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class PolicyChunk(Chunk):
+    """A8 `Chunk` + 정책 판정. `Chunk`이므로 파이프라인은 그대로 받는다.
+
+    `decision`은 C2 매트릭스의 role×grade 판정(allow/mask). 검색은 WHERE에서 이미 걸렀으므로
+    여기서 거르지 않고 **표시만** 한다(거르는 곳이 둘이면 한쪽이 바뀔 때 구멍). 본문은 이미
+    토큰화돼 있어 다시 가리지 않는다 — 빠진 건 mask 판정 신호(spec §8.4·§9.1)라 그것만 싣는다.
+    """
+
+    decision: str
+
+
+def doc_id_of(source_type: str, source_id: object, chunk_index: int) -> str:
+    """감사 로그 `doc_ids`용 원문 기준 식별자(예: `resume:<uuid>#0`). 재색인해도 바뀌지 않는다."""
+    return f"{source_type}:{source_id}#{chunk_index}"
+
+
+class PersonalRetriever:
+    """A8 `Retriever` 규약 구현: `async search(query, *, role, user_id, top_k) -> list[Chunk]`.
+
+    질의문을 **색인과 같은 임베더**로 벡터화해 `search_personal`(C2 WHERE 강제)을 부른다.
+    대상은 개인 인덱스만(공고는 외부 텍스트라 인젝션 표면 — A11은 `get_posting_fields`로 받음).
+    세션은 호출마다 직접 연다(`DbAuditSink`와 같은 방식). DB·임베딩은 동기라 스레드에서 돈다.
+    임베더 오류는 그대로 올린다 — 빈 결과로 삼키면 "검색 0건"과 구분이 안 된다.
+    """
+
+    def __init__(
+        self,
+        embedder: Embedder,
+        *,
+        session_factory: Callable[[], AbstractContextManager[Session]] = SessionLocal,
+        policy: Policy | None = None,
+    ):
+        self._embedder = embedder
+        self._session_factory = session_factory
+        self._policy = policy or _policy  # 검색 WHERE와 같은 정책 객체 → 판정이 어긋나지 않게
+
+    async def search(self, query: str, *, role: str, user_id: str, top_k: int) -> list[Chunk]:
+        if not role or not user_id:  # 임베딩 호출 전에 막는다(필터 없는 경로 차단)
+            raise ValueError("role and user_id are required")
+        return await asyncio.to_thread(self._search, query, role, user_id, top_k)
+
+    def _search(self, query: str, role: str, user_id: str, top_k: int) -> list[Chunk]:
+        vec = self._embedder.embed([query])[0]
+        with self._session_factory() as db:
+            rows = search_personal(db, vec, role=role, user_id=user_id, top_k=top_k)
+        return [
+            PolicyChunk(
+                doc_id=doc_id_of(r.source_type, r.source_id, r.chunk_index),
+                grade=r.grade,
+                text=r.content,
+                decision=self._policy.decision(role, r.grade)[0],
+            )
+            for r in rows
+        ]
+
+
+def build_retriever(embedder: Embedder | None = None) -> PersonalRetriever | None:
+    """가드레일 주입용. 임베더가 없으면 `None` → retriever 미주입(검색 단계 생략, 현행 동작).
+
+    운영 임베더(D bge-m3 서빙)가 생기면 그 클라이언트를 넘기면 켜진다. 평가 환경에만 로컬 임베더를
+    붙이지 않는다 — 평가가 운영과 다른 경로를 재게 된다(docs/C6.md 결정 3).
+    """
+    if embedder is None:
+        return None
+    return PersonalRetriever(embedder)
