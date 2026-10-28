@@ -1,0 +1,29 @@
+/* 학습 로드맵 — roadmap-·skill-·lesson-·method-chip 등 주요 스타일은 layout.css(목업 포팅)에 있다.
+   여기엔 페이지 래퍼와 소소한 보조만 둔다. */
+
+.learning-page { display: flex; flex-direction: column; gap: 20px; }
+.inline-head { display: flex; align-items: center; gap: 12px; }
+
+/* 오류 상태(roadmap-empty 변형) */
+.roadmap-error { background: #FCEEEE; }
+.roadmap-error strong { color: #8A3B3B; }
+
+/* "왜 이 순서인지" 설명(A8 경유) */
+.roadmap-explain-row { display: flex; flex-direction: column; gap: 10px; margin-bottom: 18px; }
+.roadmap-explanation { background: var(--accent-soft); border-radius: 10px; padding: 14px 16px; color: #3A4656; font-size: 12px; line-height: 1.7; }
+
+/* skill-panel 안의 생성 버튼은 위 여백을 둔다 */
+.skill-panel .btn-full { margin-top: 16px; }
+
+.lp-select { width: 100%; margin: 4px 0 12px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface, #fff); color: var(--fg); }
+.lp-step-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 14px 0 8px; }
+.lp-step-head h4 { margin: 0; font-size: 13px; }
+.lp-filter { display: inline-flex; gap: 4px; }
+.lp-filter button { border: 1px solid var(--border); border-radius: 999px; background: transparent; padding: 3px 9px; font-size: 11px; color: var(--muted); cursor: pointer; }
+.lp-filter button.on { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+.lp-postings { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 260px; overflow-y: auto; }
+.lp-posting { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid var(--border); border-radius: 8px; background: transparent; padding: 8px 10px; text-align: left; cursor: pointer; color: var(--fg); }
+.lp-posting.on { border-color: var(--accent); background: var(--accent-soft); }
+.lp-posting-title { font-size: 12px; font-weight: 600; line-height: 1.4; }
+.lp-badge { flex-shrink: 0; border-radius: 999px; padding: 2px 7px; font-size: 10px; font-weight: 700; color: var(--muted); background: var(--bg); }
+.lp-badge.applied { color: var(--success); background: var(--success-soft); }

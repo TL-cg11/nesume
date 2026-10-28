@@ -12,12 +12,16 @@ const NAV_META = {
   experiences: { icon: 'case', group: '워크스페이스' },
   writing: { icon: 'spark', group: 'AI 도구' },
   interview: { icon: 'msg', group: 'AI 도구' },
+  // C 공고 추천·학습 로드맵·지원 현황
+  recommend: { icon: 'dash', group: '취업 준비' },
+  learning: { icon: 'spark', group: '취업 준비' },
+  applications: { icon: 'case', group: '취업 준비' },
   github: { icon: 'git', group: '소개' },
   // B17 멘토 공유, B9 프롬프트 템플릿(발표 시안의 '관리' 그룹)
   mentor: { icon: 'user', group: '관리' },
   templates: { icon: 'shield', group: '관리' },
 }
-const GROUP_ORDER = ['워크스페이스', 'AI 도구', '소개', '관리', '기타']
+const GROUP_ORDER = ['워크스페이스', 'AI 도구', '취업 준비', '소개', '관리', '기타']
 
 function groupNav(navItems) {
   const groups = new Map()
