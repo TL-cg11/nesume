@@ -27,3 +27,14 @@
 .lp-posting-title { font-size: 12px; font-weight: 600; line-height: 1.4; }
 .lp-badge { flex-shrink: 0; border-radius: 999px; padding: 2px 7px; font-size: 10px; font-weight: 700; color: var(--muted); background: var(--bg); }
 .lp-badge.applied { color: var(--success); background: var(--success-soft); }
+
+.lp-link { border: 0; background: transparent; color: var(--accent); font-size: 11px; font-weight: 700; cursor: pointer; padding: 0; }
+.lp-covered { list-style: none; margin: 0 0 10px; padding: 8px 10px; border-radius: 8px; background: var(--bg); display: grid; gap: 4px; }
+.lp-covered li { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; }
+.lp-covered span { color: var(--muted); text-align: right; }
+.lp-group-title { margin: 12px 0 6px; font-size: 12px; font-weight: 700; color: var(--fg); }
+.lp-group-title span { margin-left: 6px; font-weight: 400; color: var(--muted); font-size: 11px; }
+.lp-conditions { display: flex; flex-wrap: wrap; gap: 6px; }
+.lp-conditions .lp-group-title { width: 100%; }
+.lp-cond { border: 1px solid var(--border); border-radius: 999px; padding: 3px 9px; font-size: 11px; color: var(--muted); }
+.lp-cond b { color: var(--fg); margin-right: 4px; }

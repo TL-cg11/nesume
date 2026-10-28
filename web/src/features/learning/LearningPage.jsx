@@ -10,6 +10,23 @@ import './learning.css'
 const IMPORTANCE_LABEL = { required: '필수', preferred: '우대', mentioned: '참고' }
 const MODE_LABEL = { online: '온라인', offline: '오프라인' }
 
+// 부족 역량 카드 — 넣기/빼기 토글(로드맵 생성 시 들어갈 역량)
+function GapCard({ g, on, onToggle }) {
+  return (
+    <div className={`c-skill-card ${on ? 'c-skill-card-added' : ''}`}>
+      <div className="c-skill-card-copy">
+        <span className={`c-skill-level ${g.importance === 'required' ? 'c-skill-required' : 'c-skill-preferred'}`}>
+          {IMPORTANCE_LABEL[g.importance] ?? g.importance}
+        </span>
+        <strong>{g.label}</strong>
+      </div>
+      <button className={`${on ? 'c-btn-secondary' : 'c-btn-primary'} c-skill-add`} onClick={() => onToggle(g)}>
+        {on ? '빼기' : '넣기'}
+      </button>
+    </div>
+  )
+}
+
 export default function LearningPage() {
   const [weeklyHours, setWeeklyHours] = useState(5)
   const [mode, setMode] = useState(null) // null=전체, 'online'|'offline'
@@ -24,7 +41,8 @@ export default function LearningPage() {
   const [appliedIds, setAppliedIds] = useState(() => new Set()) // 지원 현황에 있는 공고
   const [filter, setFilter] = useState('all') // all | applied | not
   const [postingId, setPostingId] = useState(null)
-  const [gapInfo, setGapInfo] = useState(null) // { counts } — 이미 갖춘 것 개수 표시
+  const [gapInfo, setGapInfo] = useState(null) // /learning-gaps 응답(gaps·domain_gaps·conditions·covered·counts)
+  const [showCovered, setShowCovered] = useState(false)
   const [gapsLoading, setGapsLoading] = useState(false)
 
   const [roadmap, setRoadmap] = useState(null) // 현재 로드맵(RoadmapOut) 또는 null
@@ -98,8 +116,9 @@ export default function LearningPage() {
     setError(null)
     try {
       const res = await learningGapsApi.forPosting(resumeId, pid)
-      setGaps(res.gaps)
-      setGapInfo({ counts: res.counts })
+      setGaps(res.gaps) // 기술 역량은 기본 포함, 직무 역량은 사용자가 고르면
+      setGapInfo(res)
+      setShowCovered(false)
     } catch (e) {
       setError(e instanceof ApiError ? e.message : '부족 역량을 분석하지 못했습니다.')
     } finally {
@@ -113,6 +132,7 @@ export default function LearningPage() {
   })
 
   const hasGap = (key) => gaps.some((g) => g.key === key)
+  const toggleGap = (g) => setGaps((v) => (v.some((x) => x.key === g.key) ? v.filter((x) => x.key !== g.key) : [...v, g]))
   const addGap = (g) => setGaps((v) => (v.some((x) => x.key === g.key) ? v : [...v, g]))
   const removeGap = (key) => setGaps((v) => v.filter((x) => x.key !== key))
   const addCustom = (e) => {
@@ -280,32 +300,76 @@ export default function LearningPage() {
             <>
               <div className="lp-step-head">
                 <h4>③ 부족한 역량</h4>
-                {gapInfo && (
-                  <span className="c-roadmap-muted">
-                    이미 갖춤 {(gapInfo.counts.covered ?? 0) + (gapInfo.counts.in_experience_only ?? 0)}개
-                  </span>
+                {gapInfo && gapInfo.covered.length > 0 && (
+                  <button type="button" className="lp-link" onClick={() => setShowCovered((v) => !v)}>
+                    이미 갖춤 {gapInfo.covered.length}개 {showCovered ? '▴' : '▾'}
+                  </button>
                 )}
               </div>
               {gapsLoading && <p className="c-roadmap-muted">자소서·경험과 공고를 비교하는 중…</p>}
-              {!gapsLoading && gapInfo && gaps.length === 0 && (
-                <p className="c-roadmap-muted">이 공고의 필수·우대 요건은 이미 자소서·경험에 있습니다.</p>
+
+              {gapInfo && showCovered && (
+                <ul className="lp-covered">
+                  {gapInfo.covered.map((c) => (
+                    <li key={c.label}>
+                      <strong>{c.label}</strong>
+                      <span>
+                        {c.status === 'covered'
+                          ? '자소서에 있음'
+                          : `경험에만 있음${c.experiences.length ? ` · ${c.experiences.join(', ')}` : ''}`}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               )}
-              {gaps.map((g) => (
-                <div key={g.key} className="c-skill-card c-skill-card-added">
-                  <div className="c-skill-card-copy">
-                    <span className={`c-skill-level ${g.importance === 'required' ? 'c-skill-required' : 'c-skill-preferred'}`}>
-                      {IMPORTANCE_LABEL[g.importance] ?? g.importance}
-                    </span>
-                    <strong>{g.label}</strong>
-                  </div>
-                  <button className="c-btn-secondary c-skill-add" onClick={() => removeGap(g.key)}>빼기</button>
-                </div>
-              ))}
+
+              {gapInfo && (
+                <>
+                  <p className="lp-group-title">기술 역량 <span>로드맵에 기본으로 넣어요</span></p>
+                  {gapInfo.gaps.length === 0 && <p className="c-roadmap-muted">부족한 기술 역량이 없습니다.</p>}
+                  {gapInfo.gaps.map((g) => <GapCard key={g.key} g={g} on={hasGap(g.key)} onToggle={toggleGap} />)}
+
+                  {gapInfo.domain_gaps.length > 0 && (
+                    <>
+                      <p className="lp-group-title">
+                        직무 역량 <span>필요하면 골라 넣어요 · 맞는 강좌가 적을 수 있어요</span>
+                      </p>
+                      {gapInfo.domain_gaps.map((g) => (
+                        <GapCard key={g.key} g={g} on={hasGap(g.key)} onToggle={toggleGap} />
+                      ))}
+                    </>
+                  )}
+
+                  {gapInfo.conditions.length > 0 && (
+                    <div className="lp-conditions">
+                      <p className="lp-group-title">지원 조건 <span>배울 대상이 아니라 참고용이에요</span></p>
+                      {gapInfo.conditions.map((c) => (
+                        <span className="lp-cond" key={c.label}>
+                          <b>{c.kind}</b> {c.label}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+
               <form className="c-custom-skill-form" onSubmit={addCustom}>
                 <input aria-label="직접 역량 추가" value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="직접 추가할 역량" />
                 <button type="submit">추가</button>
               </form>
             </>
+          )}
+
+          {gaps.length > 0 && (
+            <div className="c-selected-skills-line">
+              <span>로드맵에 넣을 역량</span>
+              {gaps.map((g) => (
+                <span className="c-selected-skill" key={g.key}>
+                  {g.label}
+                  <button aria-label={`${g.label} 빼기`} onClick={() => removeGap(g.key)}>×</button>
+                </span>
+              ))}
+            </div>
           )}
 
           <button className="c-btn-primary c-btn-full" onClick={generate} disabled={creating || gaps.length === 0}>

@@ -217,3 +217,66 @@ def test_work24_open_unescapes_double_encoded_entities():
     xml = (b"<dhsOpenEmpInfoDetailRoot><empSeqno>1</empSeqno>"
            b"<empWantedTitle>A&amp;apos;s &amp;amp; B</empWantedTitle></dhsOpenEmpInfoDetailRoot>")
     assert parse_detail(parse_xml(xml))["title"] == "A's & B"
+
+
+# --------------------------------------------------------------------------
+# 3종 분류 — 기술 역량 / 직무 역량 / 지원 조건 (실측 조각 그대로)
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    ("text", "kind"),
+    [
+        ("병역필(접수마감일 기준", "병역"),
+        ("면제자", "병역"),
+        ("학력 : 대학교(학사)졸 이상", "학력"),
+        ("경력 7년 이하", "경력"),
+        ("17 계리결산 관련 업무 경력 3년 이상", "경력"),
+        ("성별 제한 없음", "인적사항"),
+        ("해외여행에 결격 사유가 없는 자", "결격"),
+        ("관련전공 : 전공 무관", "전공"),
+    ],
+)
+def test_conditions_detected(text, kind):
+    from app.features.skill_gap.classify import CONDITION, kind_of
+
+    assert kind_of(text, "other") == (CONDITION, kind)
+
+
+@pytest.mark.parametrize("text", ["IFRS17", "K-ICS 계리결산에 대한 실무적 이해", "계리소프트웨어", "MATLAB"])
+def test_domain_competencies_kept(text):
+    from app.features.skill_gap.classify import DOMAIN, kind_of
+
+    assert kind_of(text, "other") == (DOMAIN, None)
+
+
+@pytest.mark.parametrize("text", ["응시자격", "&apos", "등", "A"])
+def test_noise_dropped(text):
+    from app.features.skill_gap.classify import NOISE, kind_of
+
+    assert kind_of(text, "other")[0] == NOISE
+
+
+def test_vocab_terms_always_skill():
+    from app.features.skill_gap.classify import SKILL, kind_of
+
+    assert kind_of("Python", "language") == (SKILL, None)
+
+
+def test_gaps_split_skill_domain_conditions_covered(monkeypatch):
+    # 실제 공고 모양: A11은 자격·우대 필드에서 문장 조각을, 컴퓨터 활용에서 기술을 뽑는다
+    posting = {
+        **_POSTING,
+        "job_content": "데이터 분석 업무",
+        "computer_skills": "Python, SQL",
+        "certificates": "- 병역필 또는 면제자\n- 학력 : 대졸 이상",
+        "preferred": "- IFRS17 결산 경험",
+    }
+    evidence = UserEvidence(resume_text="Python으로 데이터 분석을 했습니다.")
+    out = _call(monkeypatch, evidence, posting)
+
+    skill_keys = {g.key for g in out.gaps}
+    assert "sql" in skill_keys and "python" not in skill_keys  # 자소서에 있는 python은 갭 아님
+    assert all("병역" not in g.label and "학력" not in g.label for g in out.gaps + out.domain_gaps)
+    assert {c.kind for c in out.conditions} >= {"병역"}
+    assert any("IFRS17" in g.label for g in out.domain_gaps)
+    assert any(c.label == "Python" and c.status == "covered" for c in out.covered)
