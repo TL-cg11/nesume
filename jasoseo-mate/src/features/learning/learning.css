@@ -1,0 +1,16 @@
+/* 학습 로드맵 — roadmap-·skill-·lesson-·method-chip 등 주요 스타일은 layout.css(목업 포팅)에 있다.
+   여기엔 페이지 래퍼와 소소한 보조만 둔다. */
+
+.learning-page { display: flex; flex-direction: column; gap: 20px; }
+.inline-head { display: flex; align-items: center; gap: 12px; }
+
+/* 오류 상태(roadmap-empty 변형) */
+.roadmap-error { background: #FCEEEE; }
+.roadmap-error strong { color: #8A3B3B; }
+
+/* "왜 이 순서인지" 설명(A8 경유) */
+.roadmap-explain-row { display: flex; flex-direction: column; gap: 10px; margin-bottom: 18px; }
+.roadmap-explanation { background: var(--accent-soft); border-radius: 10px; padding: 14px 16px; color: #3A4656; font-size: 12px; line-height: 1.7; }
+
+/* skill-panel 안의 생성 버튼은 위 여백을 둔다 */
+.skill-panel .btn-full { margin-top: 16px; }
