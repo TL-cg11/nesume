@@ -30,7 +30,7 @@
   border-radius: var(--radius-sm); cursor: pointer;
 }
 .home-recent:hover, .home-quick:hover { background: color-mix(in srgb, var(--accent-soft) 60%, transparent); }
-.home-recent:focus-within, .home-quick:focus-within { box-shadow: var(--focus-ring); }
+.home-recent:has(:focus-visible), .home-quick:has(:focus-visible) { box-shadow: var(--focus-ring); }
 .home-recent-title::after, .home-quick > a.home-quick-title::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
 .home-recent-title:focus-visible, .home-quick > a.home-quick-title:focus-visible { outline: none; }
 .home-badge {

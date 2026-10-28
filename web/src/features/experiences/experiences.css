@@ -20,7 +20,7 @@
 /* 행 전체 클릭: 제목 링크가 행을 덮는다(링크는 행마다 하나) */
 .exp-list > li:has(> .exp-title) { position: relative; padding-inline: var(--space-5); border-radius: var(--radius-sm); cursor: pointer; }
 .exp-list > li:has(> .exp-title):hover { background: color-mix(in srgb, var(--accent-soft) 60%, transparent); }
-.exp-list > li:has(> .exp-title):focus-within { box-shadow: var(--focus-ring); }
+.exp-list > li:has(> .exp-title):has(:focus-visible) { box-shadow: var(--focus-ring); }
 .exp-list .exp-title::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
 .exp-list .exp-title:focus-visible { outline: none; }
 
