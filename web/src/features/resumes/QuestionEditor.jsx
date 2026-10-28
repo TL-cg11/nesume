@@ -13,7 +13,8 @@ import { TYPES, normalizeType } from '../experiences/templates.js'
 // 문항 편집: 저장할 때마다 새 버전(spec 3.1), 버전 타임라인, 두 버전 비교, 복원
 export default function QuestionEditor({ resumeId, question, onSaved, onDelete, shareRev = 0 }) {
   const [body, setBody] = useState('')
-  const [savedBody, setSavedBody] = useState('')
+  const [savedBody, setSavedBody] = useState('') // 최신 저장 버전의 본문
+  const [loaded, setLoaded] = useState(null) // 편집칸에 불러온 버전 { id, no, body } — 최신이면 최신 버전
   const [limitInput, setLimitInput] = useState(String(question.char_limit ?? BODY_MAX))
   const composing = useRef(false) // 한글 등 입력기 조합 중
   const [blocked, setBlocked] = useState(false) // 글자수를 넘겨 입력이 잘렸는가
@@ -48,6 +49,7 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete, 
           const latest = await resumesApi.getVersion(resumeId, question.id, list[0].id)
           setBody(latest.body)
           setSavedBody(latest.body)
+          setLoaded({ id: latest.id, no: latest.version_no, body: latest.body })
         }
       })
       .catch((e) => setError(e.message))
@@ -89,23 +91,35 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete, 
   const afterSave = async (v) => {
     setBody(v.body)
     setSavedBody(v.body)
+    setLoaded({ id: v.id, no: v.version_no, body: v.body })
     setNotice(null)
     await loadVersions()
     onSaved()
   }
 
+  // 예전 버전을 불러와 고치지 않고 저장하면 '복원'(restored_from 기록), 고쳤으면 일반 저장(10/28)
   const save = async () => {
     try {
-      await afterSave(await resumesApi.saveVersion(resumeId, question.id, body))
+      const isRestore = loaded && loaded.id !== versions[0]?.id && body === loaded.body
+      await afterSave(await (isRestore
+        ? resumesApi.restore(resumeId, question.id, loaded.id)
+        : resumesApi.saveVersion(resumeId, question.id, body)))
       setError(null)
     } catch (e) {
       setError(e.message)
     }
   }
 
-  const restore = async (vid) => {
+  // 버전 기록 행 클릭: 그 버전 본문을 편집칸에 불러온다(복원 버튼 대신, 10/28). 저장 전 수정이 있으면 먼저 묻는다
+  const openVersion = async (v) => {
+    if (loaded?.id === v.id) return
+    if (body !== (loaded?.body ?? savedBody) && !window.confirm('저장하지 않은 수정이 있습니다. 불러오면 사라집니다. 계속할까요?')) return
     try {
-      await afterSave(await resumesApi.restore(resumeId, question.id, vid))
+      const full = await resumesApi.getVersion(resumeId, question.id, v.id)
+      setBody(full.body)
+      setLoaded({ id: full.id, no: full.version_no, body: full.body })
+      setNotice(v.id === versions[0]?.id ? null : `v${full.version_no}을(를) 불러왔습니다. 그대로 저장하면 이 버전으로 복원됩니다.`)
+      setError(null)
     } catch (e) {
       setError(e.message)
     }
@@ -115,6 +129,7 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete, 
     if (!window.confirm(`v${v.version_no}을(를) 삭제할까요? 되돌릴 수 없습니다.`)) return
     try {
       await resumesApi.removeVersion(resumeId, question.id, v.id)
+      if (loaded?.id === v.id) setLoaded(null) // 보던 버전을 지웠으면 본문은 그대로 두고 표시만 해제
       await loadVersions()
       onSaved()
       setError(null)
@@ -268,8 +283,9 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete, 
       </div>
       <ul className="timeline">
         {versions.map((v) => (
-          <li key={v.id}>
-            <strong>v{v.version_no}</strong>
+          <li key={v.id} className={loaded?.id === v.id ? 'on' : undefined}>
+            {/* 버전명·행 빈 곳을 누르면 불러오기(덮개). 공유 태그·삭제는 덮개 위라 따로 동작 */}
+            <button type="button" className="ver-open" onClick={() => openVersion(v)}>v{v.version_no}</button>
             <span className="muted">
               {v.source === 'ai' ? 'AI' : '수동'}
               {v.restored_from && ` · v${versions.find((x) => x.id === v.restored_from)?.version_no ?? '?'}에서 복원`}
@@ -277,14 +293,8 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete, 
               {v.char_count}자 · {new Date(v.created_at).toLocaleString()}
             </span>
             <ShareTags shares={v.shares} />
-            {v !== versions[0] && (
-              <button className="secondary" onClick={() => restore(v.id)}>
-                이 버전으로 복원
-              </button>
-            )}
-            <button className="danger" onClick={() => removeVersion(v)}>
-              삭제
-            </button>
+            <button type="button" className="ver-delete" onClick={() => removeVersion(v)}
+              aria-label={`v${v.version_no} 삭제`} title="삭제">×</button>
           </li>
         ))}
         {versions.length === 0 && <li className="muted">저장된 버전이 없습니다.</li>}
