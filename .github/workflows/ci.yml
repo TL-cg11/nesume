@@ -1,4 +1,5 @@
-# D11 CI. PR 마다 lint·test·security 가 돈다. main 푸시 시 build-deploy 는 2단계에서 추가.
+# D11 CI. PR 마다 lint·test·security 가 돈다. main 푸시면 build-deploy 가 arm64 이미지를 ECR 에 올리고,
+# dev 클러스터가 켜져 있으면 helm 으로 배포한다(꺼져 있으면 skip, 실패 아님).
 # Actions 분 절약: test 는 app/web/compose 변경이 있을 때만 돈다(changes job).
 name: ci
 
@@ -175,3 +176,137 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
+
+  # main 전용. test 가 paths 필터로 skip 돼도 진행한다(lint·security 는 반드시 success).
+  build-deploy:
+    if: >-
+      github.ref == 'refs/heads/main' && !cancelled()
+      && needs.lint.result == 'success' && needs.security.result == 'success'
+      && (needs.test.result == 'success' || needs.test.result == 'skipped')
+    needs: [lint, test, security]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      id-token: write   # OIDC 로 nesume-github-ci 역할을 받는다. 저장소에 AWS 키 없음
+      contents: read
+    concurrency:
+      group: infra        # infra-up/down 과 같은 그룹. 동시에 클러스터를 만지지 않는다
+      cancel-in-progress: false
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      EKS_CLUSTER: ${{ vars.EKS_CLUSTER }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: aws-actions/amazon-ecr-login@v2.1.7
+        id: ecr
+
+      - name: image tag = short sha
+        id: tag
+        run: echo "sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      # ECR 태그가 IMMUTABLE 이라 같은 sha 재실행은 푸시를 건너뛴다.
+      - name: already in ECR?
+        id: exists
+        env:
+          SHA: ${{ steps.tag.outputs.sha }}
+        run: |
+          ok=true
+          for r in app web; do
+            aws ecr describe-images --repository-name "nesume/$r" --image-ids "imageTag=$SHA" >/dev/null 2>&1 || ok=false
+          done
+          echo "skip=$ok" >> "$GITHUB_OUTPUT"
+          echo "images for $SHA already in ECR: $ok"
+
+      - uses: docker/setup-qemu-action@v4.4.0
+        if: steps.exists.outputs.skip != 'true'
+      - uses: docker/setup-buildx-action@v4.4.1
+        if: steps.exists.outputs.skip != 'true'
+
+      - name: build & push app (arm64)
+        if: steps.exists.outputs.skip != 'true'
+        uses: docker/build-push-action@v7.4.0
+        with:
+          context: ./app
+          target: runtime
+          build-args: APP_VERSION=${{ steps.tag.outputs.sha }}
+          platforms: linux/arm64
+          push: true
+          provenance: false
+          tags: ${{ steps.ecr.outputs.registry }}/nesume/app:${{ steps.tag.outputs.sha }}
+          cache-from: type=gha,scope=app
+          cache-to: type=gha,scope=app,mode=max
+
+      - name: build & push web (arm64)
+        if: steps.exists.outputs.skip != 'true'
+        uses: docker/build-push-action@v7.4.0
+        with:
+          context: ./web
+          platforms: linux/arm64
+          push: true
+          provenance: false
+          tags: ${{ steps.ecr.outputs.registry }}/nesume/web:${{ steps.tag.outputs.sha }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,scope=web,mode=max
+
+      # 푸시 후 스캔. 걸리면 배포만 막힌다(이미지는 ECR 에 남음).
+      - name: trivy image scan (app)
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          image-ref: ${{ steps.ecr.outputs.registry }}/nesume/app:${{ steps.tag.outputs.sha }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: cluster up?
+        id: cluster
+        run: |
+          if aws eks describe-cluster --name "$EKS_CLUSTER" --query cluster.status --output text 2>/dev/null | grep -q ACTIVE; then
+            echo "up=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "up=false" >> "$GITHUB_OUTPUT"
+            echo "### dev cluster is down, skip deploy (pushed \`${{ steps.tag.outputs.sha }}\` to ECR)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: azure/setup-helm@v4
+        if: steps.cluster.outputs.up == 'true'
+      - uses: hashicorp/setup-terraform@v3
+        if: steps.cluster.outputs.up == 'true'
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false   # output 을 변수로 받기 위해
+
+      - name: helm upgrade (dev)
+        if: steps.cluster.outputs.up == 'true'
+        env:
+          SHA: ${{ steps.tag.outputs.sha }}
+        run: |
+          aws eks update-kubeconfig --name "$EKS_CLUSTER" --region "$AWS_REGION"
+          terraform -chdir=infra/envs/dev/compute init -input=false >/dev/null
+          DB=$(terraform -chdir=infra/envs/dev/compute output -raw rds_address)
+          # --set-string: 숫자만 있는 sha 를 --set 은 int 로 읽어 이미지 이름이 깨진다(10-27 실측)
+          helm upgrade --install nesume deploy/nesume -n dev -f deploy/nesume/values-dev.yaml \
+            --set-string config.DB_HOST="$DB" \
+            --set-string image.app.tag="$SHA" --set-string image.web.tag="$SHA" \
+            --wait --timeout 10m
+
+      - name: health check
+        if: steps.cluster.outputs.up == 'true'
+        env:
+          SHA: ${{ steps.tag.outputs.sha }}
+        run: |
+          ALB=$(kubectl -n dev get ingress nesume -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          for i in $(seq 1 18); do
+            body=$(curl -fsS --max-time 5 "http://$ALB/api/health" || true)
+            if echo "$body" | grep -q "$SHA"; then
+              echo "### deployed \`$SHA\` -> http://$ALB" >> "$GITHUB_STEP_SUMMARY"
+              echo "$body"; exit 0
+            fi
+            sleep 10
+          done
+          echo "/api/health at http://$ALB does not report $SHA"; kubectl -n dev get pods; exit 1
