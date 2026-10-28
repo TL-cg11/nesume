@@ -15,6 +15,7 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete, 
   const [savedBody, setSavedBody] = useState('')
   const [limitInput, setLimitInput] = useState(String(question.char_limit ?? BODY_MAX))
   const composing = useRef(false) // 한글 등 입력기 조합 중
+  const [blocked, setBlocked] = useState(false) // 글자수를 넘겨 입력이 잘렸는가
   const [versions, setVersions] = useState([])
   const [compare, setCompare] = useState({ from: '', to: '' })
   const [diff, setDiff] = useState(null)
@@ -132,9 +133,17 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete, 
   const limit = question.char_limit ?? BODY_MAX
   // 글자수를 줄여 기존 본문이 넘친 경우 — 지우지 않고 저장만 막는다. 한글 조합 중 잠깐 1자 넘는 것은 경고하지 않는다
   const over = body.length > limit && !composing.current
-  const atLimit = body.length === limit || (composing.current && body.length > limit)
+  // 경고는 설정 글자수를 '넘기려 해서 잘렸을 때'만(정확히 도달한 것은 정상, 10/28). 글자수 아래로 내려가면 사라진다
+  const atLimit = blocked && body.length >= limit
   // 새로 늘어난 부분만 잘라 낸다. 글자수를 줄여 이미 넘친 본문은 지우지 않는다(위 over 경고)
-  const cut = (v) => (v.length > limit && v.length > body.length ? v.slice(0, Math.max(limit, body.length)) : v)
+  const cut = (v) => {
+    if (v.length > limit && v.length > body.length) {
+      setBlocked(true)
+      return v.slice(0, Math.max(limit, body.length))
+    }
+    if (v.length < limit) setBlocked(false)
+    return v
+  }
 
   const saveLimit = async (raw) => {
     const next = clampLimit(raw, limit)
@@ -196,7 +205,7 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete, 
         </button>
       </div>
       {body !== savedBody && <p className="muted">저장하지 않은 수정이 있습니다. 글 다듬기로 가기 전에 저장해 주세요.</p>}
-      {atLimit && <p className="error">설정한 글자 수({limit.toLocaleString()}자)에 도달해 더 입력할 수 없습니다.</p>}
+      {atLimit && <p className="error">설정한 글자 수({limit.toLocaleString()}자)를 넘어 더 입력할 수 없습니다.</p>}
       {over && (
         <p className="error">
           설정한 글자 수보다 {(body.length - limit).toLocaleString()}자 많습니다. 줄인 뒤 저장해 주세요.
