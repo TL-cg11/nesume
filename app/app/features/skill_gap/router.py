@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import replace
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -22,7 +23,8 @@ from app.db import get_db
 from app.features.matching.coverage import compare
 from app.features.matching.keywords import PostingFields, extract
 from app.features.matching.service import prepare_posting
-from app.features.skill_gap.classify import CONDITION, DOMAIN, SKILL, kind_of
+from app.features.matching.vocab import squash
+from app.features.skill_gap.classify import CONDITION, DOMAIN, SKILL, kind_of, tidy
 from app.features.skill_gap.evidence import gather_evidence
 from app.features.skill_gap.gap import from_coverage, learning_gaps
 from app.postings.read import get_posting_fields
@@ -96,6 +98,9 @@ def learning_gaps_for(payload: LearningGapsRequest, user: AuthenticatedUser, db:
         if kind == CONDITION:
             conditions.append(ConditionOut(label=f.label, kind=cond, importance=f.importance))
         elif kind in by_kind:
+            if kind == DOMAIN:  # 잘린 조각을 다듬은 말로 보이고, 키도 그 말로(같은 말은 하나로 합쳐짐)
+                label = tidy(f.label)
+                f = replace(f, label=label, key=squash(label))
             by_kind[kind].append(f)
             if f.status != "missing":
                 covered.append(
@@ -103,15 +108,18 @@ def learning_gaps_for(payload: LearningGapsRequest, user: AuthenticatedUser, db:
                 )
 
     def _out(gaps):
+        # 같은 키는 한 번만(중요도순 정렬이라 첫 것이 가장 중요한 것)
+        seen: set[str] = set()
         return [
             GapOut(key=g.key, label=g.label, importance=g.importance, evidence_fields=list(g.evidence_fields))
             for g in gaps
+            if not (g.key in seen or seen.add(g.key))
         ]
 
     return LearningGapsOut(
         gaps=_out(learning_gaps(by_kind[SKILL])),
         domain_gaps=_out(learning_gaps(by_kind[DOMAIN])),
         conditions=list({c.label: c for c in conditions}.values()),
-        covered=covered,
+        covered=list({c.label: c for c in covered}.values()),
         counts=report.counts(),
     )

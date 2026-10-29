@@ -246,6 +246,85 @@ def test_noise_dropped(text):
     assert kind_of(text, "other")[0] == NOISE
 
 
+@pytest.mark.parametrize(
+    ("text", "kind"),
+    [
+        ("2027년 2월", "일정"),
+        ("Day(06:00~14:00", "근무조건"),
+        ("계약직", "고용형태"),
+        ("팀원급", "직급"),
+        ("지역 : 대구", "인적사항"),
+        ("이에 준하는 경력", "경력"),
+    ],
+)
+def test_conditions_added_2026_10_29(text, kind):
+    from app.features.skill_gap.classify import CONDITION, kind_of
+
+    assert kind_of(text, "other") == (CONDITION, kind)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "내부 유관 부서와의 소통 시", "복잡한 법적", "대외 기관", "고객",
+        "※ 모집분야별 상세 내용은 채용 홈페이지",
+    ],
+)
+def test_cut_fragments_are_noise(text):
+    from app.features.skill_gap.classify import NOISE, kind_of
+
+    assert kind_of(text, "other")[0] == NOISE
+
+
+@pytest.mark.parametrize(
+    ("text", "tidied"),
+    [
+        ("수업(온라인 포함", "수업"),
+        ("서비스 기획(자사몰", "서비스 기획"),
+        ("외부감사인)와의 협업 경험 보유자", "협업 경험 보유자"),
+        ("VBA 등", "VBA"),
+        ("7. 영어 커뮤니케이션 가능자 (해외 공장", "영어 커뮤니케이션 가능자"),
+        ("원활한 커뮤니케이션", "커뮤니케이션"),
+        ("관련 자격증 보유자(소방)", "관련 자격증 보유자(소방)"),  # 짝 맞으면 그대로
+        ("데이터 리터러시", "데이터 리터러시"),
+    ],
+)
+def test_tidy_keeps_the_competency(text, tidied):
+    from app.features.skill_gap.classify import DOMAIN, kind_of, tidy
+
+    assert tidy(text) == tidied
+    assert kind_of(text, "other")[0] == DOMAIN
+
+
+def test_domain_gap_label_tidied_and_deduped(monkeypatch):
+    from app.features.skill_gap import router as r
+
+    class _KW:
+        def __init__(self, text):
+            self.text, self.key, self.importance = text, text, "required"
+            self.category, self.fields = "other", ("preferred",)
+
+    class _M:
+        def __init__(self, text):
+            self.keyword, self.status, self.experiences = _KW(text), "missing", ()
+
+    class _Report:
+        matches = [_M("VBA 등"), _M("VBA"), _M("서비스 기획(자사몰")]
+
+        @staticmethod
+        def counts():
+            return {}
+
+    monkeypatch.setattr(r, "gather_evidence", lambda *a, **k: object())
+    monkeypatch.setattr(r, "get_posting_fields", lambda *a, **k: {})
+    monkeypatch.setattr(r, "prepare_posting", lambda f: type("P", (), {"fields": f})())
+    monkeypatch.setattr(r, "extract", lambda f: [])
+    monkeypatch.setattr(r, "compare", lambda kws, ev: _Report())
+    req = r.LearningGapsRequest(resume_id=uuid.uuid4(), posting_id=uuid.uuid4())
+    out = r.learning_gaps_for(req, USER, db=None)
+    assert [g.label for g in out.domain_gaps] == ["VBA", "서비스 기획"]
+
+
 def test_vocab_terms_always_skill():
     from app.features.skill_gap.classify import SKILL, kind_of
 
