@@ -142,7 +142,8 @@ class RewriteRequest(BaseModel):
 
     #: 에디터에서 고른 구간. 원문 전체가 아니다
     text: str = Field(min_length=1, max_length=MAX_SELECTION_LEN)
-    tone: str = Field(default=DEFAULT_TONE)
+    #: null 이면 끝맺음도 말투 샘플을 따른다(샘플이 없으면 기본 문체)
+    tone: str | None = Field(default=DEFAULT_TONE)
     length: str = Field(default=DEFAULT_LENGTH)
     keywords: list[str] = Field(default_factory=list, max_length=MAX_KEYWORDS)
     #: false 면 모델을 부르지 않고 지시문만 돌려준다. 화면에서 옵션을 바꿔 보는 데 쓴다

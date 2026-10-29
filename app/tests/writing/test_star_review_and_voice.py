@@ -11,6 +11,7 @@ from app.features.writing import rewrite_service, star_review
 from app.features.writing.rewrite import (
     CANDIDATE_COUNT,
     CANDIDATE_MARK,
+    SAMPLE_OWN_ENDINGS,
     SAMPLE_RULE,
     RewriteOptionError,
     RewriteOptions,
@@ -162,3 +163,76 @@ async def test_too_short_sample_is_rejected(no_template) -> None:
             None, TEXT, RewriteOptions(), guard=guard, store=None, style_sample="짧아요.", **CTX
         )
     assert provider.calls == []
+
+
+# ---------------------------------------------------------------- 끝맺음도 샘플을 따른다 (2026-10-29)
+
+@pytest.mark.anyio
+async def test_without_a_tone_endings_follow_the_sample(no_template) -> None:
+    """화면은 끝맺음을 고르지 않는다. 샘플(했다체)이 기준이 되어 합니다체 후보가 빠진다."""
+    guard, provider = _guard(_reply([
+        "응답시간이 40% 줄었다.",
+        "응답시간이 40% 줄었습니다.",
+        "결국 응답시간이 40% 줄었다.",
+    ]))
+    result = await rewrite_service.rewrite(
+        None, TEXT, RewriteOptions(tone=None), guard=guard, store=None,
+        style_sample=SAMPLE, **CTX
+    )
+    prompt = provider.calls[0].prompt
+    # ★ "샘플과 같게" 만으로는 모델이 따르지 않아(10-29 실측) 판정한 문체 이름으로 지시한다
+    assert "반드시 했다체로" in prompt
+    assert "합니다체" not in prompt
+    assert [c.body for c in result.candidates] == [
+        "응답시간이 40% 줄었다.", "결국 응답시간이 40% 줄었다.",
+    ]
+    assert any("했다체" in n for n in result.notices)
+
+
+@pytest.mark.anyio
+async def test_mixed_sample_falls_back_to_a_general_instruction(no_template) -> None:
+    """샘플 문체가 섞여 있으면 하나로 정할 수 없다. 막연한 지시로 두고 문체로 거르지 않는다."""
+    mixed = (
+        "처음엔 막막했다. 그래서 하나씩 뜯어봤어요. 작게 쪼개서 고쳤습니다. "
+        "그리고 확인했다. 그 덕분에 끝낼 수 있었어요. 결국 방향이 중요합니다. " * 2
+    )
+    guard, provider = _guard(_reply(["다시 썼습니다.", "다시 썼다.", "다시 썼어요."]))
+    result = await rewrite_service.rewrite(
+        None, TEXT, RewriteOptions(tone=None), guard=guard, store=None,
+        style_sample=mixed, **CTX
+    )
+    assert SAMPLE_OWN_ENDINGS in provider.calls[0].prompt
+    assert len(result.candidates) == CANDIDATE_COUNT
+
+
+@pytest.mark.anyio
+async def test_without_a_tone_or_sample_the_default_tone_is_used(no_template) -> None:
+    guard, provider = _guard(_reply(["다시 쓴 글입니다."] * CANDIDATE_COUNT))
+    result = await rewrite_service.rewrite(
+        None, TEXT, RewriteOptions(tone=None), guard=guard, store=None, **CTX
+    )
+    assert "합니다체로 씁니다" in provider.calls[0].prompt
+    assert "합니다체" in result.instructions
+
+
+@pytest.mark.anyio
+async def test_all_candidates_filtered_says_why(no_template) -> None:
+    guard, _ = _guard(_reply(["응답시간이 40% 줄었습니다."] * CANDIDATE_COUNT))
+    result = await rewrite_service.rewrite(
+        None, TEXT, RewriteOptions(tone=None), guard=guard, store=None,
+        style_sample=SAMPLE, **CTX
+    )
+    assert result.candidates == ()
+    assert any("조건에 맞는 후보가 없어" in n for n in result.notices)
+    assert not any("형식대로" in n for n in result.notices), "형식 오류가 아니다"
+
+
+@pytest.mark.anyio
+async def test_one_paragraph_original_gives_one_paragraph_candidates(no_template) -> None:
+    """짧게 끊는 샘플을 따르면 모델이 문장마다 줄을 바꿨다. 원문이 한 문단이면 붙인다."""
+    guard, _ = _guard(_reply(["응답이 느렸다. \n그래서 고쳤다.\n응답시간이 40% 줄었다."] * CANDIDATE_COUNT))
+    result = await rewrite_service.rewrite(
+        None, TEXT, RewriteOptions(tone=None), guard=guard, store=None,
+        style_sample=SAMPLE, **CTX
+    )
+    assert result.candidates[0].body == "응답이 느렸다. 그래서 고쳤다. 응답시간이 40% 줄었다."
