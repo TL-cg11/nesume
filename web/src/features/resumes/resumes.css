@@ -5,7 +5,7 @@
 .resume-empty { margin-top: var(--space-4); text-align: center; padding: var(--space-6) var(--space-4); }
 .resume-empty p { margin: var(--space-1) 0; }
 .resume-list > li { display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
-.resume-list a { color: var(--fg); font-weight: 600; text-decoration: none; }
+.resume-list a { color: var(--fg); font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
 .resume-list a:hover { color: var(--accent-text); }
 
 /* 행 전체 클릭: 제목 링크가 행을 덮는다(링크는 행마다 하나 — 낭독기는 제목만 읽음) */
@@ -78,10 +78,10 @@
 .share-comment-list p { margin: 0 0 var(--space-1); }
 .share-comment-quote {
   margin: 0 0 var(--space-1); padding-left: var(--space-2); border-left: 2px solid var(--border-input);
-  color: var(--muted); font-size: var(--text-sm); white-space: pre-wrap;
+  color: var(--muted); font-size: var(--text-sm); white-space: pre-wrap; overflow-wrap: anywhere;
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
 }
-.share-comment-body { white-space: pre-wrap; }
+.share-comment-body { white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* 문항 글자 수 제한 입력(10/28): 1~10,000자, 화살표 한 번에 100자 */
 .limit-field { display: inline-flex; align-items: center; gap: var(--space-1); font-size: var(--text-sm); white-space: nowrap; }
@@ -93,7 +93,7 @@
   padding-inline: var(--space-5); border-radius: var(--radius-sm); cursor: pointer; }
 .linked-list > li:hover { background: color-mix(in srgb, var(--accent-soft) 60%, transparent); }
 .linked-list > li:has(:focus-visible) { box-shadow: var(--focus-ring); }
-.linked-list .linked-title { flex: 1; color: var(--fg); font-weight: 600; text-decoration: none; }
+.linked-list .linked-title { flex: 1; min-width: 0; color: var(--fg); font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
 .linked-list .linked-title:hover { color: var(--accent-text); }
 .linked-list .linked-title::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
 .linked-list .linked-title:focus-visible { outline: none; }
