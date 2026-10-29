@@ -15,7 +15,9 @@
 .home-stat { display: flex; flex-direction: column; gap: var(--space-1); }
 .home-stat-value { font-size: var(--text-xl); color: var(--fg); }
 
-.home-grid { display: grid; grid-template-columns: 2fr 1fr; gap: var(--space-4); align-items: start; }
+/* 좌(최근 자기소개서)·우(주요 기능) 카드 높이를 맞춘다(10/29) */
+.home-grid { display: grid; grid-template-columns: 2fr 1fr; gap: var(--space-4); align-items: stretch; }
+.home-grid > .card, .home-side > .card { height: 100%; }
 /* 공용 .stack(위 여백 있음)을 쓰지 않는다 — 불러오는 순서에 따라 여백이 살아나 이 열만 내려갔다 */
 .home-side { display: flex; flex-direction: column; gap: var(--space-4); }
 .home-recent { display: flex; align-items: center; gap: var(--space-3); }
@@ -40,8 +42,6 @@
 }
 .home-badge.review { color: var(--violet); background: var(--violet-soft); }
 .home-badge.done { color: var(--success); background: var(--success-soft); }
-.home-tip { background: var(--accent-soft); border-color: transparent; }
-.home-tip h3 { margin-top: 0; }
 
 @media (max-width: 720px) {
   .home-stats { grid-template-columns: repeat(2, 1fr); }

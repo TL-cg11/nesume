@@ -312,6 +312,7 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete, 
             {linked.map((e) => (
               <li key={e.id}>
                 {/* 행을 누르면 경험 열람. 연결 해제 버튼은 덮개 위라 따로 동작 */}
+                <span className="linked-type">{normalizeType(e.type)}</span>
                 <Link to={`/experiences/${e.id}`} className="linked-title">{e.title}</Link>
                 <span className="muted">{period(e) || '기간 없음'}</span>
                 <button className="secondary" onClick={() => unlinkExperience(e.id)}>

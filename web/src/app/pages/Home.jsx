@@ -11,11 +11,15 @@ const STATUS_CLASS = { '작성 중': 'home-badge', '검토 중': 'home-badge rev
 const fmt = (iso) =>
   new Date(iso).toLocaleString('ko-KR', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 
+// 주요 기능 정리(10/29): 이 서비스가 제공하는 기능을 한 줄씩. to가 없으면 준비 중
 const QUICK = [
-  { to: '/resumes', title: '자기소개서 작성', desc: '문항별 초안 작성과 버전 관리' },
-  { to: '/experiences', title: '경험 등록', desc: '프로젝트와 성과를 자산으로 저장' },
-  { to: '/writing', title: 'AI 글 다듬기', desc: '문장과 STAR 구성 점검' },
-  { to: null, title: '공고 추천 · 역량 갭', desc: '요구 역량과 경험의 연결 확인' }, // C 화면 준비 중
+  { to: '/resumes', title: '자기소개서', desc: '문항별 작성 · 버전 관리와 비교 · 멘토 공유' },
+  { to: '/experiences', title: '경험', desc: '프로젝트·활동·수상·GitHub 경험 기록, 문항에 연결' },
+  { to: '/writing', title: '글 다듬기', desc: '맞춤법·STAR 점검, AI 리라이팅' },
+  { to: '/recommend', title: '공고 추천', desc: '내 자소서·경험과 맞는 공고' },
+  { to: '/learning', title: '학습 로드맵', desc: '부족한 역량을 채울 강좌 추천' },
+  { to: '/applications', title: '지원 현황', desc: '지원한 공고 진행 단계 관리' },
+  { to: null, title: '면접 연습', desc: '자소서 기반 예상 질문과 답변 연습' }, // B13 준비 중
 ]
 
 function Stat({ label, value, caption }) {
@@ -122,8 +126,8 @@ export default function Home() {
 
             <div className="home-side">
               <div className="card">
-                <h2>빠른 시작</h2>
-                <p className="muted">취업 준비를 효율적으로 시작하세요.</p>
+                <h2>주요 기능</h2>
+                <p className="muted">nesume에서 할 수 있는 일</p>
                 <ul className="list">
                   {QUICK.map((q) => (
                     <li key={q.title} className={q.to ? 'home-quick' : undefined}>
@@ -138,12 +142,6 @@ export default function Home() {
                     </li>
                   ))}
                 </ul>
-              </div>
-              <div className="card home-tip">
-                <h3>작성 팁</h3>
-                <p>
-                  상황과 과제, 구체적인 행동, 측정 가능한 결과(STAR)를 기록하면 더 설득력 있는 자기소개서를 만들 수 있습니다.
-                </p>
               </div>
             </div>
           </div>

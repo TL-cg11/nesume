@@ -34,6 +34,7 @@ export default function ResumeDetailPage() {
   const [resume, setResume] = useState(null)
   const [selectedId, setSelectedId] = useState(null)
   const [newQuestion, setNewQuestion] = useState({ title: '', char_limit: String(DEFAULT_LIMIT) })
+  const [adding, setAdding] = useState(false) // 문항 추가: 버튼을 눌러야 입력칸이 열린다(10/29)
   const [error, setError] = useState(null)
   const [shareRev, setShareRev] = useState(0) // 공유가 바뀌면 버전 태그를 다시 불러온다
 
@@ -65,6 +66,7 @@ export default function ResumeDetailPage() {
     try {
       const q = await resumesApi.createQuestion(resumeId, payload)
       setNewQuestion({ title: '', char_limit: String(DEFAULT_LIMIT) })
+      setAdding(false)
       setSelectedId(q.id)
       load()
     } catch (err) {
@@ -158,8 +160,13 @@ export default function ResumeDetailPage() {
             ))}
           </ul>
           {/* noValidate: 브라우저 숫자칸 검사(step 기준값)로 1,000·950 같은 값이 막히지 않게. 범위는 clampLimit이 맞춘다 */}
-          <form className="stack" onSubmit={addQuestion} noValidate hidden={tab !== 'write'}>
+          {tab === 'write' && !adding && (
+            <button type="button" className="add-question-btn" onClick={() => setAdding(true)}>+ 문항 추가</button>
+          )}
+          {tab === 'write' && adding && (
+          <form className="stack" onSubmit={addQuestion} noValidate>
             <input
+              autoFocus
               placeholder="문항 제목"
               maxLength={TITLE_MAX}
               value={newQuestion.title}
@@ -179,10 +186,16 @@ export default function ResumeDetailPage() {
               />
               자 (최대 {BODY_MAX.toLocaleString()}자)
             </label>
-            <button type="submit" disabled={!newQuestion.title.trim()}>
-              문항 추가
-            </button>
+            <div className="row">
+              <button type="submit" disabled={!newQuestion.title.trim()}>
+                추가
+              </button>
+              <button type="button" className="secondary" onClick={() => setAdding(false)}>
+                취소
+              </button>
+            </div>
           </form>
+          )}
         </aside>
         <div>
           {selected ? (
