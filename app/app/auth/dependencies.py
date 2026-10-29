@@ -61,13 +61,13 @@ def require_operator_mfa(
 ) -> CurrentUser:
     """운영자 보호 API. operator 역할 + TOTP 등록 + 최근 N분 내 로그인(auth_time).
 
-    OPERATOR_MFA_REQUIRED=false(로컬) 면 역할만 확인한다.
+    OPERATOR_MFA_REQUIRED=false(로컬)거나 MFA 면제 테스트 운영자(mfa_enforced 참고)면 역할만 확인한다.
     액세스 토큰에 amr 이 없어 MFA 통과 여부는 알 수 없다. 대신 TOTP 등록 여부(AdminGetUser)와
     로그인 시각으로 판단한다(D6 1장). auth_time 이 없는 토큰(일부 로컬 발급 경로)은 iat 로 대체한다.
     """
     if user.role is not Role.OPERATOR:
         raise ForbiddenError("운영자만 사용할 수 있습니다.")
-    if not settings.operator_mfa_required:
+    if not mfa_enforced(user, settings):
         return user
     if not mfa.totp_enrolled(user.sub):
         raise ForbiddenError("TOTP 등록이 필요합니다.", code="mfa_required")
@@ -77,9 +77,22 @@ def require_operator_mfa(
     return user
 
 
+def mfa_enforced(user: CurrentUser, settings: Settings) -> bool:
+    """이 운영자에게 TOTP·최근 로그인을 요구하는가.
+
+    MFA_EXEMPT_TEST_OPERATORS=true(dev·staging)면 test 그룹 운영자(시드 test-operator1)는 면제한다.
+    test 그룹은 시드(seed.py)만 넣고 역할 변경 API 는 건드리지 않으므로, 콘솔에서 운영자로 올린 실제 계정은
+    면제되지 않는다. production 에서는 설정과 무관하게 면제하지 않는다.
+    """
+    if not settings.operator_mfa_required:
+        return False
+    exempt = settings.mfa_exempt_test_operators and user.is_test and settings.app_env != "production"
+    return not exempt
+
+
 def operator_mfa_pending(user: CurrentUser, settings: Settings, *, refresh: bool = False) -> bool:
-    """TOTP 를 아직 등록하지 않은 운영자인가. OPERATOR_MFA_REQUIRED=false(로컬) 면 항상 False."""
-    if user.role is not Role.OPERATOR or not settings.operator_mfa_required:
+    """TOTP 를 아직 등록하지 않은 운영자인가. MFA 를 요구하지 않는 경우(mfa_enforced) 항상 False."""
+    if user.role is not Role.OPERATOR or not mfa_enforced(user, settings):
         return False
     if refresh:
         mfa.invalidate(user.sub)  # /auth/me: 방금 등록했으면 캐시(5분)를 기다리지 않고 바로 풀린다

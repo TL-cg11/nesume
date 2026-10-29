@@ -221,6 +221,48 @@ def test_operator_mfa_disabled_locally(make_client, rsa_key, monkeypatch):
     assert r.status_code == 200
 
 
+# --- MFA_EXEMPT_TEST_OPERATORS (시드 test-operator1) ---------------------------------
+
+
+def _exempt_client(make_client, **overrides):
+    return make_client(
+        operator_mfa_required=True, mfa_exempt_test_operators=True, app_env="dev", **overrides
+    )
+
+
+def test_test_operator_exempt_from_mfa(make_client, rsa_key, monkeypatch):
+    monkeypatch.setattr(mfa, "totp_enrolled", lambda _sub: False)
+    c = _exempt_client(make_client)
+    old = int(time.time()) - 60 * 60  # 최근 로그인 요구도 면제
+    token = _sign(rsa_key, _operator(auth_time=old, iat=old))
+    assert _get(c, "/admin-only", token).status_code == 200
+    assert _get(c, "/whoami", token).status_code == 200
+    assert _get(c, "/auth/me", token).json()["mfa_required"] is False
+
+
+def test_exemption_does_not_cover_real_operators(make_client, rsa_key, monkeypatch):
+    """test 그룹이 아닌 운영자(콘솔에서 올린 실제 계정)는 면제되지 않는다."""
+    monkeypatch.setattr(mfa, "totp_enrolled", lambda _sub: False)
+    token = _sign(rsa_key, _claims(**{"cognito:groups": ["operator"]}))
+    r = _get(_exempt_client(make_client), "/admin-only", token)
+    assert r.status_code == 403
+    assert r.json()["code"] == "mfa_required"
+
+
+def test_exemption_ignored_in_production(make_client, rsa_key, monkeypatch):
+    monkeypatch.setattr(mfa, "totp_enrolled", lambda _sub: False)
+    c = make_client(operator_mfa_required=True, mfa_exempt_test_operators=True, app_env="production")
+    r = _get(c, "/admin-only", _sign(rsa_key, _operator()))
+    assert r.status_code == 403
+    assert r.json()["code"] == "mfa_required"
+
+
+def test_exemption_off_by_default(make_client, rsa_key, monkeypatch):
+    monkeypatch.setattr(mfa, "totp_enrolled", lambda _sub: False)
+    c = make_client(operator_mfa_required=True, mfa_exempt_test_operators=False, app_env="dev")
+    assert _get(c, "/admin-only", _sign(rsa_key, _operator())).json()["code"] == "mfa_required"
+
+
 def test_totp_enrolled_cache(monkeypatch):
     calls = []
     monkeypatch.setattr(mfa, "_lookup", lambda sub: calls.append(sub) or True)
