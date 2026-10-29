@@ -1,0 +1,6 @@
+# gitleaks 오탐 허용 목록(fingerprint). 형식: <commit sha>:<file>:<rule>:<line>
+# 줄 주석(# gitleaks:allow)은 현재 버전의 줄만 보호한다. 히스토리 스캔(push 범위에 옛 커밋이 다시 들어올 때)은 여기로 막는다.
+# 주의: 여기 주석에 키 모양 문자열을 적으면 이 파일 자체가 다시 걸린다(10-29 실측).
+
+# C14 K-MOOC 테스트의 가짜 인증키 상수 _SECRET (예외 메시지에 키가 안 실리는지 확인용). 실제 비밀 아님. 10-29 main CI 오탐.
+93052d5c1bd58ae40d5ebbdbb56c915882eb25f4:app/tests/test_kmooc.py:generic-api-key:124
