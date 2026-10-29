@@ -26,7 +26,6 @@ import AuditLogsPage from '../features/audit/AuditLogsPage.jsx'
 import RequireAuth from '../features/auth/RequireAuth.jsx'
 import AdminUsersPage from '../features/admin/AdminUsersPage.jsx'
 // C: 공고 추천(C8)·학습 로드맵(C14)·지원 현황(C15) — nesumeC에서 이식(docs C-frontend-wiring.md 6절)
-import RecommendPage from '../features/recommend/RecommendPage.jsx'
 import LearningPage from '../features/learning/LearningPage.jsx'
 import ApplicationsPage from '../features/applications/ApplicationsPage.jsx'
 
@@ -42,7 +41,6 @@ export const featureRoutes = [
   { path: 'interview', element: <InterviewPage />, nav: '면접 연습' },
   { path: 'writing', element: <WritingPage /> }, // [B 10/29] 메뉴에서 뺌 — 자소서 상세 '글 다듬기' 탭으로 이동. 주소는 기존 링크용으로 유지
   // C 화면: 본인 데이터라 로그인 필요(백엔드도 토큰 강제 — 이중 방어)
-  { path: 'recommend', element: <RequireAuth><RecommendPage /></RequireAuth> }, // [B 10/29] 메뉴에서 뺌 — 자소서 상세 '공고 추천' 탭으로 이동. 주소 유지
   { path: 'learning', element: <RequireAuth><LearningPage /></RequireAuth>, nav: '학습 로드맵' },
   { path: 'applications', element: <RequireAuth><ApplicationsPage /></RequireAuth>, nav: '지원 현황' },
   // D7 인증 화면 (nav 없음). 보호 화면은 <RequireAuth> 로 감싼다(features/auth/RequireAuth.jsx).
