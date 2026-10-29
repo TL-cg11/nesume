@@ -16,6 +16,7 @@ import re
 from collections.abc import Callable
 from datetime import date
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlsplit
 from urllib.request import urlopen
 
 if TYPE_CHECKING:  # 타입만 — 런타임 DB/의존 import는 함수 안에서 지연 로드
@@ -25,6 +26,10 @@ SOURCE_SEOUL = "seoul"
 
 #: 서울시 recMntList는 1회 최대 1,000건(Plan.md 1-6). 전량(~4만)은 여러 번 나눠 받는다.
 SEOUL_PAGE_SIZE = 1000
+
+#: 서울 열린데이터광장은 8088 포트에서 http 만 응답한다(https 핸드셰이크 실패, 10-29 확인).
+#: 이 호스트만 http 를 허용하고 나머지는 https 만.
+SEOUL_HTTP_HOST = "openapi.seoul.go.kr"
 
 _DATE_RE = re.compile(r"(\d{2}|\d{4})-(\d{1,2})-(\d{1,2})")
 _NUM_RE = re.compile(r"\d[\d,]*")
@@ -138,14 +143,15 @@ def _extract_page(payload: dict[str, Any]) -> tuple[list[dict[str, Any]], int]:
 
 
 def _default_fetch_page(start: int, end: int, *, timeout: int = 30) -> dict[str, Any]:
-    """env의 서울시 주소·키로 한 페이지 조회(https만). 키·주소는 D가 Secrets로 주입."""
+    """env의 서울시 주소·키로 한 페이지 조회(https, 서울시 호스트만 http). 키·주소는 D가 Secrets로 주입."""
     base = os.environ.get("SEOUL_OPENAPI_BASE_URL")
     key = os.environ.get("SEOUL_OPENAPI_KEY")
     if not base or not key:
         raise RuntimeError("SEOUL_OPENAPI_BASE_URL/SEOUL_OPENAPI_KEY env 필요 (D 주입)")
     url = f"{base.rstrip('/')}/{key}/json/recMntList/{start}/{end}/"
-    if not url.startswith("https://"):
-        raise ValueError("https URL만 허용")
+    parts = urlsplit(url)
+    if not (parts.scheme == "https" or (parts.scheme == "http" and parts.hostname == SEOUL_HTTP_HOST)):
+        raise ValueError("https URL만 허용(서울시 호스트만 http 예외)")
     with urlopen(url, timeout=timeout) as resp:  # 신뢰된 고정 API(env 기반) — 사용자 입력 아님
         return json.loads(resp.read().decode("utf-8"))
 
