@@ -168,3 +168,12 @@
 .ver-count { font-size: var(--text-sm); font-weight: 500; }
 .ver-preview { margin-top: var(--space-3); }
 .ver-preview-body { margin-top: var(--space-3); white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.75; max-height: 360px; overflow-y: auto; }
+
+/* 완료된 자소서 아래 추천 공고(10/29, C8) */
+.resume-main { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.resume-recs { list-style: none; margin: 0; padding: 0; font-size: var(--text-sm); color: var(--muted); }
+.resume-recs li { display: flex; align-items: center; gap: var(--space-2); padding: 1px 0; overflow-wrap: anywhere; }
+.resume-recs-mark {
+  flex: none; font-size: 11px; font-weight: 700; color: var(--violet); background: var(--violet-soft);
+  padding: 0 var(--space-2); border-radius: var(--radius-pill);
+}

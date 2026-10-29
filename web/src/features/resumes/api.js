@@ -13,6 +13,8 @@ export const resumesApi = {
   dashboard: (opts) => api.get('/resumes/dashboard', opts),
   create: (data) => api.post('/resumes', data),
   createUntitled: () => api.post('/resumes', { title: UNTITLED }),
+  // 완료된 자소서 기준 추천 공고(C8). resume_id는 C에 추가 요청 중(10/29) — 지원 전에는 422 → 화면은 '준비 중'
+  recommendFor: (rid, signal) => api.post('/recommendations', { resume_id: rid, top_k: 3 }, { signal }),
   get: (rid) => api.get(`/resumes/${rid}`),
   update: (rid, data) => api.patch(`/resumes/${rid}`, data),
   remove: (rid) => api.delete(`/resumes/${rid}`),

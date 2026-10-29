@@ -6,6 +6,32 @@ import './resumes.css'
 
 const MAX_RESUMES = 50 // 서버 MAX_RESUMES_PER_USER와 같다(4.56). 넘으면 서버가 안내 문구로 거부
 
+// 상태 '완료'인 자소서 이름 아래 추천 공고 3개(제목·직무, 10/29). 추천이 없거나 아직 연결 전이면 '준비 중' 한 줄
+function Recommendations({ resumeId }) {
+  const [items, setItems] = useState(undefined) // undefined = 불러오는 중, null = 준비 중
+  useEffect(() => {
+    const ctrl = new AbortController()
+    resumesApi
+      .recommendFor(resumeId, ctrl.signal)
+      .then((r) => setItems(r.cold_start || !r.items.length ? null : r.items.slice(0, 3)))
+      .catch((e) => e.name !== 'AbortError' && setItems(null))
+    return () => ctrl.abort()
+  }, [resumeId])
+
+  if (items === undefined) return <p className="resume-recs muted">추천 공고 불러오는 중...</p>
+  if (items === null) return <p className="resume-recs muted">추천 공고 준비 중</p>
+  return (
+    <ul className="resume-recs">
+      {items.map((r) => (
+        <li key={r.posting_id}>
+          <span className="resume-recs-mark">추천</span>
+          {[r.posting?.title, r.posting?.job_name].filter(Boolean).join(' · ') || '공고 정보 없음'}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 export default function ResumesPage() {
   const navigate = useNavigate()
   const [items, setItems] = useState(null) // null = 불러오는 중
@@ -62,7 +88,10 @@ export default function ResumesPage() {
           <ul className="list resume-list">
             {items.map((r) => (
               <li key={r.id}>
-                <Link to={`/resumes/${r.id}`}>{r.title}</Link>
+                <div className="resume-main">
+                  <Link to={`/resumes/${r.id}`}>{r.title}</Link>
+                  {r.status === '완료' && <Recommendations resumeId={r.id} />}
+                </div>
                 <span className="muted">
                   {r.status ?? '상태 없음'} · {new Date(r.updated_at).toLocaleString()}
                 </span>
