@@ -7,14 +7,6 @@ import { api } from '../../app/api/client.js'
 // 서버 스키마의 MAX_TEXT_LEN 과 같아야 한다 (writing/schemas.py 8000).
 export const MAX_TEXT_LEN = 8000
 
-// 문체 이름. 서버 tone.py 의 TONE_NAMES 와 같아야 한다.
-export const TONE_NAMES = {
-  formal: '합니다체',
-  polite: '해요체',
-  plain: '했다체',
-  nominal: '음슴체',
-}
-
 export const reviewApi = {
   // 규칙(맞춤법·띄어쓰기) + AI 문장 제안
   spelling: (text, signal) => api.post('/writing/proofread', { text, use_llm: true }, { signal }),
@@ -46,7 +38,8 @@ export const MIN_SAMPLE_CHARS = 100
 export const MAX_SAMPLE_CHARS = 3000
 
 export const rewriteApi = {
-  rewrite: ({ text, tone = 'formal', styleSample }, signal) =>
+  // tone 을 비우면(null) 문장 끝맺음도 말투 샘플을 따른다
+  rewrite: ({ text, tone = null, styleSample }, signal) =>
     api.post(
       '/writing/rewrite',
       { text, tone, length: 'similar', keywords: [], use_llm: true, style_sample: styleSample },
