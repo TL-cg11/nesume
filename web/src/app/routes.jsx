@@ -3,7 +3,7 @@
 //
 // A: writing / B: resumes·share·pdf·interview·experiences(GitHub 소개 포함, 10/28)
 // C: jobs·recommend·learning·applications / D: auth(로그인·MFA), admin
-import Layout from './Layout.jsx'
+import Layout from './RoleNavLayout.jsx' // 역할 전용 메뉴를 거른 뒤 D의 Layout으로 넘긴다
 import Home from './pages/Home.jsx'
 import NotFound from './pages/NotFound.jsx'
 import ResumesPage from '../features/resumes/ResumesPage.jsx'
@@ -24,7 +24,7 @@ import MentorSharesPage from '../features/share/MentorSharesPage.jsx'
 import MentorSharePage from '../features/share/MentorSharePage.jsx'
 import TemplatesPage from '../features/templates/TemplatesPage.jsx'
 
-// nav: 상단 메뉴 노출 여부와 라벨
+// nav: 상단 메뉴 노출 여부와 라벨. roles: 이 역할로 로그인했을 때만 메뉴에 보임(없으면 모두)
 export const featureRoutes = [
   { path: 'resumes', element: <ResumesPage />, nav: '자소서' },
   { path: 'resumes/:resumeId', element: <ResumeDetailPage /> },
@@ -42,9 +42,9 @@ export const featureRoutes = [
   { path: 'forgot', element: <ForgotPasswordPage /> },
   { path: 'mfa/challenge', element: <MfaChallengePage /> },
   { path: 'mfa/setup', element: <MfaSetupPage /> },
-  { path: 'mentor', element: <MentorSharesPage />, nav: '받은 공유' }, // B17 멘토 전용(그 외 역할은 안내 문구)
+  { path: 'mentor', element: <MentorSharesPage />, nav: '받은 공유', roles: ['mentor'] }, // B17 멘토 전용 — 메뉴도 멘토에게만
   { path: 'mentor/:shareId', element: <MentorSharePage /> },
-  { path: 'templates', element: <TemplatesPage />, nav: '프롬프트 템플릿' }, // B9 운영자 전용(그 외 역할은 안내 문구)
+  { path: 'templates', element: <TemplatesPage />, nav: '프롬프트 템플릿', roles: ['operator'] }, // B9 운영자 전용 — 메뉴도 운영자에게만
 ]
 
 export const routes = [
