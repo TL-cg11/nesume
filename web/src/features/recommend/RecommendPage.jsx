@@ -166,7 +166,7 @@ export default function RecommendPage() {
 
         {!loading && error && (
           <div className="rec-state rec-state-error">
-            <strong>추천을 불러오지 못했습니다</strong>
+            <strong className="rec-state-title">추천을 불러오지 못했습니다</strong>
             <p>{error}</p>
           </div>
         )}
@@ -177,7 +177,7 @@ export default function RecommendPage() {
 
         {!loading && !error && result?.cold_start && (
           <div className="rec-state">
-            <strong>아직 추천할 공고가 없어요</strong>
+            <strong className="rec-state-title">아직 추천할 공고가 없어요</strong>
             <p>{result.notice}</p>
           </div>
         )}

@@ -7,7 +7,8 @@
 
 /* 상태(로딩·빈·에러·안내) */
 .rec-state { padding: 22px; border-radius: 10px; background: var(--accent-soft); color: var(--fg); font-size: 13px; line-height: 1.6; }
-.rec-state strong { display: block; margin-bottom: 4px; color: var(--fg); }
+.rec-state strong { color: var(--fg); }
+.rec-state-title { display: block; margin-bottom: 4px; }
 .rec-state-error { background: var(--danger-soft); color: var(--danger); }
 .rec-state-error strong { color: var(--danger); }
 
