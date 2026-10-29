@@ -88,13 +88,14 @@ def _share(session, resume_id, owner: str, mentor: str) -> Share:
     return s
 
 
-def _posting(session, *, active: bool = True, review: bool = False) -> JobPosting:
+def _posting(session, *, active: bool = True, review: bool = False, closes_on=None) -> JobPosting:
     p = JobPosting(
         source="seoul",
         link_key=str(uuid.uuid4()),
         content_hash=str(uuid.uuid4()),
         is_active=active,
         needs_review=review,
+        closes_on=closes_on,
     )
     session.add(p)
     session.flush()
@@ -193,6 +194,22 @@ def test_public_excludes_inactive_and_review(db_session):
     assert active.id in got
     assert inactive.id not in got
     assert review.id not in got
+
+
+def test_public_excludes_past_deadline(db_session):
+    """마감일이 지난 공고는 활성이어도 빠진다(당일까지 노출, 마감일 없음은 유지). 오늘 = 한국 날짜."""
+    from zoneinfo import ZoneInfo
+
+    today = datetime.now(ZoneInfo("Asia/Seoul")).date()
+    past = _posting(db_session, closes_on=today - timedelta(days=1))
+    due = _posting(db_session, closes_on=today)
+    open_ended = _posting(db_session)
+    for p in (past, due, open_ended):
+        _posting_emb(db_session, p.id)
+
+    got = _ids(search_public(db_session, QUERY))
+    assert past.id not in got
+    assert due.id in got and open_ended.id in got
 
 
 # --------------------------------------------------------------------------

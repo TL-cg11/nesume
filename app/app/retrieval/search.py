@@ -17,7 +17,7 @@ from collections.abc import Callable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 
-from sqlalchemy import select, text
+from sqlalchemy import Date, cast, func, or_, select, text
 from sqlalchemy.orm import Session
 
 from app.db import SessionLocal
@@ -32,6 +32,11 @@ _policy = Policy.load(default_matrix_path())
 
 #: 필터와 함께 HNSW를 쓸 때 ANN이 필터를 건너뛰어 누락하는 걸 막는다(C1 결론)
 _ITERATIVE_SCAN = "SET LOCAL hnsw.iterative_scan = 'strict_order'"
+
+
+def _today_kst():
+    """DB 기준 오늘(한국 날짜)."""
+    return cast(func.timezone("Asia/Seoul", func.now()), Date)
 
 
 def search_public(
@@ -54,6 +59,9 @@ def search_public(
         select(JobPostingEmbedding.id, JobPostingEmbedding.source_id, dist.label("distance"))
         .join(JobPosting, JobPosting.id == JobPostingEmbedding.source_id)
         .where(JobPosting.is_active.is_(True), JobPosting.needs_review.is_(False))
+        # 마감일이 지난 공고 제외(당일까지 노출, 마감일 없는 상시채용은 유지). 수집 배치의 비활성화는
+        # 하루 1번이라 그 사이 마감분이 뜨던 것을 막는다. "오늘"은 서버 시간대와 무관하게 한국 날짜.
+        .where(or_(JobPosting.closes_on.is_(None), JobPosting.closes_on >= _today_kst()))
         .where(JobPostingEmbedding.model_version == MODEL_VERSION)
     )
     # C8 추천 필터(지역·직무) — 검색 WHERE에 얹어 사전 필터(사후 아님). 값은 사용자 선택(런타임).
