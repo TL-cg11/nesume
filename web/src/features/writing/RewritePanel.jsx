@@ -2,8 +2,8 @@
 //
 // ★ 샘플은 **말투만** 빌린다. 샘플 속 사실·숫자는 가져오지 않는다 — 서버가 원문에 없는
 //   숫자가 들어간 후보를 버린다 (rewrite_service). 샘플은 저장하지 않는다.
-// ★ 문장 끝맺음(합니다체 등)은 따로 고른다. 블로그 글을 샘플로 넣어도 자소서는
-//   합니다체로 남길 수 있게.
+// ★ 문장 끝맺음도 샘플을 따른다. 내 말투로 바꾸는 기능이라 끝맺음을 따로 고르지 않는다
+//   (2026-10-29). 서버는 샘플의 주된 문체와 다른 문장이 섞인 후보를 뺀다.
 // ★ 본문에서 드래그한 부분이 없으면 글 전체를 다시 쓴다.
 // ★ 저장은 **문항 맥락이 있을 때만** 할 수 있다. B4 자소서 화면에서
 //   ?resume=&question= 을 달고 넘어오면 "새 버전으로 저장" 이 켜진다.
@@ -15,14 +15,12 @@ import {
   MAX_SAMPLE_CHARS,
   MAX_SELECTION_LEN,
   MIN_SAMPLE_CHARS,
-  TONE_NAMES,
   rewriteApi,
 } from './api.js'
 
 export default function RewritePanel({
   text, run, isBusy, onApplied, selection, sample, setSample, result, setResult,
 }) {
-  const [tone, setTone] = useState('formal')
   const [saved, setSaved] = useState(null)
   const [params] = useSearchParams()
 
@@ -46,7 +44,7 @@ export default function RewritePanel({
     // 후보는 **보낸 구간**에 들어가야 한다
     const range = hasSelection ? { ...selection } : null
     const data = await run('rewrite', (signal) =>
-      rewriteApi.rewrite({ text: target, tone, styleSample: sample.trim() }, signal),
+      rewriteApi.rewrite({ text: target, styleSample: sample.trim() }, signal),
     )
     if (data) setResult({ ...data, range })
   }
@@ -71,7 +69,8 @@ export default function RewritePanel({
         <strong>내 말투 샘플</strong>
         <span className="muted">
           평소에 내가 쓴 글을 붙여 넣으십시오(블로그·메모·다른 자소서 등). 어휘·문장 길이·연결
-          표현을 이 글처럼 맞춥니다. 샘플의 내용과 숫자는 가져오지 않고, 저장하지 않습니다.
+          표현·문장 끝맺음까지 이 글처럼 맞춥니다. 자소서를 합니다체로 내려면 합니다체로 쓴 글을
+          넣으십시오. 샘플의 내용과 숫자는 가져오지 않고, 저장하지 않습니다.
         </span>
         <textarea
           className="wr-sample"
@@ -99,14 +98,6 @@ export default function RewritePanel({
       )}
 
       <div className="row">
-        <label className="wr-field">
-          <span className="muted">문장 끝맺음</span>
-          <select value={tone} onChange={(e) => setTone(e.target.value)}>
-            {Object.entries(TONE_NAMES).map(([id, name]) => (
-              <option key={id} value={id}>{name}</option>
-            ))}
-          </select>
-        </label>
         <span className="grow" />
         <button onClick={rewrite} disabled={isBusy || !canRun}>
           {isBusy ? '다시 쓰는 중...' : `이 말투로 후보 ${CANDIDATE_COUNT}개 만들기`}
