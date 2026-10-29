@@ -121,7 +121,7 @@ def test_collect_public_only_false_keeps_all():
 
 # --- HTTP 재시도·키 숨김 (docs/C14.md K-MOOC 수집 503 실패) ---
 
-_SECRET = "SECRET-KMOOC-KEY-123"
+_SECRET = "SECRET-KMOOC-KEY-123"  # gitleaks:allow — 가짜 표식(예외에 키가 안 실리는지 확인용)
 
 
 class _Resp(io.BytesIO):
