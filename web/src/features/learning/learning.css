@@ -12,11 +12,12 @@
 .skill-panel .btn-full { margin-top: 16px; }
 
 .lp-select { width: 100%; margin: 4px 0 12px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface, var(--surface)); color: var(--fg); }
-.lp-step-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 14px 0 8px; }
+/* ①·②·③ 단계 사이 흐린 경계선 */
+.lp-step-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 18px 0 8px; padding-top: 16px; border-top: 1px solid var(--border); }
 .lp-step-head h4 { margin: 0; font-size: 13px; }
 .lp-filter { display: inline-flex; gap: 4px; }
 .lp-filter button { border: 1px solid var(--border); border-radius: 999px; background: transparent; padding: 3px 9px; font-size: 11px; color: var(--muted); cursor: pointer; }
-.lp-filter button.on { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+.lp-filter button.on { border-color: var(--accent); color: var(--accent-text); font-weight: 700; }
 .lp-postings { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 260px; overflow-y: auto; }
 .lp-posting { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid var(--border); border-radius: 8px; background: transparent; padding: 8px 10px; text-align: left; cursor: pointer; color: var(--fg); }
 .lp-posting.on { border-color: var(--accent); background: var(--accent-soft); }
@@ -24,10 +25,7 @@
 .lp-badge { flex-shrink: 0; border-radius: 999px; padding: 2px 7px; font-size: 10px; font-weight: 700; color: var(--muted); background: var(--bg); }
 .lp-badge.applied { color: var(--success); background: var(--success-soft); }
 
-.lp-link { border: 0; background: transparent; color: var(--accent); font-size: 11px; font-weight: 700; cursor: pointer; padding: 0; }
-.lp-covered { list-style: none; margin: 0 0 10px; padding: 8px 10px; border-radius: 8px; background: var(--bg); display: grid; gap: 4px; }
-.lp-covered li { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; }
-.lp-covered span { color: var(--muted); text-align: right; }
+.lp-link { border: 0; background: transparent; color: var(--accent-text); font-size: 11px; font-weight: 700; cursor: pointer; padding: 0; }
 .lp-group-title { margin: 12px 0 6px; font-size: 12px; font-weight: 700; color: var(--fg); }
 .lp-group-title span { margin-left: 6px; font-weight: 400; color: var(--muted); font-size: 11px; }
 .lp-conditions { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -55,14 +53,14 @@
 .lp-ai-badge { border: 1px dashed var(--warning); border-radius: 999px; padding: 1px 7px; font-size: 10px; color: var(--warning); background: var(--warning-soft); white-space: nowrap; }
 .lp-browse-btn { margin-top: 6px; border: 0; background: none; padding: 0; color: var(--accent); font-size: 11px; text-decoration: underline; cursor: pointer; }
 
-.lp-cand-dialog { width: min(720px, calc(100vw - 32px)); max-height: calc(100vh - 64px); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; }
+.lp-cand-dialog { width: min(720px, calc(100vw - 32px)); max-height: calc(100vh - 64px); background: var(--surface); color: var(--fg); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; }
 .lp-cand-dialog::backdrop { background: rgb(0 0 0 / 40%); }
 .lp-cand-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .lp-cand-head h3 { font-size: 15px; }
 .lp-cand-close { border: 0; background: none; font-size: 20px; color: var(--muted); cursor: pointer; }
 .lp-cand-filter { display: flex; align-items: center; gap: 6px; margin: 12px 0; flex-wrap: wrap; }
-.lp-cand-filter button { border: 1px solid var(--border); border-radius: 999px; background: var(--surface); padding: 4px 11px; font-size: 11px; cursor: pointer; }
-.lp-cand-filter button.on { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+.lp-cand-filter button { border: 1px solid var(--border); border-radius: 999px; background: var(--surface); padding: 4px 11px; font-size: 11px; color: var(--fg); cursor: pointer; }
+.lp-cand-filter button.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-text); font-weight: 700; }
 .lp-cand-count { margin-left: auto; font-size: 11px; color: var(--muted); }
 .lp-cand-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .lp-cand-item { display: flex; gap: 12px; justify-content: space-between; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
@@ -109,3 +107,24 @@
 @media (min-width: 1151px) {
   .skill-panel { position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto; }
 }
+
+/* ③ 역량 갭 표 — 매칭률 막대 + 요구 역량·구분·근거 */
+.lp-gap { margin-bottom: 8px; }
+.lp-gap-rate { margin-bottom: 10px; }
+.lp-gap-rate-row { display: flex; justify-content: space-between; align-items: baseline; font-size: 11px; color: var(--muted); }
+.lp-gap-rate-row strong { font-size: 22px; color: var(--accent-text); }
+.lp-gap-bar { height: 8px; margin-top: 6px; border-radius: 999px; background: var(--bg); overflow: hidden; }
+.lp-gap-bar span { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+.lp-gap-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.lp-gap-table th { padding: 6px 6px; text-align: left; font-size: 11px; font-weight: 600; color: var(--muted); border-bottom: 1px solid var(--border); }
+.lp-gap-table td { padding: 8px 6px; border-bottom: 1px solid var(--border); vertical-align: middle; color: var(--fg); }
+.lp-gap-table tr:last-child td { border-bottom: 0; }
+.lp-gap-table th:first-child, .lp-gap-table td:first-child { width: 22px; padding-right: 0; }
+.lp-gap-table input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
+.lp-gap-why { color: var(--muted) !important; font-size: 11px; }
+.lp-gap-imp { display: inline-block; margin-left: 2px; border-radius: 999px; padding: 1px 6px; font-size: 10px; font-weight: 700; background: var(--bg); color: var(--muted); white-space: nowrap; }
+.lp-gap-imp.req { background: var(--danger-soft); color: var(--danger); }
+.lp-gap-st { display: inline-block; border-radius: 999px; padding: 3px 8px; font-size: 10px; font-weight: 700; white-space: nowrap; }
+.lp-gap-st.have { background: var(--success-soft); color: var(--success); }
+.lp-gap-st.need { background: var(--danger-soft); color: var(--danger); }
+.lp-gap-st.nice { background: var(--warning-soft); color: var(--warning); }

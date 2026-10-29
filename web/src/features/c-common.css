@@ -77,7 +77,7 @@
 
 .roadmap-actions .c-btn-secondary { padding:8px 11px; }
 
-.c-roadmap-layout { display:grid; grid-template-columns:minmax(270px, 0.62fr) minmax(0, 1.38fr); align-items:start; gap:22px; }
+.c-roadmap-layout { display:grid; grid-template-columns:minmax(300px, 0.8fr) minmax(0, 1.2fr); align-items:start; gap:22px; }
 
 .skill-panel, .c-roadmap-list-panel { padding:21px; }
 
@@ -115,7 +115,7 @@
 
 .c-custom-skill-form { display:grid; gap:8px; margin-top:16px; }
 
-.c-custom-skill-form input { min-width:0; border:1px solid var(--border); border-radius:9px; padding:10px; font-size:11px; outline:none; }
+.c-custom-skill-form input { min-width:0; border:1px solid var(--border); border-radius:9px; background:var(--surface); padding:10px; color:var(--fg); font-size:11px; outline:none; }
 
 .c-custom-skill-form button { display:flex; align-items:center; justify-content:center; gap:7px; border:1px dashed var(--border); border-radius:9px; background:var(--bg); padding:12px; color:var(--muted); font-size:11px; font-weight:750; }
 
@@ -131,7 +131,7 @@
 
 .c-selected-skill { display:inline-flex; align-items:center; gap:5px; border-radius:999px; background:var(--accent-soft); padding:5px 8px; color:var(--accent-text); font-weight:700; }
 
-.c-selected-skill button { color:var(--accent-text); font-size:15px; line-height:10px; }
+.c-selected-skill button { min-height:0; border:0; background:none; padding:0 2px; color:var(--accent-text); font-size:15px; line-height:10px; }
 
 .c-roadmap-week { margin-top:15px; }
 

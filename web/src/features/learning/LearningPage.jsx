@@ -44,19 +44,84 @@ function roadmapLabel(r) {
 // 맞는 강좌를 못 찾은 갭 항목(시스템 항목인데 강좌 출처가 없음) — 강좌처럼 보이지 않게 구분
 const noCourse = (item) => item.origin === 'system' && !item.source
 
-// 부족 역량 카드 — 넣기/빼기 토글(로드맵 생성 시 들어갈 역량)
-function GapCard({ g, on, onToggle }) {
+// 공고 필드 → 근거 표시 이름(A11 PostingFields). 줄 번호는 A11이 주지 않아 필드까지만.
+const FIELD_LABEL = {
+  title: '공고 제목',
+  job_name: '직무명',
+  job_content: '직무 내용',
+  certificates: '자격증',
+  preferred: '우대사항',
+  major: '전공',
+  computer_skills: '컴퓨터 활용',
+}
+
+// ③ 역량 갭 표 — 매칭률 + 요구 역량·구분·근거. 부족 행의 체크 = 로드맵에 넣을 역량.
+// 매칭률 = 보유 ÷ (보유 + 부족), 기술·직무 역량만(지원 조건 제외).
+function GapTable({ info, isOn, onToggle }) {
+  const missing = [...info.gaps, ...info.domain_gaps.map((g) => ({ ...g, domain: true }))]
+  const total = info.covered.length + missing.length
+  const rate = total ? Math.round((info.covered.length / total) * 100) : null
+  let rank = 0
   return (
-    <div className={`c-skill-card ${on ? 'c-skill-card-added' : ''}`}>
-      <div className="c-skill-card-copy">
-        <span className={`c-skill-level ${g.importance === 'required' ? 'c-skill-required' : 'c-skill-preferred'}`}>
-          {IMPORTANCE_LABEL[g.importance] ?? g.importance}
-        </span>
-        <strong>{g.label}</strong>
-      </div>
-      <button className={`${on ? 'c-btn-secondary' : 'c-btn-primary'} c-skill-add`} onClick={() => onToggle(g)}>
-        {on ? '빼기' : '넣기'}
-      </button>
+    <div className="lp-gap">
+      {rate !== null && (
+        <div className="lp-gap-rate">
+          <div className="lp-gap-rate-row">
+            <span>자소서 매칭률</span>
+            <strong>{rate}%</strong>
+          </div>
+          <div className="lp-gap-bar" role="progressbar" aria-valuenow={rate} aria-valuemin={0} aria-valuemax={100} aria-label="자소서 매칭률">
+            <span style={{ width: `${rate}%` }} />
+          </div>
+        </div>
+      )}
+      {total === 0 ? (
+        <p className="c-roadmap-muted">공고에서 대조할 기술·직무 역량을 찾지 못했습니다.</p>
+      ) : (
+        <table className="lp-gap-table">
+          <thead>
+            <tr>
+              <th scope="col"><span className="c-sr-only">로드맵에 넣기</span></th>
+              <th scope="col">요구 역량</th>
+              <th scope="col">구분</th>
+              <th scope="col">근거</th>
+            </tr>
+          </thead>
+          <tbody>
+            {info.covered.map((c) => (
+              <tr key={`c-${c.label}`}>
+                <td />
+                <td>{c.label}</td>
+                <td><span className="lp-gap-st have">보유</span></td>
+                <td className="lp-gap-why">
+                  {c.status === 'covered' ? '자소서' : `경험: ${c.experiences.join(', ') || '이름 없음'}`}
+                </td>
+              </tr>
+            ))}
+            {missing.map((g) => {
+              const required = g.importance === 'required'
+              if (required) rank += 1
+              const fields = g.evidence_fields.map((f) => FIELD_LABEL[f] ?? f)
+              return (
+                <tr key={`m-${g.key}`}>
+                  <td>
+                    <input type="checkbox" checked={isOn(g.key)} onChange={() => onToggle(g)} aria-label={`${g.label} 로드맵에 넣기`} />
+                  </td>
+                  <td>
+                    {g.label}{' '}
+                    <span className={`lp-gap-imp ${required ? 'req' : ''}`}>{IMPORTANCE_LABEL[g.importance] ?? g.importance}</span>
+                    {g.domain && <span className="lp-gap-imp">직무</span>}
+                  </td>
+                  <td>
+                    <span className={`lp-gap-st ${required ? 'need' : 'nice'}`}>{required ? `부족 · ${rank}순위` : '부족'}</span>
+                  </td>
+                  <td className="lp-gap-why">{fields.length ? `공고 ${fields.join(', ')}` : '공고'}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      )}
     </div>
   )
 }
@@ -76,7 +141,6 @@ export default function LearningPage() {
   const [filter, setFilter] = useState('all') // all | applied | not
   const [postingId, setPostingId] = useState(null)
   const [gapInfo, setGapInfo] = useState(null) // /learning-gaps 응답(gaps·domain_gaps·conditions·covered·counts)
-  const [showCovered, setShowCovered] = useState(false)
   const [gapsLoading, setGapsLoading] = useState(false)
 
   const [roadmap, setRoadmap] = useState(null) // 현재 로드맵(RoadmapOut) 또는 null
@@ -155,7 +219,6 @@ export default function LearningPage() {
       const res = await learningGapsApi.forPosting(resumeId, pid)
       setGaps(res.gaps) // 기술 역량은 기본 포함, 직무 역량은 사용자가 고르면
       setGapInfo(res)
-      setShowCovered(false)
     } catch (e) {
       setError(e instanceof ApiError ? e.message : '부족 역량을 분석하지 못했습니다.')
     } finally {
@@ -442,46 +505,14 @@ export default function LearningPage() {
           {postingId && (
             <>
               <div className="lp-step-head">
-                <h4>③ 부족한 역량</h4>
-                {gapInfo && gapInfo.covered.length > 0 && (
-                  <button type="button" className="lp-link" onClick={() => setShowCovered((v) => !v)}>
-                    이미 갖춤 {gapInfo.covered.length}개 {showCovered ? '▴' : '▾'}
-                  </button>
-                )}
+                <h4>③ 역량 갭</h4>
               </div>
               {gapsLoading && <p className="c-roadmap-muted">자소서·경험과 공고를 비교하는 중…</p>}
 
-              {gapInfo && showCovered && (
-                <ul className="lp-covered">
-                  {gapInfo.covered.map((c) => (
-                    <li key={c.label}>
-                      <strong>{c.label}</strong>
-                      <span>
-                        {c.status === 'covered'
-                          ? '자소서에 있음'
-                          : `경험에만 있음${c.experiences.length ? ` · ${c.experiences.join(', ')}` : ''}`}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-
               {gapInfo && (
                 <>
-                  <p className="lp-group-title">기술 역량 <span>로드맵에 기본으로 넣어요</span></p>
-                  {gapInfo.gaps.length === 0 && <p className="c-roadmap-muted">부족한 기술 역량이 없습니다.</p>}
-                  {gapInfo.gaps.map((g) => <GapCard key={g.key} g={g} on={hasGap(g.key)} onToggle={toggleGap} />)}
-
-                  {gapInfo.domain_gaps.length > 0 && (
-                    <>
-                      <p className="lp-group-title">
-                        직무 역량 <span>필요하면 골라 넣어요 · 맞는 강좌가 적을 수 있어요</span>
-                      </p>
-                      {gapInfo.domain_gaps.map((g) => (
-                        <GapCard key={g.key} g={g} on={hasGap(g.key)} onToggle={toggleGap} />
-                      ))}
-                    </>
-                  )}
+                  <p className="lp-group-title">체크한 부족 역량이 로드맵에 들어가요 <span>직무 역량은 맞는 강좌가 적을 수 있어요</span></p>
+                  <GapTable info={gapInfo} isOn={hasGap} onToggle={toggleGap} />
 
                   {gapInfo.conditions.length > 0 && (
                     <div className="lp-conditions">
