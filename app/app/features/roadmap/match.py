@@ -37,6 +37,7 @@ class ContentRef:
     certificate: bool | None = None
     provider: str | None = None
     group: str | None = None    # 같은 과정 묶음(고용24 회차들). None이면 content_id로 따로
+    match: str = "key"          # 찾은 방식: key(역량 키) / title(제목 단어) / semantic(의미 검색, AI 추천)
 
 
 #: 소스별 평점 만점 — 고용24 `stdgScor`는 100점, K-MOOC는 5점. 그대로 비교하면 고용24가 늘 이긴다.
@@ -131,22 +132,40 @@ def _mix_modes(ranked: list[ContentRef], first: str, per_gap: int) -> tuple[list
     return head + [c for c in ranked if c not in head], 1
 
 
-def to_learning_items(selections: Iterable[GapContent]) -> list[LearningItem]:
-    """갭별 1순위 콘텐츠를 스케줄 입력(`LearningItem`)으로 편다(갭 순서 유지).
+def picks(sel: GapContent, *, both_modes: bool = False) -> tuple[ContentRef, ...]:
+    """갭 1건에서 로드맵에 넣을 강좌. 기본은 1순위 1개.
 
+    `both_modes`(학습 방법 "전체")면 1순위 + **다른 학습 방법의 최상위 1개**(있을 때만) — 사용자가
+    두 방법을 다 보고 고른다(필요 없는 쪽은 화면에서 지움). 나머지 후보는 "이 역량 강좌 전체 보기"로.
+    """
+    first = sel.primary
+    if first is None:
+        return ()
+    if not both_modes:
+        return (first,)
+    other = next((c for c in sel.contents[1:] if c.mode != first.mode), None)
+    return (first, other) if other else (first,)
+
+
+def to_learning_items(selections: Iterable[GapContent], *, both_modes: bool = False) -> list[LearningItem]:
+    """갭별로 고른 강좌(`picks`)를 스케줄 입력(`LearningItem`)으로 편다(갭 순서 유지).
+
+    한 갭에 강좌가 2개면(전체) `slot` 0·1로 구분한다 — 배치 위치를 (역량 키, 칸)으로 찾는다.
     콘텐츠가 없는 갭도 **역량만 담아** 넣는다(est_hours=0, title='') — 로드맵에 "배울 역량"으로
     보이되 시간은 안 쓴다. 사용자가 나중에 직접 콘텐츠/시간을 채운다.
     """
     items: list[LearningItem] = []
     for sel in selections:
-        c = sel.primary
-        items.append(
-            LearningItem(
-                key=sel.gap.key,
-                label=sel.gap.label,
-                importance=sel.gap.importance,
-                est_hours=c.est_hours if c else 0.0,
-                title=c.title if c else "",
+        chosen = picks(sel, both_modes=both_modes) or (None,)
+        for slot, c in enumerate(chosen):
+            items.append(
+                LearningItem(
+                    key=sel.gap.key,
+                    label=sel.gap.label,
+                    importance=sel.gap.importance,
+                    est_hours=c.est_hours if c else 0.0,
+                    title=c.title if c else "",
+                    slot=slot,
+                )
             )
-        )
     return items

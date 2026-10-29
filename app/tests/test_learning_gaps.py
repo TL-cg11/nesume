@@ -190,16 +190,6 @@ def test_unchanged_posting_backfills_new_display_columns(db_session):
     assert again.career_text == "신입"  # 이미 있으면 덮어쓰지 않음(무변경 공고)
 
 
-def test_roadmap_explain_uses_shared_guardrail_with_audit():
-    """C14 설명 LLM 경로는 앱 공유 가드레일 — 감사 로그(B11)가 붙고, D가 주입한 LLM 제공자를 같이 쓴다."""
-    from app.features.roadmap.router import get_guardrail as roadmap_guardrail
-    from app.guardrail.fastapi import get_guardrail as shared
-
-    g = roadmap_guardrail()
-    assert g is shared()
-    assert g.audit is not None
-
-
 def test_required_keys_only_vocab_terms():
     """키워드율 분모 = 사전 기술만. 병역·경력 연수 같은 other 조각은 빠진다."""
     from app.features.recommend.service import _a11_required_keys

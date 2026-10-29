@@ -62,6 +62,7 @@ def recommend(payload: RecommendRequest, user: AuthenticatedUser, db: Db):
             PostingBrief(
                 title=fields["title"],
                 job_name=fields["job_name"],
+                company_name=link["company_name"] if link else None,
                 source=link["source"] if link else None,
                 url=link["source_url"] if link else None,
             )

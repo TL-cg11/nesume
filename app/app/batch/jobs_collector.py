@@ -2,7 +2,7 @@
 
 Helm `cronjob-jobs-collector`(D5)가 `python -m app.batch.jobs_collector`로 실행한다.
 하루 1회 **서울시 공고·고용24 공채속보(C4)** 와 **K-MOOC·고용24 훈련과정(C14)** 을 수집해 upsert하고,
-**임베딩 색인(C3)** — 공고·자소서·경험 중 바뀐 것만 — 을 갱신한다(`EMBEDDING_URL` 없으면 건너뜀).
+**임베딩 색인(C3·C14)** — 공고·자소서·경험·강좌 중 바뀐 것만 — 을 갱신한다(`EMBEDDING_URL` 없으면 건너뜀).
 수집 로직은 각 기능에 있고(여기선 **배선·세션·커밋·로깅**만), API 키는 D가 Secrets로 주입한다:
   - 서울시: `SEOUL_OPENAPI_BASE_URL`, `SEOUL_OPENAPI_KEY`
   - K-MOOC: `KMOOC_API_KEY`, `KMOOC_API_BASE_URL`(기본값 있음)
@@ -25,7 +25,7 @@ from app.db import SessionLocal
 
 logger = logging.getLogger("app.batch.jobs_collector")
 
-SOURCES = ("seoul", "work24_open", "kmooc", "work24", "embed_postings", "embed_personal")
+SOURCES = ("seoul", "work24_open", "kmooc", "work24", "embed_postings", "embed_personal", "embed_contents")
 
 
 def collect_seoul(session: Session) -> dict:
@@ -132,6 +132,13 @@ def embed_personal(session: Session) -> dict:
     return _embed(session, reindex_personal)
 
 
+def embed_contents(session: Session) -> dict:
+    """학습 강좌 → 의미 검색 인덱스(C14). 강좌 수집(kmooc·work24) 뒤에 돌아야 새 강좌가 바로 색인된다."""
+    from app.retrieval.reindex import reindex_contents
+
+    return _embed(session, reindex_contents)
+
+
 _RUNNERS: dict[str, Callable[[Session], dict]] = {
     "seoul": collect_seoul,
     "work24_open": collect_work24_open,
@@ -139,6 +146,7 @@ _RUNNERS: dict[str, Callable[[Session], dict]] = {
     "work24": collect_work24,
     "embed_postings": embed_postings,
     "embed_personal": embed_personal,
+    "embed_contents": embed_contents,
 }
 
 

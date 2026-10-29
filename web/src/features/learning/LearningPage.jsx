@@ -4,11 +4,26 @@ import { resumesApi } from '../resumes/api.js'
 import { applicationsApi } from '../applications/api.js'
 import { recommendApi } from '../recommend/api.js'
 import { ApiError } from '../../app/api/client.js'
+import CandidatesDialog from './CandidatesDialog.jsx'
 import '../c-common.css'
 import './learning.css'
 
 const IMPORTANCE_LABEL = { required: '필수', preferred: '우대', mentioned: '참고' }
 const MODE_LABEL = { online: '온라인', offline: '오프라인' }
+const SOURCE_LABEL = { kmooc: 'K-MOOC', work24: '고용24' }
+
+// "내 로드맵" 선택 상자 문구: 생성일 · 회사 · 공고 · 학습 방법 · 진행
+function roadmapLabel(r) {
+  const d = new Date(r.created_at)
+  const when = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  const items = r.items ?? []
+  const done = items.filter((i) => i.status === 'done').length
+  const posting = [r.company_name, r.posting_title].filter(Boolean).join(' ')
+  return [when, posting || '공고 미지정', MODE_LABEL[r.mode] ?? '전체', `${done}/${items.length} 완료`].join(' · ')
+}
+
+// 맞는 강좌를 못 찾은 갭 항목(시스템 항목인데 강좌 출처가 없음) — 강좌처럼 보이지 않게 구분
+const noCourse = (item) => item.origin === 'system' && !item.source
 
 // 부족 역량 카드 — 넣기/빼기 토글(로드맵 생성 시 들어갈 역량)
 function GapCard({ g, on, onToggle }) {
@@ -46,9 +61,9 @@ export default function LearningPage() {
   const [gapsLoading, setGapsLoading] = useState(false)
 
   const [roadmap, setRoadmap] = useState(null) // 현재 로드맵(RoadmapOut) 또는 null
+  const [roadmaps, setRoadmaps] = useState([]) // 내 로드맵 목록(최신순) — 고르거나 지운다
   const [loading, setLoading] = useState(true) // 최초 목록 조회
   const [creating, setCreating] = useState(false)
-  const [explaining, setExplaining] = useState(false)
   const [error, setError] = useState(null)
 
   // 최초: 기존 로드맵이 있으면 가장 최근 것을 보여준다.
@@ -57,7 +72,8 @@ export default function LearningPage() {
     try {
       const list = await roadmapsApi.list({ signal })
       if (signal?.aborted) return
-      setRoadmap(list.length ? list[list.length - 1] : null)
+      setRoadmaps(list)
+      setRoadmap(list.length ? list[0] : null) // 서버가 최근 수정순으로 준다 → 첫 번째가 최신
       setError(null)
     } catch (e) {
       if (e.name === 'AbortError') return
@@ -144,7 +160,8 @@ export default function LearningPage() {
     setCustom('')
   }
 
-  const generate = async () => {
+  // 새 로드맵을 만들어 목록 맨 위에 넣고 연다(이전 로드맵은 목록에 남는다)
+  const generate = async ({ modeValue = mode } = {}) => {
     if (!gaps.length) return
     setCreating(true)
     setError(null)
@@ -159,13 +176,35 @@ export default function LearningPage() {
         weekly_hours: weeklyHours,
       }
       if (postingId) payload.job_posting_id = postingId
-      if (mode) payload.mode = mode
+      if (modeValue) payload.mode = modeValue
       const created = await roadmapsApi.create(payload)
       setRoadmap(created)
+      setRoadmaps((list) => [created, ...list])
     } catch (e) {
       setError(e instanceof ApiError ? e.message : '로드맵 생성에 실패했습니다.')
     } finally {
       setCreating(false)
+    }
+  }
+
+  // 학습 방법을 바꾸면 바로 새로 만든다(로드맵이 있고 넣을 역량이 있을 때). 이전 것은 "내 로드맵" 목록에 남는다.
+  const changeMode = (next) => {
+    if (creating) return
+    setMode(next)
+    if (roadmap && gaps.length) generate({ modeValue: next })
+  }
+
+  // 목록에서 고른 로드맵 열기 / 지금 로드맵 삭제(되돌릴 수 없어 확인)
+  const openRoadmap = (id) => setRoadmap(roadmaps.find((r) => r.id === id) ?? null)
+  const deleteRoadmap = async () => {
+    if (!roadmap || !window.confirm('이 로드맵을 삭제할까요? 완료 체크·추가한 항목도 함께 지워집니다.')) return
+    try {
+      await roadmapsApi.remove(roadmap.id)
+      const rest = roadmaps.filter((r) => r.id !== roadmap.id)
+      setRoadmaps(rest)
+      setRoadmap(rest[0] ?? null)
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : '로드맵을 삭제하지 못했습니다.')
     }
   }
 
@@ -189,18 +228,62 @@ export default function LearningPage() {
     }
   }
 
-  const explain = async () => {
-    if (!roadmap) return
-    setExplaining(true)
+  // 항목 삭제(되돌릴 수 없어 확인을 받는다)
+  const removeItem = async (item) => {
+    if (!roadmap || !window.confirm(`'${item.title}' 항목을 삭제할까요?`)) return
     try {
-      const updated = await roadmapsApi.explain(roadmap.id)
-      setRoadmap(updated)
+      await roadmapsApi.removeItem(roadmap.id, item.id)
+      setRoadmap((r) => ({ ...r, items: r.items.filter((x) => x.id !== item.id) }))
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : '설명 생성에 실패했습니다.')
-    } finally {
-      setExplaining(false)
+      setError(e instanceof ApiError ? e.message : '항목을 삭제하지 못했습니다.')
     }
   }
+
+  // "맞는 강좌 없음" 갭 → 사용자가 찾은 강좌로 대체(같은 주차·순서에 추가 후 갭 항목 삭제)
+  const [addFor, setAddFor] = useState(null) // 입력란을 연 갭 항목 id
+  const [draft, setDraft] = useState({ title: '', url: '', hours: '' })
+  const openAdd = (item) => {
+    setAddFor(item.id)
+    setDraft({ title: '', url: '', hours: '' })
+  }
+  const replaceWithUserItem = async (gap) => {
+    const title = draft.title.trim()
+    if (!roadmap || !title) return
+    const url = draft.url.trim()
+    if (url && !/^https?:\/\//i.test(url)) {
+      setError('링크는 http:// 또는 https:// 로 시작해야 합니다.')
+      return
+    }
+    try {
+      const added = await roadmapsApi.addItem(roadmap.id, {
+        title,
+        url: url || null,
+        hours: draft.hours === '' ? null : Number(draft.hours),
+        week: gap.week,
+      })
+      const placed = await roadmapsApi.updateItem(roadmap.id, added.id, { position: gap.position })
+      await roadmapsApi.removeItem(roadmap.id, gap.id)
+      setRoadmap((r) => ({ ...r, items: [...r.items.filter((x) => x.id !== gap.id), placed] }))
+      setAddFor(null)
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : '강좌를 추가하지 못했습니다.')
+      loadList() // 일부만 반영됐을 수 있어 서버 상태로 다시 맞춘다
+    }
+  }
+
+  // "이 역량 강좌 전체 보기" — 연 항목. 교체면 그 항목을, 추가면 새 항목을 반영한다.
+  const [browseFor, setBrowseFor] = useState(null)
+  const onPicked = (saved, replace) => {
+    setRoadmap((r) => ({
+      ...r,
+      items: replace ? r.items.map((x) => (x.id === browseFor.id ? saved : x)) : [...r.items, saved],
+    }))
+    if (replace) setBrowseFor(saved)
+  }
+
+  useEffect(() => {
+    if (roadmap) setRoadmaps((list) => list.map((r) => (r.id === roadmap.id ? roadmap : r)))
+  }, [roadmap])
 
   const items = roadmap?.items ?? []
   const doneCount = items.filter((i) => i.status === 'done').length
@@ -235,7 +318,7 @@ export default function LearningPage() {
             key={value}
             type="button"
             className={`c-method-chip ${mode === value ? 'c-method-chip-active' : ''}`}
-            onClick={() => setMode((m) => (m === value ? null : value))}
+            onClick={() => changeMode(mode === value ? null : value)}
           >
             {label}
           </button>
@@ -286,7 +369,9 @@ export default function LearningPage() {
                         className={`lp-posting ${postingId === p.posting_id ? 'on' : ''}`}
                         onClick={() => pickPosting(p.posting_id)}
                       >
-                        <span className="lp-posting-title">{p.posting?.title ?? '(제목 없음)'}</span>
+                        <span className="lp-posting-title">
+                          {p.posting?.company_name && <b>{p.posting.company_name}</b>} {p.posting?.title ?? '(제목 없음)'}
+                        </span>
                         <span className={`lp-badge ${applied ? 'applied' : ''}`}>{applied ? '지원함' : '미지원'}</span>
                       </button>
                     </li>
@@ -372,7 +457,7 @@ export default function LearningPage() {
             </div>
           )}
 
-          <button className="c-btn-primary c-btn-full" onClick={generate} disabled={creating || gaps.length === 0}>
+          <button className="c-btn-primary c-btn-full" onClick={() => generate()} disabled={creating || gaps.length === 0}>
             {creating ? '생성 중…' : roadmap ? '로드맵 다시 생성' : '로드맵 생성'}
           </button>
         </aside>
@@ -382,11 +467,28 @@ export default function LearningPage() {
             <div>
               <div className="inline-head">
                 <h3>내 로드맵</h3>
-                {roadmap && <span className="c-roadmap-edit-label">{roadmap.grade}</span>}
+                {resumeId && roadmap && <span className="c-roadmap-edit-label">{roadmap.grade}</span>}
               </div>
+              {resumeId && roadmaps.length > 0 && (
+                <div className="lp-roadmap-picker">
+                  <label className="c-sr-only" htmlFor="lp-roadmap-select">내 로드맵 고르기</label>
+                  <select id="lp-roadmap-select" value={roadmap?.id ?? ''} onChange={(e) => openRoadmap(e.target.value)}>
+                    {roadmaps.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {roadmapLabel(r)}
+                      </option>
+                    ))}
+                  </select>
+                  {roadmap && (
+                    <button type="button" className="lp-roadmap-delete" onClick={deleteRoadmap}>
+                      이 로드맵 삭제
+                    </button>
+                  )}
+                </div>
+              )}
               <p>필수 역량부터 앞 주차에 배치됩니다.</p>
             </div>
-            {roadmap && (
+            {resumeId && roadmap && (
               <div className="c-roadmap-progress">
                 <strong>{doneCount}/{items.length}</strong>
                 <span>완료</span>
@@ -403,29 +505,29 @@ export default function LearningPage() {
             </div>
           )}
 
-          {!loading && !error && !roadmap && (
+          {!loading && !error && !resumeId && (
+            <div className="c-roadmap-empty">
+              <strong>자소서를 고르세요</strong>
+              <p>왼쪽에서 자소서를 고르면 로드맵이 보입니다.</p>
+            </div>
+          )}
+
+          {!loading && !error && resumeId && !roadmap && (
             <div className="c-roadmap-empty">
               <strong>아직 로드맵이 없어요</strong>
               <p>왼쪽에서 역량을 고르고 <strong>로드맵 생성</strong>을 눌러 주세요.</p>
             </div>
           )}
 
-          {!loading && !error && roadmap && items.length === 0 && (
+          {!loading && !error && resumeId && roadmap && items.length === 0 && (
             <div className="c-roadmap-empty">
               <strong>항목이 없습니다</strong>
               <p>선택한 역량으로 만들 수 있는 학습이 없어요.</p>
             </div>
           )}
 
-          {!loading && !error && roadmap && items.length > 0 && (
+          {!loading && !error && resumeId && roadmap && items.length > 0 && (
             <>
-              <div className="roadmap-explain-row">
-                <button className="c-btn-secondary" onClick={explain} disabled={explaining}>
-                  {explaining ? '설명 생성 중…' : roadmap.explanation ? '설명 다시 생성' : '왜 이 순서인지 설명'}
-                </button>
-                {roadmap.explanation && <p className="roadmap-explanation">{roadmap.explanation}</p>}
-              </div>
-
               {weeks.map((week) => (
                 <div className="c-roadmap-week" key={week}>
                   <div className="c-week-title">{week}주차</div>
@@ -433,7 +535,10 @@ export default function LearningPage() {
                     .filter((i) => i.week === week)
                     .sort((a, b) => a.position - b.position)
                     .map((item) => (
-                      <article key={item.id} className={`c-lesson-card ${item.status === 'done' ? 'c-lesson-complete' : ''}`}>
+                      <article
+                        key={item.id}
+                        className={`c-lesson-card ${item.status === 'done' ? 'c-lesson-complete' : ''} ${noCourse(item) ? 'c-lesson-nocourse' : ''}`}
+                      >
                         <label className="c-lesson-check">
                           <input type="checkbox" checked={item.status === 'done'} onChange={() => toggleItem(item)} />
                           <span className="c-sr-only">{item.title} 완료</span>
@@ -441,10 +546,19 @@ export default function LearningPage() {
                         <div className="c-lesson-main">
                           <div className="c-lesson-title-row">
                             <h4>{item.title}</h4>
-                            {item.source && <span className="c-lesson-mode c-mode-online">{item.source}</span>}
+                            {item.mode && (
+                              <span className={`c-lesson-mode c-mode-${item.mode}`}>{MODE_LABEL[item.mode] ?? item.mode}</span>
+                            )}
+                            {item.match_kind === 'semantic' && (
+                              <span className="lp-ai-badge">AI 추천 · 관련도 낮을 수 있음</span>
+                            )}
                           </div>
                           <p className="c-lesson-provider">
-                            {item.provider ?? '제공처 미상'}
+                            {noCourse(item)
+                              ? '맞는 강좌 없음 — 직접 찾아 추가'
+                              : item.origin === 'user'
+                                ? '직접 추가'
+                                : [SOURCE_LABEL[item.source] ?? item.source, item.provider].filter(Boolean).join(' · ')}
                             {item.hours != null && ` · ${item.hours}h`}
                             {item.certificate && ' · 수료증'}
                           </p>
@@ -456,11 +570,78 @@ export default function LearningPage() {
                               {item.unverified && <span className="c-lesson-tag">미검증 링크</span>}
                             </div>
                           )}
+                          {item.gap_key && (
+                            <button type="button" className="lp-browse-btn" onClick={() => setBrowseFor(item)}>
+                              이 역량 강좌 전체 보기
+                            </button>
+                          )}
+                          {noCourse(item) && addFor !== item.id && (
+                            <button type="button" className="c-btn-secondary lp-add-btn" onClick={() => openAdd(item)}>
+                              + 강좌 추가
+                            </button>
+                          )}
+                          {noCourse(item) && addFor === item.id && (
+                            <form
+                              className="lp-add-form"
+                              onSubmit={(e) => {
+                                e.preventDefault()
+                                replaceWithUserItem(item)
+                              }}
+                            >
+                              <input
+                                required
+                                maxLength={200}
+                                placeholder="강좌 이름 (필수)"
+                                value={draft.title}
+                                onChange={(e) => setDraft({ ...draft, title: e.target.value })}
+                              />
+                              <input
+                                type="url"
+                                placeholder="링크 https://… (선택)"
+                                value={draft.url}
+                                onChange={(e) => setDraft({ ...draft, url: e.target.value })}
+                              />
+                              <input
+                                type="number"
+                                min="0"
+                                max="1000"
+                                step="0.5"
+                                placeholder="시간(h, 선택)"
+                                value={draft.hours}
+                                onChange={(e) => setDraft({ ...draft, hours: e.target.value })}
+                              />
+                              <div className="lp-add-actions">
+                                <button type="submit" className="c-btn-primary">추가</button>
+                                <button type="button" className="c-btn-secondary" onClick={() => setAddFor(null)}>
+                                  취소
+                                </button>
+                              </div>
+                            </form>
+                          )}
                         </div>
+                        <button
+                          type="button"
+                          className="lp-item-remove"
+                          aria-label={`${item.title} 삭제`}
+                          title="삭제"
+                          onClick={() => removeItem(item)}
+                        >
+                          ×
+                        </button>
                       </article>
                     ))}
                 </div>
               ))}
+
+              {browseFor && (
+                <CandidatesDialog
+                  key={browseFor.id}
+                  roadmapId={roadmap.id}
+                  item={browseFor}
+                  onClose={() => setBrowseFor(null)}
+                  onPicked={onPicked}
+                />
+              )}
 
               <div className="c-roadmap-note">
                 <span>주차 배치·완료 상태는 서버에 저장됩니다. 외부 강좌 링크는 새 탭으로 열립니다.</span>

@@ -4,7 +4,9 @@
 - 개인: 자소서(문항별 최신 버전)·경험 → `index_personal`. **B가 저장한 토큰화 값 그대로**(원문 복원 안 함 —
   원문을 쓰면 PII가 `user_profile_embeddings.content`에 평문으로 들어간다). 등급·공유 메타는 원본에서 복제.
 
-둘 다 **바뀐 것만** 다시 임베딩한다: 만들 글을 계산해 저장된 `content`와 같으면 건너뛴다(임베딩 호출 0).
+- 강좌(C14 의미 검색): 제목 + K-MOOC 요약 앞부분 → `learning_content_embeddings`(강좌당 1행, 공개).
+
+셋 다 **바뀐 것만** 다시 임베딩한다: 만들 글을 계산해 저장된 `content`와 같으면 건너뛴다(임베딩 호출 0).
 바뀌면 그 문서의 행을 지우고 새로 넣는다(같은 트랜잭션). 실행당 상한(`cap`)으로 임베딩 호출 수를 묶는다.
 """
 from __future__ import annotations
@@ -15,7 +17,13 @@ from collections.abc import Iterable
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from app.models.embedding import MODEL_VERSION, JobPostingEmbedding, UserProfileEmbedding
+from app.models.embedding import (
+    MODEL_VERSION,
+    JobPostingEmbedding,
+    LearningContentEmbedding,
+    UserProfileEmbedding,
+)
+from app.models.learning import LearningContent
 from app.models.posting import JobPosting
 from app.retrieval.embedder import Embedder
 from app.retrieval.indexing import clean_posting_text, index_personal, index_posting
@@ -99,3 +107,47 @@ def reindex_personal(session: Session, embedder: Embedder, *, cap: int = DEFAULT
         done += 1
     pending = len(docs) - done - unchanged - empty
     return {"embedded": done, "unchanged": unchanged, "empty": empty, "pending": pending}
+
+
+#: 강좌는 짧은 글이라 한 번에 더 많이(로컬 CPU 실측 초당 6.6건 → 2,000건 약 5분). 첫 채움은 며칠에 나눈다.
+CONTENT_CAP = 2000
+#: K-MOOC 요약은 앞부분만(제목이 핵심, 요약은 맥락 보강)
+CONTENT_SUMMARY_CHARS = 300
+
+
+def content_text(c: LearningContent) -> str:
+    """강좌 → 임베딩할 글. 고용24 `summary`는 기관·지역·기간(사실 정보)이라 의미가 없어 넣지 않는다."""
+    if c.source == "kmooc" and c.summary:
+        return f"{c.title} — {c.summary[:CONTENT_SUMMARY_CHARS]}"
+    return c.title
+
+
+def reindex_contents(session: Session, embedder: Embedder, *, cap: int = CONTENT_CAP) -> dict:
+    """활성 강좌 중 벡터가 없거나 글이 바뀐 것을 임베딩(강좌당 1행 갱신). 공개 메타데이터라 PII 없음."""
+    contents = session.execute(
+        select(LearningContent).where(LearningContent.is_active.is_(True))
+    ).scalars().all()
+    stored = {
+        r.content_id: r
+        for r in session.execute(
+            select(LearningContentEmbedding).where(LearningContentEmbedding.model_version == MODEL_VERSION)
+        ).scalars()
+    }
+    todo, unchanged = [], 0
+    for c in contents:
+        text = content_text(c)
+        row = stored.get(c.id)
+        if row is not None and row.content == text:
+            unchanged += 1
+        else:
+            todo.append((c, text))
+    batch = todo[:cap]
+    if batch:
+        vecs = embedder.embed([t for _, t in batch])
+        for (c, text), vec in zip(batch, vecs, strict=True):
+            row = stored.get(c.id)
+            if row is None:
+                session.add(LearningContentEmbedding(content_id=c.id, content=text, embedding=vec))
+            else:
+                row.content, row.embedding = text, vec
+    return {"embedded": len(batch), "unchanged": unchanged, "pending": len(todo) - len(batch)}

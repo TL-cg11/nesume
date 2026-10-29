@@ -34,11 +34,12 @@ class RecommendRequest(BaseModel):
 
 
 class PostingBrief(BaseModel):
-    """추천 공고 요약(제목·직무). 공고 글은 C 창구 `get_posting_fields`로만 읽는다."""
+    """추천 공고 요약(제목·직무·회사). 공고 글은 C 창구 `get_posting_fields`·`get_posting_link`로만 읽는다."""
 
     model_config = ConfigDict(extra="forbid")
     title: str | None = None
     job_name: str | None = None
+    company_name: str | None = None
     #: 출처(seoul / work24_open …) — 화면 출처 문구용(서울시는 "서울특별시 공공데이터" 표시 의무).
     source: str | None = None
     #: 원문 링크(공채속보만, 기업별 외부 도메인·http/https만 저장). 서울시는 None → 화면은 접수방법 안내.

@@ -4,7 +4,7 @@
   갭 키로 `LearningContent` 조회(역량 배열 교집합·활성·모드) → 갭별 콘텐츠 선택(`match`)
   → `LearningItem`으로 펴기 → 주당 시간 맞춰 주차 배치(`schedule`).
 
-LLM은 여기 없다 — 이 배치 결과 위에 "왜 이 순서인지" 설명만 A8 경유로 붙인다(통합 단계).
+LLM은 없다 — 순서·주차는 규칙으로 정한다(LLM 설명 단계는 2026-10-29 제거).
 로드맵 저장(행 생성)은 라우터(⑤)가 이 결과를 받아 처리한다. 이 서비스는 **계획을 계산**만 한다.
 """
 from __future__ import annotations
@@ -17,10 +17,19 @@ from dataclasses import dataclass, replace
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.features.roadmap.match import ContentRef, GapContent, select_for_gaps, to_learning_items
+from app.features.roadmap.match import (
+    ContentRef,
+    GapContent,
+    _dedupe_groups,
+    _rank_key,
+    picks,
+    select_for_gaps,
+    to_learning_items,
+)
 from app.features.roadmap.schedule import WeeklyPlan, build_schedule
 from app.features.roadmap.work24 import WORK24_SOURCE
 from app.features.skill_gap.gap import LearningGap
+from app.models.embedding import MODEL_VERSION, LearningContentEmbedding
 from app.models.learning import LearningContent, LearningRoadmap, LearningRoadmapItem
 
 #: 로드맵 항목 1행 = (항목, 딸린 콘텐츠 or None). 조회·설명 생성이 공유하는 모양.
@@ -34,6 +43,7 @@ class RoadmapPlan:
     weeks: list[WeeklyPlan]            # 주차 배치(스케줄)
     selections: list[GapContent]       # 갭별 선택 콘텐츠(대표+대안, 표시·저장용)
     uncovered: list[LearningGap]       # 매칭 콘텐츠가 없는 갭(사용자가 직접 채울 몫)
+    both_modes: bool = False           # 학습 방법 "전체" — 갭마다 온라인·오프라인 1개씩(`picks`)
 
 
 def _to_ref(row: LearningContent) -> ContentRef:
@@ -205,7 +215,63 @@ def fallback_contents(
             stmt = stmt.where(LearningContent.mode == mode)
         for row in session.execute(stmt).scalars():
             ref = _to_ref(row)
-            out.append(replace(ref, competency_keys=(*ref.competency_keys, g.key)))
+            out.append(replace(ref, competency_keys=(*ref.competency_keys, g.key), match="title"))
+    return out
+
+
+#: 의미 검색 유사도 기준값(코사인). 로컬 실측(2026-10-29, docs/C14.md)으로 정함 — 이 아래는 대부분 엉뚱했다.
+SEMANTIC_THRESHOLD = 0.55
+
+
+def _embed_labels(embedder, labels: list[str]) -> list[list[float]] | None:
+    """갭 이름 → 벡터. 임베더가 없거나 실패하면 None(의미 검색 단계만 건너뛴다)."""
+    if embedder is None or not labels:
+        return None
+    from app.retrieval.embedder import EmbeddingError  # 지연 import(HTTP 클라이언트)
+
+    try:
+        return embedder.embed(labels)
+    except EmbeddingError:
+        return None
+
+
+def _nearest(
+    session: Session, vec: list[float], *, mode: str | None, limit: int
+) -> list[tuple[LearningContent, float]]:
+    """강좌 임베딩에서 `vec`과 가까운 순 → (강좌, 유사도). 기준값 이상만. 값은 바인딩(pgvector)."""
+    dist = LearningContentEmbedding.embedding.cosine_distance(vec)
+    stmt = (
+        select(LearningContent, (1 - dist).label("sim"))
+        .join(LearningContentEmbedding, LearningContentEmbedding.content_id == LearningContent.id)
+        .where(
+            LearningContent.is_active.is_(True),
+            LearningContentEmbedding.model_version == MODEL_VERSION,
+            dist <= 1 - SEMANTIC_THRESHOLD,
+        )
+        .order_by(dist)
+        .limit(limit)
+    )
+    if mode is not None:
+        stmt = stmt.where(LearningContent.mode == mode)
+    return [(row, float(sim)) for row, sim in session.execute(stmt).all()]
+
+
+def semantic_contents(
+    session: Session, gaps: list[LearningGap], embedder, *, mode: str | None = None, per_gap: int = 3
+) -> list[ContentRef]:
+    """키·제목 검색으로도 못 찾은 갭 → **갭 이름과 의미가 가까운 강좌**(기준값 이상, `match="semantic"`).
+
+    화면은 "AI 추천 · 관련도 낮을 수 있음"으로 구분한다. 입력은 공개 공고 글(갭 이름)뿐이다.
+    회차가 많은 과정이 자리를 다 차지하지 않게 넉넉히 뽑아 같은 과정은 하나로 줄인 뒤 자른다.
+    """
+    vecs = _embed_labels(embedder, [g.label for g in gaps])
+    if vecs is None:
+        return []
+    out: list[ContentRef] = []
+    for g, vec in zip(gaps, vecs, strict=True):
+        refs = [_to_ref(row) for row, _ in _nearest(session, vec, mode=mode, limit=per_gap * 10)]
+        for ref in _dedupe_groups(refs)[:per_gap]:
+            out.append(replace(ref, competency_keys=(*ref.competency_keys, g.key), match="semantic"))
     return out
 
 
@@ -217,9 +283,12 @@ def build_roadmap(
     mode: str | None = None,
     max_weeks: int | None = None,
     per_gap: int = 3,
+    embedder=None,
 ) -> RoadmapPlan:
     """학습 갭 → 콘텐츠 매칭 → 주차 배치까지 한 번에 계산한다.
 
+    찾는 순서: 역량 키 일치 → (못 찾은 갭) 제목 단어 → (그래도 없는 갭) 의미 검색(`embedder` 있을 때만).
+    학습 방법 "전체"(`mode=None`)면 갭마다 온라인·오프라인 1개씩 넣는다(있을 때).
     갭이 없으면 빈 계획. 콘텐츠가 전혀 없어도 갭은 역량 항목으로 배치에 포함된다(시간 0).
     """
     keys = [g.key for g in gaps]
@@ -227,11 +296,15 @@ def build_roadmap(
     linked = {k for c in contents for k in c.competency_keys}
     unlinked = [g for g in gaps if g.key not in linked]
     contents += fallback_contents(session, unlinked, mode=mode, per_gap=per_gap)
+    linked = {k for c in contents for k in c.competency_keys}
+    still = [g for g in unlinked if g.key not in linked]
+    contents += semantic_contents(session, still, embedder, mode=mode, per_gap=per_gap)
     selections = select_for_gaps(gaps, contents, mode=mode, per_gap=per_gap)
-    items = to_learning_items(selections)
+    both = mode is None
+    items = to_learning_items(selections, both_modes=both)
     weeks = build_schedule(items, weekly_hours=weekly_hours, max_weeks=max_weeks)
     uncovered = [s.gap for s in selections if s.primary is None]
-    return RoadmapPlan(weeks=weeks, selections=selections, uncovered=uncovered)
+    return RoadmapPlan(weeks=weeks, selections=selections, uncovered=uncovered, both_modes=both)
 
 
 # --- 저장·조회·수정 (본인 전용, DB) ------------------------------------------------
@@ -247,14 +320,15 @@ def _owned(session: Session, roadmap_id: uuid.UUID, owner_id: str) -> LearningRo
     return rm
 
 
-def _placement(weeks: list[WeeklyPlan]) -> dict[str, tuple[int, int]]:
-    """스케줄에서 역량 키별 **최초 등장 주차·그 주 내 순서**를 뽑는다(긴 과정은 여러 주 → 첫 주)."""
-    out: dict[str, tuple[int, int]] = {}
+def _placement(weeks: list[WeeklyPlan]) -> dict[tuple[str, int], tuple[int, int]]:
+    """스케줄에서 (역량 키, 칸)별 **최초 등장 주차·그 주 내 순서**를 뽑는다(긴 과정은 여러 주 → 첫 주)."""
+    out: dict[tuple[str, int], tuple[int, int]] = {}
     for wp in weeks:
         pos = 0
         for s in wp.items:
-            if s.item.key not in out:
-                out[s.item.key] = (wp.week, pos)
+            k = (s.item.key, s.item.slot)
+            if k not in out:
+                out[k] = (wp.week, pos)
                 pos += 1
     return out
 
@@ -266,6 +340,7 @@ def save_roadmap(
     job_posting_id: uuid.UUID | None,
     weekly_hours: int,
     plan: RoadmapPlan,
+    mode: str | None = None,
 ) -> LearningRoadmap:
     """계산된 계획을 본인 로드맵으로 저장한다(시스템 항목). grade=personal·owner는 모델/여기서 고정.
 
@@ -276,25 +351,29 @@ def save_roadmap(
         owner_id=owner_id,
         job_posting_id=job_posting_id,
         weekly_hours=weekly_hours,
+        mode=mode,
     )
     session.add(roadmap)
     session.flush()  # roadmap.id 확보
 
     place = _placement(plan.weeks)
     for idx, sel in enumerate(plan.selections):
-        week, pos = place.get(sel.gap.key, (None, idx))
-        content = sel.primary
-        session.add(
-            LearningRoadmapItem(
-                roadmap_id=roadmap.id,
-                content_id=content.content_id if content else None,
-                origin="system",
-                week=week,
-                position=pos,
-                status="planned",
-                title=None if content else sel.gap.label,  # 콘텐츠 없는 갭은 역량명 표시
+        for slot, content in enumerate(picks(sel, both_modes=plan.both_modes) or (None,)):
+            week, pos = place.get((sel.gap.key, slot), (None, idx))
+            session.add(
+                LearningRoadmapItem(
+                    roadmap_id=roadmap.id,
+                    content_id=content.content_id if content else None,
+                    origin="system",
+                    week=week,
+                    position=pos,
+                    status="planned",
+                    title=None if content else sel.gap.label,  # 콘텐츠 없는 갭은 역량명 표시
+                    gap_key=sel.gap.key,
+                    gap_label=sel.gap.label,
+                    match_kind=content.match if content else None,
+                )
             )
-        )
     return roadmap
 
 
@@ -344,15 +423,6 @@ def update_weekly_hours(
 def delete_roadmap(session: Session, *, roadmap_id: uuid.UUID, owner_id: str) -> None:
     """로드맵 삭제(항목 CASCADE). 본인 것만."""
     session.delete(_owned(session, roadmap_id, owner_id))
-
-
-def set_explanation(
-    session: Session, *, roadmap_id: uuid.UUID, owner_id: str, text: str
-) -> LearningRoadmap:
-    """A8이 생성한 "왜 이 순서" 설명을 저장(재조회 시 LLM 재호출 없이 표시). 본인 것만."""
-    rm = _owned(session, roadmap_id, owner_id)
-    rm.explanation = text
-    return rm
 
 
 def add_user_item(
@@ -418,3 +488,139 @@ def delete_item(
 ) -> None:
     """항목 1건 삭제. 본인 로드맵의 항목만."""
     session.delete(_owned_item(session, roadmap_id, item_id, owner_id))
+
+
+# --- "이 역량 강좌 전체 보기" · 추가 · 교체 (본인 전용) -------------------------------
+
+class NoGapInfo(Exception):
+    """항목에 역량 정보(gap_key)가 없다 — 사용자 추가 항목이거나 0020 이전에 만든 로드맵."""
+
+
+class ContentUnavailable(Exception):
+    """강좌가 없거나 비활성."""
+
+
+#: 의미 검색 후보 상한(기준값 이상이어도 이만큼까지만) — 목록이 엉뚱한 강좌로 길어지지 않게.
+SEMANTIC_LIST_LIMIT = 100
+
+
+def _gap_candidates(
+    session: Session, gap_key: str, gap_label: str, *, mode: str | None, embedder
+) -> list[ContentRef]:
+    """한 역량의 강좌 **전부**: 키 일치 ∪ 제목 단어 ∪ 의미 검색(기준값 이상).
+
+    같은 강좌가 여러 방식에 걸리면 앞의 방식(키 → 제목 → 의미)으로 표시한다.
+    """
+    found: dict[uuid.UUID, ContentRef] = {}
+
+    stmt = select(LearningContent).where(
+        LearningContent.is_active.is_(True), LearningContent.competency_keys.any(gap_key)
+    )
+    token = search_token(gap_label)
+    title_stmt = (
+        select(LearningContent).where(
+            LearningContent.is_active.is_(True),
+            LearningContent.title.ilike(f"%{_like_escape(token)}%", escape="\\"),
+        )
+        if token
+        else None
+    )
+    if mode is not None:
+        stmt = stmt.where(LearningContent.mode == mode)
+        title_stmt = title_stmt.where(LearningContent.mode == mode) if title_stmt is not None else None
+
+    for row in session.execute(stmt).scalars():
+        found.setdefault(row.id, _to_ref(row))
+    if title_stmt is not None:
+        for row in session.execute(title_stmt).scalars():
+            found.setdefault(row.id, replace(_to_ref(row), match="title"))
+    vecs = _embed_labels(embedder, [gap_label])
+    if vecs:
+        for row, _ in _nearest(session, vecs[0], mode=mode, limit=SEMANTIC_LIST_LIMIT):
+            found.setdefault(row.id, replace(_to_ref(row), match="semantic"))
+    return _dedupe_groups(sorted(found.values(), key=_rank_key))
+
+
+def item_candidates(
+    session: Session,
+    *,
+    roadmap_id: uuid.UUID,
+    item_id: uuid.UUID,
+    owner_id: str,
+    mode: str | None = None,
+    page: int = 1,
+    size: int = 20,
+    embedder=None,
+) -> tuple[int, list[ContentRef], set[uuid.UUID]]:
+    """항목 역량의 강좌 목록 한 페이지 → (전체 개수, 이 페이지 강좌, 이미 로드맵에 있는 강좌 id).
+
+    정렬은 로드맵과 같은 랭킹(수료증 → 평점 → 시간). 본인 로드맵 항목만(아니면 RoadmapNotFound).
+    """
+    item = _owned_item(session, roadmap_id, item_id, owner_id)
+    if not item.gap_key:
+        raise NoGapInfo(str(item_id))
+    label = item.gap_label or item.gap_key
+    allc = _gap_candidates(session, item.gap_key, label, mode=mode, embedder=embedder)
+    in_roadmap = {
+        cid for (cid,) in session.execute(
+            select(LearningRoadmapItem.content_id).where(
+                LearningRoadmapItem.roadmap_id == roadmap_id, LearningRoadmapItem.content_id.is_not(None)
+            )
+        )
+    }
+    start = (page - 1) * size
+    return len(allc), allc[start:start + size], in_roadmap
+
+
+def _active_content(session: Session, content_id: uuid.UUID) -> LearningContent:
+    row = session.get(LearningContent, content_id)
+    if row is None or not row.is_active:
+        raise ContentUnavailable(str(content_id))
+    return row
+
+
+def _match_kind_for(row: LearningContent, gap_key: str, gap_label: str) -> str:
+    """사용자가 목록에서 고른 강좌의 찾은 방식(배지용). 키 → 제목 단어 → 그 외는 의미 검색."""
+    if gap_key in (row.competency_keys or []):
+        return "key"
+    token = search_token(gap_label)
+    if token and token.casefold() in row.title.casefold():
+        return "title"
+    return "semantic"
+
+
+def add_candidate(
+    session: Session, *, roadmap_id: uuid.UUID, item_id: uuid.UUID, owner_id: str, content_id: uuid.UUID
+) -> LearningRoadmapItem:
+    """목록에서 고른 강좌를 **같은 역량·같은 주차**의 새 항목으로 추가(기준 항목 바로 뒤)."""
+    base = _owned_item(session, roadmap_id, item_id, owner_id)
+    if not base.gap_key:
+        raise NoGapInfo(str(item_id))
+    row = _active_content(session, content_id)
+    item = LearningRoadmapItem(
+        roadmap_id=roadmap_id,
+        content_id=row.id,
+        origin="system",
+        week=base.week,
+        position=base.position + 1,
+        status="planned",
+        gap_key=base.gap_key,
+        gap_label=base.gap_label,
+        match_kind=_match_kind_for(row, base.gap_key, base.gap_label or base.gap_key),
+    )
+    session.add(item)
+    return item
+
+
+def replace_with_candidate(
+    session: Session, *, roadmap_id: uuid.UUID, item_id: uuid.UUID, owner_id: str, content_id: uuid.UUID
+) -> LearningRoadmapItem:
+    """항목의 강좌를 목록에서 고른 강좌로 바꾼다(주차·순서·완료 상태는 그대로)."""
+    item = _owned_item(session, roadmap_id, item_id, owner_id)
+    if not item.gap_key:
+        raise NoGapInfo(str(item_id))
+    row = _active_content(session, content_id)
+    item.content_id = row.id
+    item.title = None  # 표시는 강좌에서
+    item.match_kind = _match_kind_for(row, item.gap_key, item.gap_label or item.gap_key)
+    return item

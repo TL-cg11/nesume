@@ -8,10 +8,6 @@
 .roadmap-error { background: #FCEEEE; }
 .roadmap-error strong { color: #8A3B3B; }
 
-/* "왜 이 순서인지" 설명(A8 경유) */
-.roadmap-explain-row { display: flex; flex-direction: column; gap: 10px; margin-bottom: 18px; }
-.roadmap-explanation { background: var(--accent-soft); border-radius: 10px; padding: 14px 16px; color: #3A4656; font-size: 12px; line-height: 1.7; }
-
 /* skill-panel 안의 생성 버튼은 위 여백을 둔다 */
 .skill-panel .btn-full { margin-top: 16px; }
 
@@ -38,3 +34,50 @@
 .lp-conditions .lp-group-title { width: 100%; }
 .lp-cond { border: 1px solid var(--border); border-radius: 999px; padding: 3px 9px; font-size: 11px; color: var(--muted); }
 .lp-cond b { color: var(--fg); margin-right: 4px; }
+
+/* 맞는 강좌 없는 갭 항목 — 강좌 카드와 구분(점선·흐리게) */
+.c-lesson-nocourse { border-style: dashed; background: transparent; }
+.c-lesson-nocourse .c-lesson-provider { color: var(--muted); font-style: italic; }
+.lp-posting-title b { font-weight: 800; margin-right: 2px; }
+
+/* 강좌 없는 갭 → 직접 추가(대체) · 항목 삭제 */
+.c-lesson-card { position: relative; padding-right: 30px; }
+.lp-item-remove { position: absolute; top: 8px; right: 10px; border: 0; background: transparent; color: var(--muted); font-size: 16px; line-height: 1; cursor: pointer; padding: 2px 4px; }
+.lp-item-remove:hover { color: #8A3B3B; }
+.lp-add-btn { margin-top: 8px; padding: 6px 10px; font-size: 11px; }
+.lp-add-form { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.lp-add-form input { border: 1px solid var(--border); border-radius: 8px; padding: 7px 9px; font-size: 12px; }
+.lp-add-actions { display: flex; gap: 6px; }
+.lp-add-actions button { padding: 6px 12px; font-size: 11px; }
+
+/* 학습 방법 배지(오프라인) · AI 추천 배지 · 전체 보기 */
+.c-mode-offline { background: #E5F4EA; color: #2F7A4B; }
+.lp-ai-badge { border: 1px dashed #C9A54B; border-radius: 999px; padding: 1px 7px; font-size: 10px; color: #8A6A1F; background: #FFF9EA; white-space: nowrap; }
+.lp-browse-btn { margin-top: 6px; border: 0; background: none; padding: 0; color: var(--accent); font-size: 11px; text-decoration: underline; cursor: pointer; }
+
+.lp-cand-dialog { width: min(720px, calc(100vw - 32px)); max-height: calc(100vh - 64px); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; }
+.lp-cand-dialog::backdrop { background: rgba(20, 30, 40, .35); }
+.lp-cand-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.lp-cand-head h3 { font-size: 15px; }
+.lp-cand-close { border: 0; background: none; font-size: 20px; color: var(--muted); cursor: pointer; }
+.lp-cand-filter { display: flex; align-items: center; gap: 6px; margin: 12px 0; flex-wrap: wrap; }
+.lp-cand-filter button { border: 1px solid var(--border); border-radius: 999px; background: #fff; padding: 4px 11px; font-size: 11px; cursor: pointer; }
+.lp-cand-filter button.on { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+.lp-cand-count { margin-left: auto; font-size: 11px; color: var(--muted); }
+.lp-cand-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.lp-cand-item { display: flex; gap: 12px; justify-content: space-between; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+.lp-cand-main { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.lp-cand-title-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; }
+.lp-cand-meta { font-size: 11px; color: var(--muted); }
+.lp-cand-actions { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
+.lp-cand-actions button { padding: 6px 10px; font-size: 11px; }
+.lp-cand-tag { font-size: 11px; color: var(--muted); }
+.lp-cand-pager { display: flex; justify-content: center; align-items: center; gap: 10px; margin-top: 12px; font-size: 12px; }
+.lp-cand-empty, .lp-cand-error { font-size: 12px; color: var(--muted); padding: 12px 0; }
+.lp-cand-error { color: #8A3B3B; }
+@media (max-width: 560px) { .lp-cand-item { flex-direction: column; } .lp-cand-actions { flex-direction: row; } }
+
+/* 내 로드맵 고르기·삭제 */
+.lp-roadmap-picker { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0 4px; }
+.lp-roadmap-picker select { max-width: 100%; border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; font-size: 12px; background: #fff; }
+.lp-roadmap-delete { border: 0; background: none; padding: 0; color: #8A3B3B; font-size: 11px; text-decoration: underline; cursor: pointer; }

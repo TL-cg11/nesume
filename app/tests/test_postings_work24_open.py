@@ -233,7 +233,9 @@ def test_get_posting_link_and_fields_unchanged(db_session):
     assert get_posting_link(db_session, p.id, user_id="anyone") == {
         "source": SOURCE_WORK24_OPEN,
         "source_url": "https://kpf.plusrecruit.co.kr/#/recruitment/detail/46",
+        "company_name": p.company_name,
     }
+    assert p.company_name  # 픽스처에 회사명이 있어야 위 비교가 의미 있다
     # A11용 창구는 키가 그대로(PostingIn extra="forbid")
     assert set(get_posting_fields(db_session, p.id, user_id="anyone")) == {
         "title", "job_name", "job_content", "certificates", "preferred", "major", "computer_skills",

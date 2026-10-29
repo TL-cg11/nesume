@@ -194,7 +194,11 @@ export default function RecommendPage() {
                   <strong className="rec-item-title">{it.posting?.title ?? '(제목 비공개)'}</strong>
                   <span className="rec-item-score">{pct(it.score)}</span>
                 </div>
-                <p className="rec-item-job">{it.posting?.job_name ?? '직무 미상'}</p>
+                <p className="rec-item-job">
+                  {it.posting?.company_name && <b className="rec-item-company">{it.posting.company_name}</b>}
+                  {it.posting?.company_name && ' · '}
+                  {it.posting?.job_name ?? '직무 미상'}
+                </p>
                 {SOURCE_LABEL[it.posting?.source] && (
                   <p className="rec-item-source">출처: {SOURCE_LABEL[it.posting.source]}</p>
                 )}

@@ -2,7 +2,7 @@
 from app.models.application import Application
 from app.models.audit import AuditLog
 from app.models.download import DownloadToken
-from app.models.embedding import JobPostingEmbedding, UserProfileEmbedding
+from app.models.embedding import JobPostingEmbedding, LearningContentEmbedding, UserProfileEmbedding
 from app.models.experience import Experience, QuestionExperience
 from app.models.learning import LearningContent, LearningRoadmap, LearningRoadmapItem
 from app.models.pii import PiiVault, UserKey
@@ -26,6 +26,7 @@ __all__ = [
     "Experience",
     "JobPosting",
     "JobPostingEmbedding",
+    "LearningContentEmbedding",
     "LearningContent",
     "LearningRoadmap",
     "LearningRoadmapItem",

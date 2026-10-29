@@ -7,12 +7,21 @@ export const roadmapsApi = {
   get: (id, opts) => api.get(`/roadmaps/${id}`, opts),
   // payload: { gaps:[{key,label,importance,evidence_fields[]}], weekly_hours, mode?, max_weeks? }
   create: (payload, opts) => api.post('/roadmaps', payload, opts),
-  explain: (id, opts) => api.post(`/roadmaps/${id}/explain`, undefined, opts),
+  remove: (id, opts) => api.delete(`/roadmaps/${id}`, opts),
   updateHours: (id, weeklyHours, opts) => api.patch(`/roadmaps/${id}`, { weekly_hours: weeklyHours }, opts),
   addItem: (id, item, opts) => api.post(`/roadmaps/${id}/items`, item, opts),
   // patch: { status?, week?, position? }
   updateItem: (id, itemId, patch, opts) => api.patch(`/roadmaps/${id}/items/${itemId}`, patch, opts),
   removeItem: (id, itemId, opts) => api.delete(`/roadmaps/${id}/items/${itemId}`, opts),
+  // "이 역량 강좌 전체 보기": { mode?: 'online'|'offline', page, size } → { total, page, size, items[] }
+  candidates: (id, itemId, { mode, page = 1, size = 20 } = {}, opts) => {
+    const q = new URLSearchParams({ page: String(page), size: String(size) })
+    if (mode) q.set('mode', mode)
+    return api.get(`/roadmaps/${id}/items/${itemId}/candidates?${q}`, opts)
+  },
+  // 목록에서 고른 강좌 → 교체(replace=true) 또는 같은 역량·주차에 추가
+  pick: (id, itemId, { content_id, replace = false }, opts) =>
+    api.post(`/roadmaps/${id}/items/${itemId}/candidates`, { content_id, replace }, opts),
 }
 
 // C10 맞춤 학습 갭: 자소서 + 공고 → 배워야 할 역량(필수·우대, 중요도순). 자소서 원문은 서버 안에서만 쓴다.

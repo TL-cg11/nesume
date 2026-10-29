@@ -32,6 +32,8 @@ LEARNING_MODES = ("online", "offline")
 #: 로드맵 항목 출처(시스템 추천 / 사용자 추가)와 상태.
 ITEM_ORIGINS = ("system", "user")
 ITEM_STATUSES = ("planned", "in_progress", "done")
+#: 시스템 항목의 강좌를 어떻게 찾았나 — 역량 키 일치 / 제목 단어 / 의미 검색(AI 추천, 관련도 낮을 수 있음).
+MATCH_KINDS = ("key", "title", "semantic")
 
 
 class LearningContent(Base):
@@ -68,15 +70,15 @@ class LearningRoadmap(Base):
     """사용자별 학습 로드맵(본인 전용, grade=personal). 공고 한 건 기준의 로드맵."""
 
     __tablename__ = "learning_roadmaps"
-    __table_args__ = (grade_check(),)
+    __table_args__ = (grade_check(), one_of("mode", LEARNING_MODES, "learning_roadmaps_mode"))
 
     id: Mapped[UuidPk]
     owner_id: Mapped[str] = owner_fk()
     # 어떤 공고 기준 로드맵인가(C4 내부 UUID, nullable). FK는 B가 취합 시 추가(결정: 공고 사라져도 유지).
     job_posting_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, index=True)
     weekly_hours: Mapped[int] = mapped_column(Integer, default=5, server_default="5")  # 사용자 입력
-    # "왜 이 순서인지" LLM 설명(A8 가드레일 경유). 생성 전·LLM 미배선이면 NULL.
-    explanation: Mapped[str | None] = mapped_column(Text)
+    # 만들 때 고른 학습 방법(online/offline). NULL = 전체(온·오프 1개씩). 목록 표시용.
+    mode: Mapped[str | None] = mapped_column(String(10))
     grade: Mapped[str] = grade_column(Grade.PERSONAL)
     created_at: Mapped[CreatedAt]
     updated_at: Mapped[UpdatedAt]
@@ -89,6 +91,7 @@ class LearningRoadmapItem(Base):
     __table_args__ = (
         one_of("origin", ITEM_ORIGINS, "learning_roadmap_items_origin"),
         one_of("status", ITEM_STATUSES, "learning_roadmap_items_status"),
+        one_of("match_kind", MATCH_KINDS, "learning_roadmap_items_match_kind"),
     )
 
     id: Mapped[UuidPk]
@@ -107,5 +110,10 @@ class LearningRoadmapItem(Base):
     title: Mapped[str | None] = mapped_column(Text)
     url: Mapped[str | None] = mapped_column(Text)
     hours: Mapped[float | None] = mapped_column(Float)
+    # 어느 역량(갭) 몫인가 — "이 역량 강좌 전체 보기"·교체에 쓴다. 사용자 추가 항목·0020 이전 행은 NULL.
+    gap_key: Mapped[str | None] = mapped_column(Text)  # 직무 역량 키는 문장 조각일 수 있어 길이 제한 없음
+    gap_label: Mapped[str | None] = mapped_column(Text)
+    # 강좌를 찾은 방식(MATCH_KINDS). 강좌 없는 갭·사용자 추가는 NULL.
+    match_kind: Mapped[str | None] = mapped_column(String(12))
     created_at: Mapped[CreatedAt]
     updated_at: Mapped[UpdatedAt]
