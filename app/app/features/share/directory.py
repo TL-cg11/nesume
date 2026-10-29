@@ -49,6 +49,15 @@ def find_mentor_sub(idp, email: str) -> str | None:
     return _attr(user, "sub")
 
 
+def find_sub(idp, email: str) -> str | None:
+    """이메일 → 사용자 ID(역할 무관). AI 사용 기록에서 사용자로 거를 때(운영자 전용)."""
+    email = (email or "").strip().lower()
+    if not _EMAIL.match(email):
+        return None
+    found = idp.list_users(UserPoolId=_pool(), Filter=f'email = "{email}"', Limit=1).get("Users", [])
+    return _attr(found[0], "sub") if found else None
+
+
 def emails_for(idp, subs: list[str]) -> dict[str, str]:
     """사용자 ID → 이메일. 찾지 못한 ID(삭제된 계정·익명화된 감사 로그)는 빠진다."""
     pool = _pool()

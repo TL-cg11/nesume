@@ -22,7 +22,7 @@ import MfaChallengePage from '../features/auth/MfaChallengePage.jsx'
 import MfaSetupPage from '../features/auth/MfaSetupPage.jsx'
 import MentorSharesPage from '../features/share/MentorSharesPage.jsx'
 import MentorSharePage from '../features/share/MentorSharePage.jsx'
-import TemplatesPage from '../features/templates/TemplatesPage.jsx'
+import AuditLogsPage from '../features/audit/AuditLogsPage.jsx'
 import RequireAuth from '../features/auth/RequireAuth.jsx'
 // C: 공고 추천(C8)·학습 로드맵(C14)·지원 현황(C15) — nesumeC에서 이식(docs C-frontend-wiring.md 6절)
 import RecommendPage from '../features/recommend/RecommendPage.jsx'
@@ -53,7 +53,8 @@ export const featureRoutes = [
   { path: 'mfa/setup', element: <MfaSetupPage /> },
   { path: 'mentor', element: <MentorSharesPage />, nav: '받은 공유', roles: ['mentor'] }, // B17 멘토 전용 — 메뉴도 멘토에게만
   { path: 'mentor/:shareId', element: <MentorSharePage /> },
-  { path: 'templates', element: <TemplatesPage />, nav: '프롬프트 템플릿', roles: ['operator'] }, // B9 운영자 전용 — 메뉴도 운영자에게만
+  // B11 AI 사용 기록(운영자 MFA 전용, 10/29). 프롬프트 템플릿 화면은 메뉴에서 뺌 — 템플릿 API는 A6가 쓰므로 서버에 유지
+  { path: 'ai-logs', element: <AuditLogsPage />, nav: 'AI 사용 기록', roles: ['operator'] },
 ]
 
 export const routes = [
