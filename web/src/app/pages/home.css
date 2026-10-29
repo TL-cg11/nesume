@@ -7,18 +7,32 @@
   display: inline-block; margin-top: var(--space-3); padding: var(--space-2) var(--space-4);
   background: var(--accent); color: var(--on-accent); border-radius: var(--radius-sm); font-weight: 700; text-decoration: none;
 }
+.home-cta { border: 0; cursor: pointer; } /* 링크 → 버튼(바로 작성). 모양은 그대로 */
 .home-cta:hover { filter: brightness(1.08); }
 
-.home-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-3); }
+/* 카드 사이 간격은 모두 --space-4 하나로 통일(세로·가로·열 안) */
+.home-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-4); }
 .home-stat { display: flex; flex-direction: column; gap: var(--space-1); }
 .home-stat-value { font-size: var(--text-xl); color: var(--fg); }
 
 .home-grid { display: grid; grid-template-columns: 2fr 1fr; gap: var(--space-4); align-items: start; }
-.home-side { margin-top: 0; gap: var(--space-4); }
+/* 공용 .stack(위 여백 있음)을 쓰지 않는다 — 불러오는 순서에 따라 여백이 살아나 이 열만 내려갔다 */
+.home-side { display: flex; flex-direction: column; gap: var(--space-4); }
 .home-recent { display: flex; align-items: center; gap: var(--space-3); }
 .home-recent p, .home .list p { margin: var(--space-1) 0 0; }
 .home-recent-title, .home-quick-title { color: var(--fg); font-weight: 650; text-decoration: none; }
 .home-recent-title:hover, a.home-quick-title:hover { color: var(--accent-text); }
+
+/* 행 전체 클릭: 제목 링크가 행을 덮는다(링크는 행마다 하나 — 낭독기는 제목만 읽음) */
+.home .list > li.home-recent, .home .list > li.home-quick {
+  /* 제목·상태 배지 양옆 여백(10/28 요청). 공용 `.list > li`(좌우 0)보다 우선해야 적용된다 */
+  position: relative; padding-inline: var(--space-5);
+  border-radius: var(--radius-sm); cursor: pointer;
+}
+.home-recent:hover, .home-quick:hover { background: color-mix(in srgb, var(--accent-soft) 60%, transparent); }
+.home-recent:has(:focus-visible), .home-quick:has(:focus-visible) { box-shadow: var(--focus-ring); }
+.home-recent-title::after, .home-quick > a.home-quick-title::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
+.home-recent-title:focus-visible, .home-quick > a.home-quick-title:focus-visible { outline: none; }
 .home-badge {
   font-size: var(--text-sm); font-weight: 700; white-space: nowrap;
   padding: calc(var(--space-1) / 2) var(--space-2); border-radius: var(--radius-pill);

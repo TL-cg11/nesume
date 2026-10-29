@@ -112,12 +112,14 @@ class RewriteOptions:
     옵션을 고르게 강제하면 "그냥 다시 써 줘" 를 못 하게 된다.
     """
 
-    tone: Tone = DEFAULT_TONE
+    #: None 이면 끝맺음도 말투 샘플을 따른다. 샘플이 있을 때만 뜻이 있다 —
+    #: 샘플이 없으면 서비스가 기본 문체로 바꾼다 (rewrite_service.rewrite)
+    tone: Tone | None = DEFAULT_TONE
     length: Length = DEFAULT_LENGTH
     keywords: tuple[str, ...] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
-        if self.tone not in TONES:
+        if self.tone is not None and self.tone not in TONES:
             raise RewriteOptionError(f"문체는 {TONES} 중 하나여야 합니다: {self.tone!r}")
         if self.length not in LENGTHS:
             raise RewriteOptionError(f"길이는 {LENGTHS} 중 하나여야 합니다: {self.length!r}")
@@ -138,7 +140,8 @@ class RewriteOptions:
           있어야 한다.** 그래서 응답에도 이 문단을 그대로 실어 보낸다.
         """
         lines = [
-            f"- 문체는 {TONE_NAMES[self.tone]}로 씁니다.",
+            f"- 문체는 {TONE_NAMES[self.tone]}로 씁니다." if self.tone
+            else "- 문장 끝맺음(문체)도 말투 샘플을 따릅니다.",
             f"- {LENGTH_RULES[self.length]}",
         ]
         if self.keywords:
@@ -238,7 +241,10 @@ def build_part_prompt(
     대신 이것을 따른다 — 사용자가 지금 붙여 넣은 글이 더 정확한 기준이다.
     """
     head = template_body if template_body else DEFAULT_TEMPLATE_BODY
-    tone_rule = SAMPLE_TONE_RULE.format(tone=TONE_NAMES[options.tone])
+    tone_rule = (
+        SAMPLE_TONE_RULE.format(tone=TONE_NAMES[options.tone]) if options.tone
+        else SAMPLE_OWN_ENDINGS
+    )
     if style_sample:
         # ★ 말투 맞추기가 목적이면 그 지시를 **맨 앞에** 둔다. 뒤에 두면 "자소서를 다시 써라"
         #   가 앞서서 모델이 원문 구조를 그대로 두고 낱말만 바꿨다 (10-29 실측).
@@ -272,6 +278,8 @@ def build_part_prompt(
 #:   서버가 새 숫자가 생긴 후보를 버리지만(rewrite_service), 지시에서 먼저 막는다.
 SAMPLE_HEAD = "'말투 샘플' 을 쓴 사람이 되어, '글' 의 내용을 그 사람의 말투로 다시 써 주십시오."
 SAMPLE_TONE_RULE = "단, 모든 문장의 끝은 반드시 {tone}로 씁니다."
+#: 끝맺음을 고르지 않았을 때(화면 기본, 2026-10-29). 말투를 맞추는 기능이니 끝맺음도 그 사람 것이다
+SAMPLE_OWN_ENDINGS = "문장 끝맺음(~습니다·~했다·~해요 등)도 샘플과 같게 씁니다."
 
 _MEASURE_SENTENCE = re.compile(r"[^.!?\n]+[.!?]*")
 
@@ -307,7 +315,6 @@ SAMPLE_RULE = (
     "- **가장 중요한 조건**: '말투 샘플' 을 쓴 사람이 이 글을 직접 썼다고 생각하고 다시 씁니다. "
     "샘플의 문장 길이(짧게 끊는지 길게 잇는지), 문장을 시작하는 방식, 자주 쓰는 연결 표현과 "
     "부사, 문장의 리듬을 그대로 따릅니다. 원문의 문장 구조는 유지하지 않아도 됩니다.\n"
-    "- 문장 끝맺음만 위 문체 지시를 따릅니다 (예: 샘플이 '했다' 로 끝나도 '했습니다' 로).\n"
     "- '글' 의 내용은 **하나도 빼지 않습니다.** 문장을 나누거나 합칠 뿐 정보를 줄이지 않습니다.\n"
     "- 문단은 '글' 처럼 나눕니다. 문장마다 줄을 바꾸지 않습니다.\n"
     "- 샘플의 **내용·사실·숫자·고유명사는 가져오지 않습니다.** 내용은 '글' 에 있는 것만 씁니다."

@@ -77,7 +77,7 @@ def _experience_draft(stats: client.RepoStats, role: str, tech: list[str], s: di
     langs = [k for k, _ in stats.language_share()[:5]]
     detail = "\n".join(f"{k}: {s[k]}" for k in ("배경", "역할", "기술") if s.get(k))
     detail = f"{detail}\n저장소: {stats.html_url}".strip()
-    return {"title": name[:200], "type": "프로젝트", "role": (role or s.get("역할") or None),
+    return {"title": name[:200], "type": "GitHub", "role": (role or s.get("역할") or None),
             "tech_stack": list(dict.fromkeys([*tech, *langs]))[:10], "outcome": s.get("성과") or None,
             "detail": detail, "tags": ["GitHub"]}
 

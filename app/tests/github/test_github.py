@@ -142,7 +142,7 @@ def test_draft_with_readme(monkeypatch):
     assert b["sections"]["성과"] == "응답시간 40% 단축"
     assert b["repo"]["commits"] == 123
     e = b["experience_draft"]
-    assert e["title"] == "demo" and e["type"] == "프로젝트" and e["role"] == "백엔드"
+    assert e["title"] == "demo" and e["type"] == "GitHub" and e["role"] == "백엔드"
     assert e["tech_stack"][:2] == ["FastAPI", "Python"] and e["tags"] == ["GitHub"]
     assert e["outcome"] == "응답시간 40% 단축" and URL in e["detail"]
 
