@@ -20,8 +20,9 @@ from typing import Protocol
 EMBED_DIM = 1024
 #: TEI `MAX_CLIENT_BATCH_SIZE`(compose·Helm 32, D20 #28에서 64→32). 넘기면 서버가 거부한다
 BATCH_SIZE = 32
-#: 노드 교체 중이면 수 분 불가(D20) → 5xx·연결 오류만 재시도
-RETRY_DELAYS = (1.0, 2.0, 4.0, 8.0)
+#: 노드 교체 중이면 수 분 불가(D20) → 5xx·연결 오류만 재시도.
+#: 대량 색인 중 임베더가 잠시 NotReady 로 빠질 수 있어 총 ~1분 기다린다(10-29 dev 강좌 8,700건)
+RETRY_DELAYS = (1.0, 2.0, 4.0, 8.0, 15.0, 30.0)
 _MAX_BYTES = 64 * 1024 * 1024  # 32 × 1024 float JSON ≈ 0.7MB. 넉넉한 상한
 
 
@@ -60,7 +61,7 @@ class HttpEmbedder:
     - URL은 설정값으로만(사용자 입력 아님). http는 클러스터 내부·로컬 서비스라 허용.
     """
 
-    def __init__(self, url: str, *, timeout_s: float = 30.0, sleep=time.sleep):
+    def __init__(self, url: str, *, timeout_s: float = 60.0, sleep=time.sleep):
         parsed = urllib.parse.urlsplit(url)
         if parsed.scheme not in ("http", "https") or not parsed.hostname:
             raise EmbeddingError("EMBEDDING_URL은 http(s)://host 형식이어야 한다")
