@@ -96,11 +96,21 @@ export default function ResumesPage() {
                   {r.status ?? '상태 없음'} · {new Date(r.updated_at).toLocaleString()}
                 </span>
                 {r.share_summary && (
-                  <span className="share-summary"
-                    title={(r.share_summary.mentors ?? []).map((m) => `${m.label} · ${shortDate(m.end_date)}까지`).join('\n')}>
+                  // 행 덮개 위에 올려 마우스를 올리면 누구와 공유 중인지 바로 보이게(10/29). 누르면 멘토 공유 탭으로
+                  <Link to={`/resumes/${r.id}?tab=share`} className="share-summary"
+                    aria-label={`공유 중 ${r.share_summary.active_count}명, 멘토 공유 보기`}>
                     <span className="share-tag-mark">공유 중</span>
                     {r.share_summary.active_count}명 · 가장 빠른 종료 {shortDate(r.share_summary.earliest_end_date)}
-                  </span>
+                    {r.share_summary.mentors?.length > 0 && (
+                      <span className="share-pop" role="tooltip">
+                        {r.share_summary.mentors.map((m, i) => (
+                          <span key={i} className="share-pop-row">
+                            <strong>{m.label}</strong> · {shortDate(m.end_date)}까지
+                          </span>
+                        ))}
+                      </span>
+                    )}
+                  </Link>
                 )}
               </li>
             ))}
