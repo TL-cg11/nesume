@@ -176,7 +176,8 @@ export default function RecommendPage({ resumeId = null, embedded = false }) {
         <div className="c-panel-heading">
           <div>
             <h3>추천 공고</h3>
-            <p>POST /recommendations · 점수 = 0.5 벡터 + 0.5 키워드율</p>
+            {/* [B 10/29] 자소서 탭 안에서는 개발용 설명을 숨긴다 */}
+            {!embedded && <p>POST /recommendations · 점수 = 0.5 벡터 + 0.5 키워드율</p>}
           </div>
           {result && !result.cold_start && (
             <span className="c-tiny-label">{result.items.length}건</span>
