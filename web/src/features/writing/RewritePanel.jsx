@@ -1,31 +1,28 @@
-// 다시 쓰기 — 고른 구간을 다시 쓴 후보 3개를 보여주고 하나를 고르게 한다 (A6).
-// 내 말투(A14)도 여기서 관리한다. 말투 프로필을 쓰는 곳이 리라이팅뿐이다.
+// 다시 쓰기 — 내가 평소에 쓴 글(말투 샘플)을 넣으면 본문을 그 말투로 다시 쓴다 (A6).
 //
-// ★ 본문에서 드래그한 부분이 없으면 글 전체를 고른 것으로 친다 — 아무것도 안 고르고
-//   누른 사용자가 "왜 안 되지" 로 멈추지 않게 한다.
-//
-// ★ 문체는 페이지 조건(목표 문체)을 따른다. 검사 탭과 다른 문체로 다시 쓰면
-//   검사에서 다시 "문체가 섞였다" 가 나온다.
-//
+// ★ 샘플은 **말투만** 빌린다. 샘플 속 사실·숫자는 가져오지 않는다 — 서버가 원문에 없는
+//   숫자가 들어간 후보를 버린다 (rewrite_service). 샘플은 저장하지 않는다.
+// ★ 문장 끝맺음(합니다체 등)은 따로 고른다. 블로그 글을 샘플로 넣어도 자소서는
+//   합니다체로 남길 수 있게.
+// ★ 본문에서 드래그한 부분이 없으면 글 전체를 다시 쓴다.
 // ★ 저장은 **문항 맥락이 있을 때만** 할 수 있다. B4 자소서 화면에서
 //   ?resume=&question= 을 달고 넘어오면 "새 버전으로 저장" 이 켜진다.
 import { useState } from 'react'
 import { useSearchParams } from 'react-router'
-import ProfileBox from './ProfileBox.jsx'
 import {
   CANDIDATE_COUNT,
   CHUNK_CHARS,
-  LENGTH_NAMES,
-  MAX_KEYWORDS,
-  MAX_KEYWORD_LEN,
+  MAX_SAMPLE_CHARS,
   MAX_SELECTION_LEN,
+  MIN_SAMPLE_CHARS,
   TONE_NAMES,
   rewriteApi,
 } from './api.js'
 
-export default function RewritePanel({ text, tone, selection, result, setResult, run, isBusy, onApplied }) {
-  const [length, setLength] = useState('similar')
-  const [keywordText, setKeywordText] = useState('')
+export default function RewritePanel({
+  text, run, isBusy, onApplied, selection, sample, setSample, result, setResult,
+}) {
+  const [tone, setTone] = useState('formal')
   const [saved, setSaved] = useState(null)
   const [params] = useSearchParams()
 
@@ -36,21 +33,20 @@ export default function RewritePanel({ text, tone, selection, result, setResult,
   // 드래그한 구간이 없으면 글 전체다
   const hasSelection = selection && selection.end > selection.start
   const target = hasSelection ? text.slice(selection.start, selection.end) : text
-  const keywords = splitKeywords(keywordText)
 
+  const sampleLen = sample.trim().length
+  const sampleShort = sampleLen < MIN_SAMPLE_CHARS
   const tooLong = target.length > MAX_SELECTION_LEN
-  const badKeyword = keywords.find((k) => k.length > MAX_KEYWORD_LEN)
-  const canRun = target.trim().length > 0 && !tooLong && !badKeyword
-    && keywords.length <= MAX_KEYWORDS
+  const canRun = target.trim().length > 0 && !tooLong && !sampleShort
 
   const rewrite = async () => {
     setResult(null)
     setSaved(null)
-    // 후보를 고를 때 바꿀 자리를 기억해 둔다. 결과를 기다리는 동안 드래그가 바뀌어도
+    // 후보를 고를 때 바꿀 자리를 기억해 둔다. 기다리는 동안 드래그가 바뀌어도
     // 후보는 **보낸 구간**에 들어가야 한다
     const range = hasSelection ? { ...selection } : null
-    const data = await run((signal) =>
-      rewriteApi.rewrite({ text: target, tone, length, keywords }, signal),
+    const data = await run('rewrite', (signal) =>
+      rewriteApi.rewrite({ text: target, tone, styleSample: sample.trim() }, signal),
     )
     if (data) setResult({ ...data, range })
   }
@@ -63,7 +59,7 @@ export default function RewritePanel({ text, tone, selection, result, setResult,
   }
 
   const save = async (body) => {
-    const data = await run((signal) =>
+    const data = await run('rewrite', (signal) =>
       rewriteApi.apply({ resumeId, questionId, body }, signal),
     )
     if (data) setSaved(`새 버전으로 저장했습니다 (${data.char_count.toLocaleString()}자).`)
@@ -71,68 +67,57 @@ export default function RewritePanel({ text, tone, selection, result, setResult,
 
   return (
     <div className="stack">
+      <label className="stack wr-sample-field">
+        <strong>내 말투 샘플</strong>
+        <span className="muted">
+          평소에 내가 쓴 글을 붙여 넣으십시오(블로그·메모·다른 자소서 등). 어휘·문장 길이·연결
+          표현을 이 글처럼 맞춥니다. 샘플의 내용과 숫자는 가져오지 않고, 저장하지 않습니다.
+        </span>
+        <textarea
+          className="wr-sample"
+          value={sample}
+          maxLength={MAX_SAMPLE_CHARS}
+          onChange={(e) => setSample(e.target.value)}
+          placeholder="내가 쓴 글을 붙여 넣으십시오."
+        />
+        <span className={sampleShort && sampleLen > 0 ? 'wr-count over' : 'wr-count'}>
+          {sampleLen.toLocaleString()} / {MAX_SAMPLE_CHARS.toLocaleString()}자
+          {sampleShort && ` · ${MIN_SAMPLE_CHARS}자 이상 필요`}
+        </span>
+      </label>
+
       <p className={hasSelection ? 'notice' : 'muted'}>
         {hasSelection
-          ? `고른 구간 ${target.length.toLocaleString()}자를 다시 씁니다.`
+          ? `본문에서 고른 ${target.length.toLocaleString()}자를 다시 씁니다.`
           : '본문에서 다시 쓸 부분을 드래그하십시오. 고르지 않으면 글 전체를 다시 씁니다.'}
         {target.length > CHUNK_CHARS && ` 길어서 ${Math.ceil(target.length / CHUNK_CHARS)}번에 나눠 보냅니다.`}
       </p>
-
-      <div className="row">
-        <label className="wr-field">
-          <span className="muted">길이</span>
-          <select value={length} onChange={(e) => setLength(e.target.value)}>
-            {Object.entries(LENGTH_NAMES).map(([id, name]) => (
-              <option key={id} value={id}>{name}</option>
-            ))}
-          </select>
-        </label>
-        <label className="wr-field grow">
-          <span className="muted">넣고 싶은 말 (쉼표로 구분)</span>
-          <input
-            className="wr-keywords"
-            value={keywordText}
-            onChange={(e) => setKeywordText(e.target.value)}
-            placeholder="협업, 데이터 분석"
-            aria-describedby="wr-kw-help"
-          />
-        </label>
-      </div>
-      <span id="wr-kw-help" className="muted">
-        문체는 왼쪽 조건({TONE_NAMES[tone]})을 따릅니다. 넣을 자리가 없는 말은 억지로 끼워 넣지 않습니다.
-      </span>
-
       {tooLong && (
         <p className="error">
           고른 구간이 {MAX_SELECTION_LEN.toLocaleString()}자를 넘습니다. 나눠서 고르십시오.
         </p>
       )}
-      {badKeyword && (
-        <p className="error">키워드 하나는 {MAX_KEYWORD_LEN}자까지입니다: {badKeyword.slice(0, 20)}</p>
-      )}
-      {keywords.length > MAX_KEYWORDS && (
-        <p className="error">키워드는 {MAX_KEYWORDS}개까지 넣을 수 있습니다.</p>
-      )}
 
       <div className="row">
+        <label className="wr-field">
+          <span className="muted">문장 끝맺음</span>
+          <select value={tone} onChange={(e) => setTone(e.target.value)}>
+            {Object.entries(TONE_NAMES).map(([id, name]) => (
+              <option key={id} value={id}>{name}</option>
+            ))}
+          </select>
+        </label>
+        <span className="grow" />
         <button onClick={rewrite} disabled={isBusy || !canRun}>
-          {isBusy ? '다시 쓰는 중...' : `후보 ${CANDIDATE_COUNT}개 만들기`}
+          {isBusy ? '다시 쓰는 중...' : `이 말투로 후보 ${CANDIDATE_COUNT}개 만들기`}
         </button>
       </div>
 
       {saved && <p className="success">{saved}</p>}
 
       {result && (
-        <Result
-          result={result}
-          canSave={canSave}
-          isBusy={isBusy}
-          onReplace={replace}
-          onSave={save}
-        />
+        <Result result={result} canSave={canSave} isBusy={isBusy} onReplace={replace} onSave={save} />
       )}
-
-      <ProfileBox text={text} run={run} isBusy={isBusy} />
     </div>
   )
 }
@@ -141,7 +126,7 @@ function Result({ result, canSave, isBusy, onReplace, onSave }) {
   return (
     <div className="stack">
       {/* "운영자 프롬프트 미등록" 은 사용자가 할 수 있는 일이 없는 운영 안내라 뺀다
-          (rewrite_service._template_body). 형식 오류·후보 부족 안내는 보여준다 */}
+          (rewrite_service._template_body). 형식 오류·후보 부족·숫자 제외 안내는 보여준다 */}
       {result.notices
         .filter((n) => !n.startsWith('운영자'))
         .map((n) => (
@@ -158,9 +143,7 @@ function Result({ result, canSave, isBusy, onReplace, onSave }) {
           <div className="row">
             <strong className="grow">후보 {c.index}</strong>
             <span className="muted">
-              {c.char_count.toLocaleString()}자
-              {' · '}
-              {diffLabel(c.char_count, result.original_char_count)}
+              {c.char_count.toLocaleString()}자 · {diffLabel(c.char_count, result.original_char_count)}
             </span>
           </div>
 
@@ -184,7 +167,7 @@ function Result({ result, canSave, isBusy, onReplace, onSave }) {
         </section>
       ))}
 
-      {/* ★ 무엇이 모델에 갔는지 볼 수 있어야 한다 (A14 와 같은 생각) */}
+      {/* ★ 무엇이 모델에 갔는지 볼 수 있어야 한다 */}
       {result.instructions && (
         <details className="wr-fragment">
           <summary>모델에 보낸 지시문 보기</summary>
@@ -210,12 +193,4 @@ function diffLabel(after, before) {
   const d = after - before
   if (d === 0) return '원문과 같은 길이'
   return d > 0 ? `${d.toLocaleString()}자 늘어남` : `${(-d).toLocaleString()}자 줄어듦`
-}
-
-// 쉼표로 자르고 앞뒤 공백과 빈 것을 없앤다. 중복은 서버가 한 번 더 없앤다
-export function splitKeywords(value) {
-  return value
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean)
 }

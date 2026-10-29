@@ -63,6 +63,12 @@ spec:
               port: http
             periodSeconds: 5
             failureThreshold: 3
+          # 종료 신호 전에 잠깐 기다린다. 엔드포인트에서 빠지는 것은 비동기라, 바로 내려가면
+          # 그 사이 web(nginx) 이 보낸 요청이 connection refused → 502 가 된다(10-29 dev 재배포 때 발생).
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: {{ .Values.app.preStopSleepSeconds }}
           securityContext:
             {{- include "nesume.containerSecurityContext" . | nindent 12 }}
           resources:

@@ -21,7 +21,7 @@ from app.features.profile.router import get_store as get_profile_store
 from app.features.profile.store import ProfileStore
 from app.features.resumes import pii_hooks
 from app.features.resumes import service as resumes_service
-from app.features.writing import rewrite_service, service
+from app.features.writing import rewrite_service, service, star_review
 from app.features.writing.rewrite import RewriteOptionError
 from app.features.writing.schemas import (
     ApplyRequest,
@@ -33,6 +33,8 @@ from app.features.writing.schemas import (
     RewriteRequest,
     RewriteResponse,
     StarOut,
+    StarReviewRequest,
+    StarReviewResponse,
     SuggestionOut,
 )
 from app.features.writing.suggestions import (
@@ -83,6 +85,23 @@ async def proofread(
     )
 
 
+@router.post("/star", response_model=StarReviewResponse)
+async def review_star(
+    payload: StarReviewRequest,
+    user: AuthenticatedUser,
+    guard: Guardrail = Depends(get_guardrail),
+    session_id: str | None = Depends(session_header),
+) -> StarReviewResponse:
+    """STAR 네 요소를 모델이 판정한다(충분·부족·없음 + 근거 + 보완 질문).
+
+    모델을 못 쓰면 규칙 판정(있다/없다)으로 내려간다. 글을 고쳐 쓰지 않는다.
+    """
+    result = await star_review.review(
+        payload.text, guard=guard, **guardrail_kwargs(user, session_id),
+    )
+    return StarReviewResponse.of(result)
+
+
 @router.post("/apply", response_model=ApplyResponse)
 def apply(payload: ApplyRequest, user: AuthenticatedUser) -> ApplyResponse:
     """수락한 제안만 반영해 돌려준다. 저장하지 않는다.
@@ -126,14 +145,14 @@ async def rewrite_selection(
     """고른 구간을 다시 쓴 후보 3개를 돌려준다. 저장하지 않는다."""
     try:
         options = payload.options()
+        result = await rewrite_service.rewrite(
+            db, payload.text, options,
+            guard=guard, store=store, use_llm=payload.use_llm,
+            style_sample=payload.style_sample,
+            **guardrail_kwargs(user, session_id),
+        )
     except RewriteOptionError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from None
-
-    result = await rewrite_service.rewrite(
-        db, payload.text, options,
-        guard=guard, store=store, use_llm=payload.use_llm,
-        **guardrail_kwargs(user, session_id),
-    )
     return RewriteResponse.of(payload.text, result)
 
 
