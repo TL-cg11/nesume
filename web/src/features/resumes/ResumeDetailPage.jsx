@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router'
 import { resumesApi } from './api.js'
+import RecommendPage from '../recommend/RecommendPage.jsx'
 import PolishTab from './PolishTab.jsx'
 import QuestionEditor from './QuestionEditor.jsx'
 import SharePanel from './SharePanel.jsx'
@@ -15,6 +16,7 @@ const TABS = [
   { id: 'versions', label: '버전 관리 및 비교' },
   { id: 'share', label: '멘토 공유' },
   { id: 'polish', label: '글 다듬기' }, // 10/29: 글 다듬기 메뉴를 자소서 안으로
+  { id: 'recommend', label: '공고 추천' }, // 10/29: 공고 추천 메뉴를 자소서 안으로(이 자소서 기준)
 ]
 
 export default function ResumeDetailPage() {
@@ -153,6 +155,13 @@ export default function ResumeDetailPage() {
         </div>
       )}
 
+      {tab === 'recommend' && (
+        <div className="resume-tab-body">
+          <p className="muted">이 자기소개서({resume.title})에 맞는 공고를 추천합니다.</p>
+          <RecommendPage resumeId={resumeId} embedded />
+        </div>
+      )}
+
       {tab === 'share' && (
         <SharePanel
           resumeId={resumeId}
@@ -165,7 +174,7 @@ export default function ResumeDetailPage() {
       )}
 
       {/* 공유 탭에서도 편집 화면은 그대로 둔 채 가린다 — 작성 중인 글이 사라지지 않게 */}
-      <div className="detail-grid" hidden={tab === 'share' || tab === 'polish'}>
+      <div className="detail-grid" hidden={tab === 'share' || tab === 'polish' || tab === 'recommend'}>
         <aside>
           <h2>문항</h2>
           <ul className="question-list">

@@ -51,7 +51,9 @@ function PostingDetail({ posting }) {
   )
 }
 
-export default function RecommendPage() {
+// [B 추가 10/29] 자소서 상세 '공고 추천' 탭에 넣을 때: resumeId = 그 자소서 기준 추천(서버 resume_id), embedded = 제목 숨김.
+// 둘 다 생략하면 기존 /recommend 화면과 똑같이 동작한다.
+export default function RecommendPage({ resumeId = null, embedded = false }) {
   const [heldText, setHeldText] = useState('aws, docker, iam')
   const [result, setResult] = useState(null) // null=아직 실행 안 함
   const [loading, setLoading] = useState(false)
@@ -113,6 +115,7 @@ export default function RecommendPage() {
         region_codes: [],
         job_codes: [],
         top_k: 20,
+        ...(resumeId ? { resume_id: resumeId } : {}),
       })
       setResult(data)
     } catch (err) {
@@ -126,11 +129,13 @@ export default function RecommendPage() {
 
   return (
     <div className="rec-page">
-      <div>
-        <p className="c-eyebrow">CAREER MATCH</p>
-        <h1 className="c-page-heading">공고 추천 · 역량 분석</h1>
-        <p className="c-page-subtitle">보유 역량을 넣으면 맞춤 공고를 추천합니다. (추천 결과는 데모 데이터입니다)</p>
-      </div>
+      {!embedded && (
+        <div>
+          <p className="c-eyebrow">CAREER MATCH</p>
+          <h1 className="c-page-heading">공고 추천 · 역량 분석</h1>
+          <p className="c-page-subtitle">보유 역량을 넣으면 맞춤 공고를 추천합니다. (추천 결과는 데모 데이터입니다)</p>
+        </div>
+      )}
 
       <form className="c-panel" onSubmit={run}>
         <div className="rec-form-grid">
