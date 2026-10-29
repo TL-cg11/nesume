@@ -2,8 +2,10 @@
 // - 시작 시 /config.json → Amplify 설정 → 세션 토큰이 있으면 client.js 에 토큰 공급자를 등록하고 /auth/me 를 부른다.
 // - 401 이 오면(client.js setUnauthorizedHandler) 세션을 지우고 /login 으로 보낸다.
 // - 화면은 useAuth() 로 { status, me, email, login, logout, refreshMe } 를 쓴다. 토큰 자체는 노출하지 않는다.
+// - TOTP 미등록 운영자(/auth/me mfa_required)는 /mfa/setup 외 어떤 화면도 열 수 없다. 백엔드도 /auth/me 외
+//   전부 403 mfa_required 다(operator_mfa_gate). 로그인 직후 바로 등록 화면으로 간다.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router'
+import { Navigate, useLocation, useNavigate } from 'react-router'
 import { fetchAuthSession, getCurrentUser, signIn, signOut } from 'aws-amplify/auth'
 import { setTokenProvider, setUnauthorizedHandler } from '../../app/api/client.js'
 import { authApi } from './api.js'
@@ -12,6 +14,7 @@ import { authFlowType, configureAuth } from './authConfig.js'
 const AuthContext = createContext(null)
 
 const AUTH_PATHS = ['/login', '/signup', '/confirm', '/forgot', '/mfa/challenge', '/mfa/setup']
+const MFA_SETUP_PATH = '/mfa/setup'
 
 async function currentAccessToken() {
   try {
@@ -53,10 +56,9 @@ export function AuthProvider({ children }) {
     try {
       const data = await authApi.me()
       setMe(data)
-      setMfaRequired(false)
+      setMfaRequired(Boolean(data.mfa_required))
       return data
     } catch (e) {
-      // 운영자인데 TOTP 미등록이면 /auth/me 는 200 이지만 보호 API 가 403 mfa_required. 여기서는 403 만 표시용으로 기록.
       if (e.status === 403 && e.code === 'mfa_required') setMfaRequired(true)
       throw e
     }
@@ -153,6 +155,17 @@ export function AuthProvider({ children }) {
     () => ({ status, me, email, mfaRequired, configError, login, completeSignIn, logout, refreshMe: loadMe }),
     [status, me, email, mfaRequired, configError, login, completeSignIn, logout, loadMe],
   )
+
+  // TOTP 등록 전 운영자: 등록 화면만 연다. 등록이 끝나면(refreshMe → mfa_required=false) 원래 가려던 화면으로.
+  if (status === 'authed' && mfaRequired && location.pathname !== MFA_SETUP_PATH) {
+    const back = AUTH_PATHS.includes(location.pathname) ? '' : location.pathname + location.search
+    const to = back && back !== '/' ? `${MFA_SETUP_PATH}?next=${encodeURIComponent(back)}` : MFA_SETUP_PATH
+    return (
+      <AuthContext.Provider value={value}>
+        <Navigate to={to} replace />
+      </AuthContext.Provider>
+    )
+  }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

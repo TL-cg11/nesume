@@ -13,6 +13,7 @@ from app.auth import mfa
 from app.auth.cognito import AuthenticatedUser, CurrentUser, Role, TokenVerifier, get_token_verifier
 from app.auth.dependencies import (
     get_current_user_optional,
+    operator_mfa_gate,
     require_interactive,
     require_operator_mfa,
     require_role,
@@ -58,7 +59,7 @@ def _settings(**overrides) -> Settings:
 
 
 def _make_app(settings: Settings) -> FastAPI:
-    app = FastAPI()
+    app = FastAPI(dependencies=[Depends(operator_mfa_gate)])  # main.py 와 같은 전역 가드
     app.add_middleware(RequestIdMiddleware)
     register_exception_handlers(app)
     app.include_router(auth_router)
@@ -263,14 +264,84 @@ def test_optional_user_with_token(make_client, rsa_key):
 
 def test_me(make_client, rsa_key):
     claims = _claims(username="op@example.com", **{"cognito:groups": ["operator", "test"]})
-    r = _get(make_client(), "/auth/me", _sign(rsa_key, claims))
+    r = _get(make_client(operator_mfa_required=False), "/auth/me", _sign(rsa_key, claims))
     assert r.status_code == 200
     assert r.json() == {
         "user_id": claims["sub"],
         "role": "operator",
         "is_test": True,
         "username": "op@example.com",
+        "mfa_required": False,
     }
+
+
+# --- operator_mfa_gate (TOTP 미등록 운영자 전역 차단) + /auth/me mfa_required ------------
+
+
+def test_gate_blocks_unenrolled_operator_everywhere(make_client, rsa_key, monkeypatch):
+    monkeypatch.setattr(mfa, "totp_enrolled", lambda _sub: False)
+    c = make_client(operator_mfa_required=True)
+    token = _sign(rsa_key, _operator())
+    for path in ("/whoami", "/public"):
+        r = _get(c, path, token)
+        assert r.status_code == 403, path
+        assert r.json()["code"] == "mfa_required"
+    assert c.post("/rewrite", headers={"Authorization": f"Bearer {token}"}).json()["code"] == "mfa_required"
+
+
+def test_gate_leaves_me_open_and_reports_mfa_required(make_client, rsa_key, monkeypatch):
+    monkeypatch.setattr(mfa, "totp_enrolled", lambda _sub: False)
+    r = _get(make_client(operator_mfa_required=True), "/auth/me", _sign(rsa_key, _operator()))
+    assert r.status_code == 200
+    assert r.json()["mfa_required"] is True
+
+
+def test_gate_passes_enrolled_operator(make_client, rsa_key, monkeypatch):
+    monkeypatch.setattr(mfa, "totp_enrolled", lambda _sub: True)
+    c = make_client(operator_mfa_required=True)
+    token = _sign(rsa_key, _operator())
+    assert _get(c, "/whoami", token).status_code == 200
+    assert _get(c, "/auth/me", token).json()["mfa_required"] is False
+
+
+def test_gate_ignores_non_operator_and_mfa_off(make_client, rsa_key, monkeypatch):
+    monkeypatch.setattr(mfa, "totp_enrolled", lambda _sub: False)
+    mentor = _sign(rsa_key, _claims(**{"cognito:groups": ["mentor"]}))
+    assert _get(make_client(operator_mfa_required=True), "/whoami", mentor).status_code == 200
+    assert _get(make_client(operator_mfa_required=True), "/auth/me", mentor).json()["mfa_required"] is False
+    op = _sign(rsa_key, _operator())
+    assert _get(make_client(operator_mfa_required=False), "/whoami", op).status_code == 200
+
+
+def test_gate_leaves_invalid_token_to_route(make_client):
+    r = _get(make_client(operator_mfa_required=True), "/whoami", "not-a-jwt")
+    assert r.status_code == 401
+    assert r.json() == {"detail": "Not authenticated"}
+
+
+def test_me_refreshes_enrollment_cache(make_client, rsa_key, monkeypatch):
+    """등록 직후 /auth/me 는 5분 캐시를 기다리지 않는다 → 이후 다른 API 도 바로 풀린다."""
+    enrolled = {"value": False}
+    monkeypatch.setattr(mfa, "_lookup", lambda _sub: enrolled["value"])
+    mfa.invalidate()
+    c = make_client(operator_mfa_required=True)
+    token = _sign(rsa_key, _operator())
+    assert _get(c, "/whoami", token).status_code == 403
+    enrolled["value"] = True
+    assert _get(c, "/auth/me", token).json()["mfa_required"] is False
+    assert _get(c, "/whoami", token).status_code == 200
+    mfa.invalidate()
+
+
+def test_totp_not_enrolled_is_not_cached(monkeypatch):
+    """미등록은 캐시하지 않는다 → 다른 파드에서 등록해도 이 파드가 바로 풀린다."""
+    enrolled = {"value": False}
+    monkeypatch.setattr(mfa, "_lookup", lambda _sub: enrolled["value"])
+    mfa.invalidate()
+    assert mfa.totp_enrolled("s2") is False
+    enrolled["value"] = True
+    assert mfa.totp_enrolled("s2") is True
+    mfa.invalidate()
 
 
 def test_me_unauthenticated(make_client):

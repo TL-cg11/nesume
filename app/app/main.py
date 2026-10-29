@@ -4,9 +4,10 @@
 - 기능 라우터는 명시적으로 include한다. 추가는 PR로 요청(커밋 메시지 [D 리뷰 요청]).
   접두사는 아직 없음(web이 /api/<기능> 호출).
 """
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 
 from app.auth.admin_router import router as admin_router
+from app.auth.dependencies import operator_mfa_gate
 from app.auth.router import router as auth_router
 from app.config import get_settings
 from app.core import health
@@ -43,6 +44,8 @@ def create_app() -> FastAPI:
         docs_url="/docs" if settings.is_local else None,
         redoc_url=None,
         openapi_url="/openapi.json" if settings.is_local else None,
+        # D7: TOTP 미등록 운영자는 /auth/me 외 전부 403 mfa_required(라우트별 Depends 를 빠뜨려도 막힌다)
+        dependencies=[Depends(operator_mfa_gate)],
     )
 
     # 미들웨어는 바깥쪽부터: request_id가 가장 먼저 설정되어야 이후 로그·에러에 붙는다.

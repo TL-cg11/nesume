@@ -1,4 +1,6 @@
 // TOTP 등록 (운영자 필수, 일반 사용자 선택).
+// - TOTP 미등록 운영자는 로그인 직후 이 화면으로 오고(useAuth 가드), 등록 전에는 다른 화면으로 갈 수 없다.
+//   "나중에 하기" 대신 로그아웃만 보인다.
 // - 로그인 상태: setUpTOTP → QR → verifyTOTPSetup → updateMFAPreference(totp PREFERRED)
 // - 로그인 도중(signIn nextStep = CONTINUE_SIGN_IN_WITH_TOTP_SETUP): LoginPage 가 setupUri 를 state 로 넘기고,
 //   코드 확인은 confirmSignIn 으로 한다.
@@ -7,10 +9,11 @@ import { Link, useLocation, useNavigate } from 'react-router'
 import { confirmSignIn, setUpTOTP, updateMFAPreference, verifyTOTPSetup } from 'aws-amplify/auth'
 import QRCode from 'qrcode'
 import AuthCard, { authErrorMessage } from './AuthCard.jsx'
+import { safeNext } from './safeNext.js'
 import { useAuth } from './useAuth.jsx'
 
 export default function MfaSetupPage() {
-  const { status, email, completeSignIn, refreshMe } = useAuth()
+  const { status, email, mfaRequired, completeSignIn, logout, refreshMe } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const inSignIn = Boolean(location.state?.inSignIn)
@@ -20,7 +23,7 @@ export default function MfaSetupPage() {
   const [code, setCode] = useState('')
   const [error, setError] = useState(null)
   const [isSubmitting, setSubmitting] = useState(false)
-  const next = new URLSearchParams(location.search).get('next') || '/resumes'
+  const next = safeNext(location.search)
 
   // 로그인 상태에서 들어온 경우 새 비밀키 발급
   useEffect(() => {
@@ -61,9 +64,10 @@ export default function MfaSetupPage() {
       } else {
         await verifyTOTPSetup({ code: code.trim() })
         await updateMFAPreference({ totp: 'PREFERRED' })
-        await refreshMe().catch(() => {})
+        const data = await refreshMe()
+        if (data?.mfa_required) throw new Error('등록이 아직 확인되지 않았습니다. 잠시 후 다시 시도해 주세요.')
       }
-      navigate(next.startsWith('/') ? next : '/resumes', { replace: true })
+      navigate(next, { replace: true })
     } catch (err) {
       setError(authErrorMessage(err))
     } finally {
@@ -80,9 +84,21 @@ export default function MfaSetupPage() {
   return (
     <AuthCard
       title="인증 앱 등록"
-      subtitle="운영자 기능은 TOTP 등록 후 사용할 수 있습니다. 인증 앱으로 QR 을 스캔하고 표시된 코드를 입력해 주세요."
+      subtitle={
+        mfaRequired
+          ? '운영자 계정은 인증 앱(TOTP)을 등록해야 서비스를 이용할 수 있습니다. 인증 앱으로 QR 을 스캔하고 표시된 코드를 입력해 주세요.'
+          : '운영자 기능은 TOTP 등록 후 사용할 수 있습니다. 인증 앱으로 QR 을 스캔하고 표시된 코드를 입력해 주세요.'
+      }
       error={error}
-      footer={<Link to={next}>나중에 하기</Link>}
+      footer={
+        mfaRequired ? (
+          <button type="button" className="link" onClick={logout}>
+            로그아웃
+          </button>
+        ) : (
+          <Link to={next}>나중에 하기</Link>
+        )
+      }
     >
       <div className="auth-qr">
         {qr ? <img src={qr} alt="TOTP 등록 QR 코드" /> : <span className="muted">QR 코드를 준비하는 중...</span>}

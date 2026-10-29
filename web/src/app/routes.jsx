@@ -24,6 +24,7 @@ import MentorSharesPage from '../features/share/MentorSharesPage.jsx'
 import MentorSharePage from '../features/share/MentorSharePage.jsx'
 import TemplatesPage from '../features/templates/TemplatesPage.jsx'
 import RequireAuth from '../features/auth/RequireAuth.jsx'
+import AdminUsersPage from '../features/admin/AdminUsersPage.jsx'
 // C: 공고 추천(C8)·학습 로드맵(C14)·지원 현황(C15) — nesumeC에서 이식(docs C-frontend-wiring.md 6절)
 import RecommendPage from '../features/recommend/RecommendPage.jsx'
 import LearningPage from '../features/learning/LearningPage.jsx'
@@ -54,6 +55,8 @@ export const featureRoutes = [
   { path: 'mentor', element: <MentorSharesPage />, nav: '받은 공유', roles: ['mentor'] }, // B17 멘토 전용 — 메뉴도 멘토에게만
   { path: 'mentor/:shareId', element: <MentorSharePage /> },
   { path: 'templates', element: <TemplatesPage />, nav: '프롬프트 템플릿', roles: ['operator'] }, // B9 운영자 전용 — 메뉴도 운영자에게만
+  // D6 역할 관리(운영자 전용). 운영자 부여·회수
+  { path: 'admin/users', element: <RequireAuth roles={['operator']}><AdminUsersPage /></RequireAuth>, nav: '역할 관리', roles: ['operator'] },
 ]
 
 export const routes = [
