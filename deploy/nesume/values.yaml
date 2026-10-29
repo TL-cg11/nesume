@@ -27,6 +27,7 @@ app:
   livenessPath: /health
   startupPath: /health
   terminationGracePeriodSeconds: 30
+  preStopSleepSeconds: 5           # 엔드포인트 제거가 퍼질 시간. grace 30초 안에 포함된다
 
 web:
   replicas: 2
