@@ -225,6 +225,18 @@ def test_run_collection_keeps_posting_seen_by_native_id(db_session):
     assert all(p.is_active for p in _postings(db_session))
 
 
+def test_run_collection_skips_duplicate_link_key_in_batch(db_session):
+    """같은 응답 안 중복 link_key 는 첫 건만 저장. 운영 세션처럼 autoflush 없이도 유니크 위반이 없다."""
+    rows = _rows(1) * 2
+    with db_session.no_autoflush:
+        summary = run_collection(db_session, rows, source=SOURCE_WORK24_OPEN, parse=dict, recent=[])
+    db_session.flush()
+
+    assert summary["received"] == 2 and summary["duplicates"] == 1
+    assert summary["actions"]["new"] == 1
+    assert len(_postings(db_session)) == 1
+
+
 def test_get_posting_link_and_fields_unchanged(db_session):
     run_collection(db_session, _rows(1), source=SOURCE_WORK24_OPEN, parse=dict, recent=[])
     db_session.flush()
