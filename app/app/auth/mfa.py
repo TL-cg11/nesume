@@ -1,7 +1,7 @@
 """운영자 TOTP 등록 여부 조회 (D7).
 
 액세스 토큰에는 MFA 통과 여부(amr)가 없다. AdminGetUser 의 UserMFASettingList 에 SOFTWARE_TOKEN_MFA 가
-있으면 등록된 것으로 본다. 결과는 sub 별로 5분 캐시한다(운영자 수가 적어 메모리 캐시로 충분).
+있으면 등록된 것으로 본다. "등록됨" 결과만 sub 별로 5분 캐시한다(운영자 수가 적어 메모리 캐시로 충분).
 
 IAM(D9): 앱 IRSA 에 cognito-idp:AdminGetUser.
 cognito-local 이 MFA 목록을 주지 않으면 로컬은 OPERATOR_MFA_REQUIRED=false 로 끈다.
@@ -57,8 +57,12 @@ def totp_enrolled(sub: str) -> bool:
         if hit and hit[1] > now:
             return hit[0]
     value = _lookup(sub)
-    with _lock:
-        _cache[sub] = (value, now + CACHE_SECONDS)
+    # "등록됨"만 캐시한다. 미등록을 캐시하면 파드가 여럿일 때(invalidate 는 자기 파드만 비움)
+    # 방금 등록한 운영자가 다른 파드에서 최대 5분간 403 mfa_required 를 받는다.
+    # 미등록 운영자는 /auth/me 외 전부 막혀 호출이 적으므로 매번 조회해도 부담이 작다.
+    if value:
+        with _lock:
+            _cache[sub] = (value, now + CACHE_SECONDS)
     return value
 
 
