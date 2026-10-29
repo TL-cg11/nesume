@@ -64,6 +64,8 @@ class Settings(BaseSettings):
     # D7: 운영자 보호 API 는 TOTP 등록 + 최근 N분 내 로그인(auth_time)을 요구한다.
     operator_mfa_required: bool = True
     mfa_session_minutes: int = 15
+    # test 그룹 운영자(시드 test-operator1)는 MFA 면제. dev·staging 만 true, production 은 무시된다.
+    mfa_exempt_test_operators: bool = False
 
     @property
     def cognito_client_id_set(self) -> frozenset[str]:
