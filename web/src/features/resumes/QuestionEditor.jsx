@@ -3,7 +3,7 @@ import { Link } from 'react-router'
 import { resumesApi } from './api.js'
 import DiffView from './DiffView.jsx'
 import { BODY_MAX, LIMIT_STEP, clampLimit } from './limits.js'
-import VersionMenu from './VersionMenu.jsx'
+import VersionList from './VersionList.jsx'
 
 const MAX_VERSIONS = 50 // 서버 MAX_VERSIONS_PER_QUESTION과 같다(4.56)
 import { experiencesApi } from '../experiences/api.js'
@@ -11,10 +11,12 @@ import { period } from '../experiences/summary.js'
 import { TYPES, normalizeType } from '../experiences/templates.js'
 
 // 문항 편집: 저장할 때마다 새 버전(spec 3.1), 버전 타임라인, 두 버전 비교, 복원
-export default function QuestionEditor({ resumeId, question, onSaved, onDelete, shareRev = 0 }) {
+// tab: 'write'(작성) | 'versions'(버전 관리·비교). 탭을 바꿔도 같은 컴포넌트라 작성 중인 글이 유지된다(10/29)
+export default function QuestionEditor({ resumeId, question, onSaved, onDelete, shareRev = 0, tab = 'write', onGoWrite }) {
   const [body, setBody] = useState('')
   const [savedBody, setSavedBody] = useState('') // 최신 저장 버전의 본문
   const [loaded, setLoaded] = useState(null) // 편집칸에 불러온 버전 { id, no, body } — 최신이면 최신 버전
+  const [preview, setPreview] = useState(null) // 버전 탭에서 미리보는 버전 { id, no, body }
   const [limitInput, setLimitInput] = useState(String(question.char_limit ?? BODY_MAX))
   const composing = useRef(false) // 한글 등 입력기 조합 중
   const [blocked, setBlocked] = useState(false) // 글자수를 넘겨 입력이 잘렸는가
@@ -112,17 +114,34 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete, 
 
   // 버전 기록 행 클릭: 그 버전 본문을 편집칸에 불러온다(복원 버튼 대신, 10/28). 저장 전 수정이 있으면 먼저 묻는다
   const openVersion = async (v) => {
-    if (loaded?.id === v.id) return
-    if (body !== (loaded?.body ?? savedBody) && !window.confirm('저장하지 않은 수정이 있습니다. 불러오면 사라집니다. 계속할까요?')) return
+    if (loaded?.id === v.id) return true
+    if (body !== (loaded?.body ?? savedBody) && !window.confirm('저장하지 않은 수정이 있습니다. 불러오면 사라집니다. 계속할까요?')) return false
     try {
       const full = await resumesApi.getVersion(resumeId, question.id, v.id)
       setBody(full.body)
       setLoaded({ id: full.id, no: full.version_no, body: full.body })
       setNotice(v.id === versions[0]?.id ? null : `v${full.version_no}을(를) 불러왔습니다. 그대로 저장하면 이 버전으로 복원됩니다.`)
       setError(null)
+      return true
+    } catch (e) {
+      setError(e.message)
+      return false
+    }
+  }
+
+  // 버전 탭: 행 클릭 = 미리보기(작성 중인 글은 그대로), '이 버전으로 작성 이어가기' = 불러와 작성 탭으로
+  const selectPreview = async (v) => {
+    try {
+      const full = await resumesApi.getVersion(resumeId, question.id, v.id)
+      setPreview({ id: full.id, no: full.version_no, body: full.body })
+      setError(null)
     } catch (e) {
       setError(e.message)
     }
+  }
+
+  const continueFrom = async () => {
+    if (await openVersion({ id: preview.id, version_no: preview.no })) onGoWrite?.()
   }
 
   const removeVersion = async (v) => {
@@ -130,6 +149,7 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete, 
     try {
       await resumesApi.removeVersion(resumeId, question.id, v.id)
       if (loaded?.id === v.id) setLoaded(null) // 보던 버전을 지웠으면 본문은 그대로 두고 표시만 해제
+      if (preview?.id === v.id) setPreview(null)
       await loadVersions()
       onSaved()
       setError(null)
@@ -141,11 +161,11 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete, 
   // 비교 기본값: 지금 보는 버전과 그 직전 버전(보는 게 가장 오래된 버전이면 그다음 버전과)
   useEffect(() => {
     if (versions.length < 2) return setDiff(null)
-    const idx = Math.max(0, versions.findIndex((v) => v.id === loaded?.id))
+    const idx = Math.max(0, versions.findIndex((v) => v.id === (preview?.id ?? loaded?.id)))
     const to = versions[idx === versions.length - 1 ? idx - 1 : idx]
     const from = versions[idx === versions.length - 1 ? idx : idx + 1]
     setCompare({ from: String(from.version_no), to: String(to.version_no) })
-  }, [versions, loaded?.id])
+  }, [versions, loaded?.id, preview?.id])
 
   // 두 버전을 고르면 바로 비교
   useEffect(() => {
@@ -189,16 +209,33 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete, 
 
   return (
     <div className="editor">
-      <div className="row">
-        <h2 className="grow">{question.title}</h2>
-        <VersionMenu versions={versions} loadedId={loaded?.id} max={MAX_VERSIONS} showEnded={showEnded}
-          onToggleEnded={setShowEnded} onOpen={openVersion} onDelete={removeVersion} />
-        {/* A6 리라이팅: 고른 후보를 이 문항의 새 버전으로 저장할 수 있게 자소서·문항 ID를 넘긴다(A 요청 10/28) */}
-        <Link to={`/writing?${new URLSearchParams({ resume: resumeId, question: question.id })}`}>글 다듬기</Link>
-        <button className="danger" onClick={onDelete}>
-          문항 삭제
-        </button>
-      </div>
+      {tab === 'write' ? (
+        <div className="row">
+          <h2 className="grow">{question.title}</h2>
+          {/* 작성 탭은 '지금 편집 중인 버전' 표시만. 목록·삭제·비교는 버전 탭(10/29) */}
+          {loaded && (
+            <span className="ver-badge editing">
+              v{loaded.no}{loaded.id === versions[0]?.id ? ' (최신)' : ''} 편집 중
+            </span>
+          )}
+          {/* A6 리라이팅: 고른 후보를 이 문항의 새 버전으로 저장할 수 있게 자소서·문항 ID를 넘긴다(A 요청 10/28) */}
+          <Link to={`/writing?${new URLSearchParams({ resume: resumeId, question: question.id })}`}>글 다듬기</Link>
+          <button className="danger" onClick={onDelete}>
+            문항 삭제
+          </button>
+        </div>
+      ) : (
+        <div className="row">
+          <h2 className="grow">
+            {question.title} <span className="muted ver-count">버전 {versions.length}/{MAX_VERSIONS}</span>
+          </h2>
+          <label className="muted share-toggle">
+            <input type="checkbox" checked={showEnded} onChange={(e) => setShowEnded(e.target.checked)} /> 지난 공유 보기
+          </label>
+        </div>
+      )}
+      {tab === 'write' && (
+        <>
       {/* 설정 글자수에서 더 입력되지 않는다(붙여넣기도 잘림, 10/28).
           maxLength를 쓰지 않는다 — 한글 조합 중인 글자를 미리 세서 999자에서 멈춘다. 조합이 끝난 뒤 자른다 */}
       <textarea
@@ -286,7 +323,31 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete, 
         </div>
       )}
 
-      {versions.length >= 2 && (
+        </>
+      )}
+
+      {tab === 'versions' && (
+        <>
+          <VersionList versions={versions} selectedId={preview?.id} loadedId={loaded?.id}
+            onSelect={selectPreview} onDelete={removeVersion} />
+          {preview && (
+            <div className="card ver-preview">
+              <div className="row">
+                <strong className="grow">v{preview.no} 미리보기</strong>
+                <span className="muted">{preview.body.length.toLocaleString()}자</span>
+                <button onClick={continueFrom} disabled={preview.id === loaded?.id && body === loaded.body}>
+                  이 버전으로 작성 이어가기
+                </button>
+              </div>
+              <div className="ver-preview-body">{preview.body || <span className="muted">(빈 본문)</span>}</div>
+            </div>
+          )}
+          {notice && <p className="notice">{notice}</p>}
+          {error && <p className="error">{error}</p>}
+        </>
+      )}
+
+      {tab === 'versions' && versions.length >= 2 && (
         <>
           <h3>버전 비교</h3>
           {/* 고르면 바로 비교(10/28). 기본은 '지금 보는 버전'과 그 직전 버전 */}

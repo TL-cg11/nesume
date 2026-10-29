@@ -116,18 +116,6 @@
 .timeline li:hover .ver-delete, .timeline li:has(:focus-visible) .ver-delete { opacity: 1; }
 .timeline .ver-delete:hover { filter: none; background: var(--danger-soft); border-radius: var(--radius-sm); }
 
-/* 버전 버튼·펼침 목록(10/28): 문항 제목 옆 */
-.ver-menu { position: relative; }
-.ver-menu-btn { white-space: nowrap; }
-.ver-pop {
-  position: absolute; right: 0; top: calc(100% + var(--space-1)); z-index: 20;
-  width: min(560px, 90vw); max-height: 360px; overflow-y: auto;
-  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md);
-  box-shadow: var(--shadow-md, var(--shadow-sm)); padding: var(--space-2);
-}
-.ver-pop-head { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-3) var(--space-2); }
-.ver-pop-head label { margin-left: auto; font-size: var(--text-sm); }
-
 /* 버전 비교(10/28): 요약 + 이전|이후 나란히, 문단 맞춤 */
 .diff2-pick { display: inline-flex; align-items: center; gap: var(--space-2); }
 .diff2 { margin-top: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); overflow: hidden; }
@@ -152,9 +140,31 @@
 }
 
 /* 체크박스 + 문구 한 줄(10/28): 공용 입력칸 규칙(최소 높이·여백)이 체크박스를 키워 문구가 다음 줄로 밀리던 문제 */
-.share-toggle, .ver-pop-head label, .diff2-summary label {
+.share-toggle, .diff2-summary label {
   display: inline-flex; align-items: center; gap: var(--space-1); white-space: nowrap; cursor: pointer;
 }
-.share-toggle input[type='checkbox'], .ver-pop-head input[type='checkbox'], .diff2-summary input[type='checkbox'] {
+.share-toggle input[type='checkbox'], .diff2-summary input[type='checkbox'] {
   min-height: 0; padding: 0; margin: 0; width: auto;
 }
+
+/* 자소서 상세 탭(10/29) */
+.resume-tabs { display: flex; gap: var(--space-1); margin-top: var(--space-4); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.resume-tabs button {
+  background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0; min-height: 0;
+  padding: var(--space-2) var(--space-4); color: var(--muted); font-weight: 600; margin-bottom: -1px;
+}
+.resume-tabs button:hover:not(.on) { color: var(--fg); filter: none; }
+.resume-tabs button.on { color: var(--accent-text); border-bottom-color: var(--accent); }
+.detail-grid[hidden], form[hidden] { display: none; }
+.resume-tabs + .share-panel { margin-top: var(--space-4); }
+
+/* 버전 탭: 목록 카드·배지·미리보기 */
+.ver-list-card { margin-top: var(--space-3); padding: var(--space-2); }
+.ver-badge {
+  font-size: var(--text-sm); font-weight: 700; white-space: nowrap; padding: calc(var(--space-1) / 2) var(--space-2);
+  border-radius: var(--radius-pill); color: var(--muted); background: var(--bg);
+}
+.ver-badge.editing { color: var(--accent-text); background: var(--accent-soft); }
+.ver-count { font-size: var(--text-sm); font-weight: 500; }
+.ver-preview { margin-top: var(--space-3); }
+.ver-preview-body { margin-top: var(--space-3); white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.75; max-height: 360px; overflow-y: auto; }

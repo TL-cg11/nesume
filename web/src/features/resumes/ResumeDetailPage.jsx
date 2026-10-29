@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useLocation, useNavigate, useParams } from 'react-router'
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router'
 import { resumesApi } from './api.js'
 import QuestionEditor from './QuestionEditor.jsx'
 import SharePanel from './SharePanel.jsx'
@@ -9,10 +9,20 @@ import './resumes.css'
 // 자소서 상태(발표 시안, 4.54). 서버 schemas.RESUME_STATUSES와 같다
 const RESUME_STATUSES = ['작성 중', '검토 중', '완료']
 
+const TABS = [
+  { id: 'write', label: '자기소개서 작성' },
+  { id: 'versions', label: '버전 관리 및 비교' },
+  { id: 'share', label: '멘토 공유' },
+]
+
 export default function ResumeDetailPage() {
   const { resumeId } = useParams()
   const navigate = useNavigate()
   const location = useLocation()
+  // 탭(10/29): 작성 | 버전 관리·비교 | 멘토 공유. 주소(?tab=)에 남겨 새로고침·뒤로 가기에도 유지
+  const [params, setParams] = useSearchParams()
+  const tab = TABS.some((t) => t.id === params.get('tab')) ? params.get('tab') : 'write'
+  const goTab = (id) => setParams(id === 'write' ? {} : { tab: id }, { replace: true })
   const [resume, setResume] = useState(null)
   const [selectedId, setSelectedId] = useState(null)
   const [newQuestion, setNewQuestion] = useState({ title: '', char_limit: String(DEFAULT_LIMIT) })
@@ -104,15 +114,27 @@ export default function ResumeDetailPage() {
       </div>
       {error && <p className="error">{error}</p>}
 
-      <SharePanel
-        resumeId={resumeId}
-        onChanged={() => {
-          setShareRev((n) => n + 1)
-          load()
-        }}
-      />
+      <div className="resume-tabs" role="tablist" aria-label="자소서 기능">
+        {TABS.map((t) => (
+          <button key={t.id} type="button" role="tab" aria-selected={tab === t.id}
+            className={tab === t.id ? 'on' : undefined} onClick={() => goTab(t.id)}>
+            {t.label}
+          </button>
+        ))}
+      </div>
 
-      <div className="detail-grid">
+      {tab === 'share' && (
+        <SharePanel
+          resumeId={resumeId}
+          onChanged={() => {
+            setShareRev((n) => n + 1)
+            load()
+          }}
+        />
+      )}
+
+      {/* 공유 탭에서도 편집 화면은 그대로 둔 채 가린다 — 작성 중인 글이 사라지지 않게 */}
+      <div className="detail-grid" hidden={tab === 'share'}>
         <aside>
           <h2>문항</h2>
           <ul className="question-list">
@@ -128,7 +150,7 @@ export default function ResumeDetailPage() {
             ))}
           </ul>
           {/* noValidate: 브라우저 숫자칸 검사(step 기준값)로 1,000·950 같은 값이 막히지 않게. 범위는 clampLimit이 맞춘다 */}
-          <form className="stack" onSubmit={addQuestion} noValidate>
+          <form className="stack" onSubmit={addQuestion} noValidate hidden={tab !== 'write'}>
             <input
               placeholder="문항 제목"
               maxLength={TITLE_MAX}
@@ -163,6 +185,8 @@ export default function ResumeDetailPage() {
               onSaved={load}
               onDelete={() => removeQuestion(selected.id)}
               shareRev={shareRev}
+              tab={tab === 'versions' ? 'versions' : 'write'}
+              onGoWrite={() => goTab('write')}
             />
           ) : (
             <p className="muted">문항을 추가하거나 선택하세요.</p>
