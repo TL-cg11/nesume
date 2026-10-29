@@ -1,13 +1,8 @@
 import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import AuthCard, { authErrorMessage } from './AuthCard.jsx'
+import { safeNext } from './safeNext.js'
 import { useAuth } from './useAuth.jsx'
-
-function safeNext(search) {
-  const next = new URLSearchParams(search).get('next')
-  // 같은 출처의 경로만 허용(외부 주소로 보내지 않는다)
-  return next && next.startsWith('/') && !next.startsWith('//') ? next : '/resumes'
-}
 
 export default function LoginPage() {
   const { login } = useAuth()

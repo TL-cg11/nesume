@@ -2,7 +2,7 @@
 //   <RequireAuth><AdminPage /></RequireAuth>                  로그인 필요
 //   <RequireAuth roles={['operator']}><AuditLogsPage /></RequireAuth>   역할 제한
 // 미로그인 → /login?next=<현재 경로>. 역할 불일치 → 안내 문구(존재 노출 방지를 위해 404 와 구분하지 않는다).
-// operator 인데 TOTP 미등록(403 mfa_required)이면 /mfa/setup 으로 보낸다.
+// operator 인데 TOTP 미등록(/auth/me mfa_required)이면 /mfa/setup 으로 보낸다(useAuth 전역 가드와 같은 규칙).
 import { Navigate, useLocation } from 'react-router'
 import { useAuth } from './useAuth.jsx'
 

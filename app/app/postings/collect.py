@@ -208,21 +208,28 @@ def run_collection(
 
     counts = {a: 0 for a in Action}
     seen: list[str] = []
+    seen_set: set[str] = set()
+    duplicates = 0
     for raw in rows:
         fields = parse(raw)
+        lk = link_key(
+            source=source,
+            company=fields.get("company_name"),
+            title=fields.get("title"),
+            region_code=fields.get("region_code"),
+            job_code=fields.get("job_code"),
+            work_address=fields.get("work_address"),
+            native_id=fields.get("source_key"),
+        )
+        # 같은 응답 안의 중복(서울시 4만 건 중 실측 있음)은 첫 건만. 세션이 autoflush=False 라
+        # 두 번째도 NEW 로 INSERT 되어 부분 유니크(source, link_key, 활성)에 걸린다(10-29 dev).
+        if lk in seen_set:
+            duplicates += 1
+            continue
+        seen_set.add(lk)
+        seen.append(lk)
         if fields.get("job_content"):  # 공개 등급 PII 마스킹(연락처 혼입 대비)
             fields["job_content"] = mask(fields["job_content"])
-        seen.append(
-            link_key(
-                source=source,
-                company=fields.get("company_name"),
-                title=fields.get("title"),
-                region_code=fields.get("region_code"),
-                job_code=fields.get("job_code"),
-                work_address=fields.get("work_address"),
-                native_id=fields.get("source_key"),
-            )
-        )
         _row, action = upsert_posting(session, source=source, fields=fields)
         counts[action] += 1
 
@@ -233,5 +240,6 @@ def run_collection(
         "healthy": gate.healthy,
         "received": len(rows),
         "actions": {a.value: counts[a] for a in Action},
+        "duplicates": duplicates,
         "deactivated": deactivated,
     }

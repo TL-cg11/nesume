@@ -11,6 +11,7 @@ web:
 
 config:
   APP_ENV: dev
+  MFA_EXEMPT_TEST_OPERATORS: "true" # 시드 test-operator1 은 TOTP 없이 역할 관리 등 운영자 기능 사용(D7)
   LOG_LEVEL: INFO                    # DEBUG 는 botocore 가 임시 자격 증명·서명 헤더를 로그에 찍는다(10-27 확인)
   DB_HOST: ""                        # 매일 바뀐다. up.ps1 이 --set config.DB_HOST 로 넘긴다
   # 아래는 base 레이어 output (terraform -chdir=infra/envs/dev/base output). base 를 다시 만들지 않는 한 고정.

@@ -54,18 +54,22 @@ spec:
               port: http
             periodSeconds: 5
             failureThreshold: {{ .Values.embedder.startupFailureThreshold }}
+          # TEI /health 는 추론 큐를 거친다. 대량 색인 중엔 수 초 걸려서 기본 1초 타임아웃이면
+          # NotReady 로 빠져 배치가 연결 오류로 실패했다(10-29 dev). 넉넉히 둔다.
           livenessProbe:
             httpGet:
               path: /health
               port: http
             periodSeconds: 20
-            timeoutSeconds: 5
+            timeoutSeconds: 15
+            failureThreshold: 6
           readinessProbe:
             httpGet:
               path: /health
               port: http
             periodSeconds: 10
-            failureThreshold: 3
+            timeoutSeconds: 10
+            failureThreshold: 6
           securityContext:
             {{- include "nesume.containerSecurityContext" . | nindent 12 }}
           resources:

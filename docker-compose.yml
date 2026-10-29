@@ -110,6 +110,7 @@ services:
       # D7: 허용 클라이언트 복수(쉼표). 로컬은 1개. 운영자 MFA 강제는 로컬에서 false 권장(.env)
       COGNITO_CLIENT_IDS: ${COGNITO_CLIENT_ID}
       OPERATOR_MFA_REQUIRED: ${OPERATOR_MFA_REQUIRED:-true}
+      MFA_EXEMPT_TEST_OPERATORS: ${MFA_EXEMPT_TEST_OPERATORS:-false}  # test 그룹 운영자 MFA 면제(dev·staging 과 같게 확인할 때 true)
       # iss 검증 값(브라우저가 보는 주소)과 JWKS 조회 주소(컨테이너 내부 주소)를 분리
       COGNITO_ISSUER: ${COGNITO_ISSUER_DOMAIN}/${COGNITO_USER_POOL_ID}
       COGNITO_JWKS_URL: http://cognito:9229/${COGNITO_USER_POOL_ID}/.well-known/jwks.json

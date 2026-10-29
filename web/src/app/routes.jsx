@@ -24,6 +24,7 @@ import MentorSharesPage from '../features/share/MentorSharesPage.jsx'
 import MentorSharePage from '../features/share/MentorSharePage.jsx'
 import AuditLogsPage from '../features/audit/AuditLogsPage.jsx'
 import RequireAuth from '../features/auth/RequireAuth.jsx'
+import AdminUsersPage from '../features/admin/AdminUsersPage.jsx'
 // C: 공고 추천(C8)·학습 로드맵(C14)·지원 현황(C15) — nesumeC에서 이식(docs C-frontend-wiring.md 6절)
 import RecommendPage from '../features/recommend/RecommendPage.jsx'
 import LearningPage from '../features/learning/LearningPage.jsx'
@@ -55,6 +56,8 @@ export const featureRoutes = [
   { path: 'mentor/:shareId', element: <MentorSharePage /> },
   // B11 AI 사용 기록(운영자 MFA 전용, 10/29). 프롬프트 템플릿 화면은 메뉴에서 뺌 — 템플릿 API는 A6가 쓰므로 서버에 유지
   { path: 'ai-logs', element: <AuditLogsPage />, nav: 'AI 사용 기록', roles: ['operator'] },
+  // D6 역할 관리(운영자 전용). 운영자 부여·회수
+  { path: 'admin/users', element: <RequireAuth roles={['operator']}><AdminUsersPage /></RequireAuth>, nav: '역할 관리', roles: ['operator'] },
 ]
 
 export const routes = [

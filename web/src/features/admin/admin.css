@@ -1,0 +1,17 @@
+/* 역할 관리(D6, 운영자). 값은 theme.css 변수만 사용. 접두사 adm- */
+.adm-search { margin: var(--space-4) 0; }
+.adm-table-wrap { overflow-x: auto; }
+.adm-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+.adm-table caption { text-align: left; padding-bottom: var(--space-2); }
+.adm-table th,
+.adm-table td { padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border); text-align: left; vertical-align: middle; }
+.adm-table th { font-weight: 600; color: var(--muted); }
+.adm-change { flex-wrap: nowrap; }
+.adm-role {
+  font-weight: 700; padding: calc(var(--space-1) / 2) var(--space-2); border-radius: var(--radius-pill);
+  background: var(--surface); border: 1px solid var(--border); white-space: nowrap;
+}
+.adm-role-operator { color: var(--accent-text); background: var(--accent-soft); border-color: transparent; }
+.adm-role-mentor { color: var(--violet); background: var(--violet-soft); border-color: transparent; }
+.adm-role-system,
+.adm-role-invalid { color: var(--warning); background: var(--warning-soft); border-color: transparent; }
