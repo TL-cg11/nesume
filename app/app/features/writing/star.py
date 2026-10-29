@@ -101,6 +101,10 @@ _GUIDE: dict[StarElement, str] = {
 }
 
 
+#: 다른 모듈(star_review)이 쓰는 이름. 질문 문구는 한 곳에만 둔다
+QUESTIONS = _GUIDE
+
+
 def guidance(analysis: StarAnalysis, text: str) -> list[Suggestion]:
     """빠진 요소에 대한 보완 안내를 만든다.
 

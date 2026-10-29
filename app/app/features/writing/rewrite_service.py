@@ -26,14 +26,23 @@ from sqlalchemy.orm import Session
 from app.features.profile import service as profile_service
 from app.features.profile.store import ProfileStore
 from app.features.resumes import service as resumes_service
+from app.features.style import tone as tone_mod
+from app.features.style.service import invented_numbers
+from app.features.style.tone import TONE_NAMES
 from app.features.templates import service as templates_service
 from app.features.writing.rewrite import (
     CANDIDATE_COUNT,
     MAX_PARTS,
+    MAX_SAMPLE_CHARS,
+    MIN_SAMPLE_CHARS,
+    SAMPLE_RULE,
+    SAMPLE_SEP,
+    RewriteOptionError,
     RewriteOptions,
     build_part_prompt,
     join_candidates,
     parse_candidates,
+    sample_measures,
     split_selection,
 )
 from app.guardrail import Guardrail, LlmUnavailable, PipelineResult, RequestContext
@@ -110,15 +119,30 @@ async def rewrite(
     is_test: bool = False,
     request_id: uuid.UUID | None = None,
     use_llm: bool = True,
+    style_sample: str | None = None,
 ) -> RewriteResult:
-    """고른 구간을 다시 쓴 후보를 만든다. **저장하지 않는다.**"""
+    """고른 구간을 다시 쓴 후보를 만든다. **저장하지 않는다.**
+
+    ``style_sample`` 이 있으면 그 글의 말투로 다시 쓴다(저장된 말투 프로필 대신).
+    """
+    sample = (style_sample or "").strip()
+    if sample and len(sample) < MIN_SAMPLE_CHARS:
+        raise RewriteOptionError(f"말투 샘플은 {MIN_SAMPLE_CHARS}자 이상이어야 합니다")
+    if len(sample) > MAX_SAMPLE_CHARS:
+        raise RewriteOptionError(f"말투 샘플은 {MAX_SAMPLE_CHARS}자까지입니다")
+
     instructions = options.instructions()
+    measures = sample_measures(sample, text) if sample else ""
+    if sample:
+        instructions += f"\n{SAMPLE_RULE}\n{measures}"
     if not use_llm:
         # 화면이 옵션만 바꿔 보는 경우. 모델을 부르지 않는다
         return RewriteResult(instructions=instructions)
 
     body, notices = _template_body(db)
-    fragment = profile_service.prompt_fragment(profile_service.get(user_id, store=store))
+    fragment = "" if sample else profile_service.prompt_fragment(
+        profile_service.get(user_id, store=store)
+    )
     parts_count = len(split_selection(text))
 
     def parts(tokenized: str) -> list[str]:
@@ -126,12 +150,18 @@ async def rewrite(
 
         ★ 조각내기는 **치환된 글** 기준이다. 원문을 조각내면 토큰이 조각 경계에서
           잘려 복원되지 않는다 — ``[[PERSON_`` 과 ``1]]`` 은 토큰이 아니다.
+        ★ 샘플이 있으면 ``샘플 + SAMPLE_SEP + 글`` 이 치환되어 온다. 경계에서 갈라
+          샘플은 조각마다 붙이고 글만 조각낸다.
         """
-        pieces = split_selection(tokenized)
+        tok_sample, tok_text = "", tokenized
+        if sample and SAMPLE_SEP in tokenized:
+            tok_sample, tok_text = tokenized.split(SAMPLE_SEP, 1)
+        pieces = split_selection(tok_text)
         return [
             build_part_prompt(
                 piece, options,
                 template_body=body, profile_fragment=fragment,
+                style_sample=tok_sample, sample_measures=measures,
                 part_index=i, part_total=len(pieces),
             )
             for i, piece in enumerate(pieces)
@@ -142,8 +172,10 @@ async def rewrite(
         session_id=session_id, is_test=is_test,
         request_id=request_id or uuid.uuid4(),
     )
+    # ★ 샘플도 검사·치환 대상이다. 따로 붙이면 샘플 속 PII 가 가려지지 않는다 (rewrite.SAMPLE_SEP)
+    query = f"{sample}{SAMPLE_SEP}{text}" if sample else text
     try:
-        result: PipelineResult = await guard.run_split(text, ctx, parts=parts)
+        result: PipelineResult = await guard.run_split(query, ctx, parts=parts)
     except LlmUnavailable:
         # 제공자 미정(2026-10). A7·A11·A13 과 같은 처리 — 사용자가 빈손으로 끝나지 않는다
         return RewriteResult(instructions=instructions, parts=parts_count, llm_unavailable=True)
@@ -156,6 +188,22 @@ async def rewrite(
 
     per_part = [parse_candidates(part) for part in result.parts]
     bodies = join_candidates(per_part)
+    if sample and bodies:
+        # ★ 샘플의 숫자가 본문에 섞이면 그건 이 경험의 사실이 아니다. 후보째 버린다
+        #   (A13 verify_rewrite 와 같은 판단 — 다시 쓴 글은 일부만 믿을 수 없다)
+        kept = tuple(b for b in bodies if not invented_numbers(text, b))
+        if len(kept) < len(bodies):
+            notices += (
+                f"원문에 없는 숫자가 들어간 후보 {len(bodies) - len(kept)}개를 뺐습니다.",
+            )
+        # ★ 샘플 끝맺음(했다·해요)이 문체 지시를 이기는 일이 잦다(10-29 실측). 고른 문체가
+        #   아닌 문장이 남은 후보는 뺀다 — A13 이 바로 "문체가 섞였다" 로 짚을 글이다
+        toned = tuple(b for b in kept if not tone_mod.analyze(b).off_tone(options.tone))
+        if len(toned) < len(kept):
+            notices += (
+                f"{TONE_NAMES[options.tone]}가 아닌 문장이 섞인 후보 {len(kept) - len(toned)}개를 뺐습니다.",
+            )
+        bodies = toned
     if not bodies:
         # 모델이 형식을 어겼다. 응답 전체를 후보로 치지 않는다 —
         # 사과문이나 설명문이 자소서 본문으로 저장된다
