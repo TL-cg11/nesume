@@ -118,3 +118,36 @@ def test_fetch_respects_max_calls():
 def test_extract_page_raises_on_error_code():
     with pytest.raises(RuntimeError):
         _extract_page({"recMntList": {"RESULT": {"CODE": "ERROR-300", "MESSAGE": "bad key"}}})
+
+
+@pytest.mark.parametrize(
+    ("base", "ok"),
+    [
+        ("http://openapi.seoul.go.kr:8088", True),   # 서울시는 http 만 응답
+        ("https://example.com", True),
+        ("http://example.com", False),
+        ("http://openapi.seoul.go.kr.evil.com:8088", False),
+        ("ftp://openapi.seoul.go.kr", False),
+    ],
+)
+def test_default_fetch_page_scheme(monkeypatch, base, ok):
+    import app.postings.collect as collect
+
+    class _Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return b"{}"
+
+    monkeypatch.setenv("SEOUL_OPENAPI_BASE_URL", base)
+    monkeypatch.setenv("SEOUL_OPENAPI_KEY", "k")
+    monkeypatch.setattr(collect, "urlopen", lambda url, timeout: _Resp())
+    if ok:
+        assert collect._default_fetch_page(1, 1) == {}
+    else:
+        with pytest.raises(ValueError):
+            collect._default_fetch_page(1, 1)

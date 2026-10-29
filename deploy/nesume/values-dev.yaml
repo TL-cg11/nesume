@@ -43,6 +43,13 @@ serviceAccount:
 hpa:
   enabled: false
 
+cronjobs:
+  jobsCollector:
+    enabled: true                    # C4·C14 수집 + 임베딩 색인. API 키는 Secrets Manager nesume/dev/app
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: 500m, memory: 1Gi }   # 서울시 전량(~4만 건)을 메모리에 모은다
+
 embedder:
   enabled: true                      # up.ps1/deploy.ps1 이 ECR nesume/embedder 최신 태그를 --set-string image.embedder.tag 로 넘긴다. 저장소가 비면 false 로 배포
 
