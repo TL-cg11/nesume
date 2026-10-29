@@ -136,6 +136,7 @@ export default function ResumeDetailPage() {
       {tab === 'share' && (
         <SharePanel
           resumeId={resumeId}
+          questions={resume.questions}
           onChanged={() => {
             setShareRev((n) => n + 1)
             load()

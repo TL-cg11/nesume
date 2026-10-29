@@ -59,6 +59,25 @@ def _latest_version_ids(db: Session, owner_id: str, resume_id: uuid.UUID) -> lis
     return [latest[q.id].id for q in questions if q.id in latest]
 
 
+class VersionsInvalid(ValueError):
+    """고른 버전이 이 자소서의 것이 아니거나, 한 문항에서 둘 이상 골랐다."""
+
+
+def _chosen_version_ids(
+    db: Session, owner_id: str, resume_id: uuid.UUID, chosen: list[uuid.UUID]
+) -> list[uuid.UUID]:
+    """공유할 문항·버전을 고른 경우(10/29): 이 자소서 문항의 버전만, 문항당 하나. 문항 순서로 정렬해 고정"""
+    questions = resume_repo.list_questions(db, owner_id, resume_id)
+    order = {q.id: i for i, q in enumerate(questions)}
+    picked: dict[uuid.UUID, uuid.UUID] = {}
+    for vid in dict.fromkeys(chosen):
+        v = resume_repo.get_version_any_question(db, owner_id, vid)
+        if v is None or v.question_id not in order or v.question_id in picked:
+            raise VersionsInvalid()
+        picked[v.question_id] = v.id
+    return [picked[qid] for qid in sorted(picked, key=order.get)]
+
+
 def _confirm_message(kind: str, existing: Share | None) -> str:
     if kind == "other_resume":
         return "이 멘토에게 다른 자소서가 공유되어 있습니다. 기존 공유와 별개로 이 자소서를 공유할까요?"
@@ -84,8 +103,12 @@ def sync_resume(db: Session, resume: Resume, now: datetime) -> None:
 def create_share(
     db: Session, owner_id: str, resume_id: uuid.UUID, mentor_id: str, end: date | None,
     *, mentor_label: str, confirm: bool = False, now: datetime | None = None,
+    version_ids: list[uuid.UUID] | None = None,
 ) -> Share | None:
-    """공유 생성. 자소서가 없거나 타인 소유면 None."""
+    """공유 생성. 자소서가 없거나 타인 소유면 None.
+
+    version_ids: 공유할 버전(문항당 하나, 10/29). 없으면 문항별 최신 버전 전부(기존 동작).
+    """
     now = now or datetime.now(UTC)
     resume = repo.lock_resume(db, owner_id, resume_id)
     if resume is None:
@@ -102,7 +125,8 @@ def create_share(
     end = end or period.default_end(now)
     period.check_end(end, now)
     pii_hooks.ensure_no_sensitive(mentor_label)
-    version_ids = _latest_version_ids(db, owner_id, resume_id)
+    version_ids = (_chosen_version_ids(db, owner_id, resume_id, version_ids) if version_ids is not None
+                   else _latest_version_ids(db, owner_id, resume_id))
     if not version_ids:
         raise NothingToShare()
 
