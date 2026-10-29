@@ -107,3 +107,24 @@ def test_share_rejects_two_versions_of_one_question_or_other_resume(owner, mento
 
 def test_mentor_role_fixture_is_mentor(mentor):
     assert mentor.role is Role.MENTOR
+
+
+def test_emails_shown_to_owner_and_mentor(owner, mentor):
+    """작성자 공유 목록엔 멘토 이메일, 멘토 받은 공유엔 작성자 이메일(10/29). Cognito가 없으면 비움."""
+    idp = FakeIdp([("own@x.com", owner.sub, []), ("men@x.com", mentor.sub, ["mentor"])])
+    app.dependency_overrides[get_cognito_client] = lambda: idp
+    r = _resume(owner)
+    assert _share(owner, r["id"], mentor.sub).status_code == 201
+    assert [s["mentor_email"] for s in owner.get(f"/resumes/{r['id']}/shares").json()] == ["men@x.com"]
+    got = mentor.get("/mentor/shares").json()
+    assert got[0]["owner_email"] == "own@x.com" and got[0]["shared_at"]
+
+
+def test_emails_blank_without_directory(owner, mentor, monkeypatch):
+    def no_pool():
+        raise directory.DirectoryUnavailable()
+    monkeypatch.setattr(directory, "_pool", no_pool)
+    r = _resume(owner)
+    _share(owner, r["id"], mentor.sub)
+    assert owner.get(f"/resumes/{r['id']}/shares").json()[0]["mentor_email"] is None
+    assert mentor.get("/mentor/shares").json()[0]["owner_email"] is None

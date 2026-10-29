@@ -214,7 +214,10 @@ def resume_summaries(
     out: dict[uuid.UUID, dict] = {}
     for s in repo.active_for_resumes(db, owner_id, resume_ids, now):
         end = period.end_date_of(s.expires_at)
-        cur = out.setdefault(s.resume_id, {"active_count": 0, "earliest_end_date": end})
+        cur = out.setdefault(s.resume_id, {"active_count": 0, "earliest_end_date": end, "mentors": []})
         cur["active_count"] += 1
         cur["earliest_end_date"] = min(cur["earliest_end_date"], end)
+        cur["mentors"].append({"label": s.mentor_label, "end_date": end})
+    for cur in out.values():
+        cur["mentors"].sort(key=lambda m: (m["end_date"], m["label"]))
     return out

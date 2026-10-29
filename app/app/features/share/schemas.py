@@ -39,6 +39,7 @@ class ShareOut(BaseModel):
     resume_id: uuid.UUID
     mentor_id: str
     mentor_label: str
+    mentor_email: str | None = None  # 목록 조회에서만 채움(Cognito, 10/29)
     end_date: date
     expires_at: datetime
     status: str  # active / expired / revoked
@@ -52,6 +53,8 @@ class ReceivedShare(BaseModel):
     id: uuid.UUID
     resume_title: str
     end_date: date
+    owner_email: str | None = None  # 누가 공유했는지(10/29)
+    shared_at: datetime | None = None
 
 
 CommentBody = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]

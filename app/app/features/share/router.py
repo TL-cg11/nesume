@@ -8,6 +8,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated
 
+from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
@@ -50,9 +51,17 @@ def require_mentor(user: AuthenticatedUser) -> CurrentUser:
 Mentor = Annotated[CurrentUser, Depends(require_mentor)]
 
 
-def _out(s: Share, now: datetime, count: tuple[int, int] = (0, 0)) -> ShareOut:
+def _emails(idp, ids: list[str]) -> dict[str, str]:
+    """사용자 ID → 이메일(표시용). Cognito를 못 쓰면 빈 결과 — 화면은 ID를 대신 보여준다."""
+    try:
+        return directory.emails_for(idp, ids)
+    except (directory.DirectoryUnavailable, BotoCoreError, ClientError):
+        return {}
+
+
+def _out(s: Share, now: datetime, count: tuple[int, int] = (0, 0), email: str | None = None) -> ShareOut:
     return ShareOut(
-        comment_count=count[0], unread_count=count[1],
+        comment_count=count[0], unread_count=count[1], mentor_email=email,
         id=s.id, resume_id=s.resume_id, mentor_id=s.shared_with, mentor_label=s.mentor_label,
         end_date=period.end_date_of(s.expires_at),
         expires_at=s.expires_at, status=service.status_of(s, now), created_at=s.created_at,
@@ -115,13 +124,15 @@ def create_share(
 
 
 @owner_router.get("/resumes/{resume_id}/shares", response_model=list[ShareOut])
-def list_shares(resume_id: uuid.UUID, user: AuthenticatedUser, db: Db):
+def list_shares(resume_id: uuid.UUID, user: AuthenticatedUser, db: Db,
+                idp: Annotated[object, Depends(get_cognito_client)]):
     if repo.lock_resume(db, user.sub, resume_id) is None:
         raise _NOT_FOUND
     now = datetime.now(UTC)
     rows = repo.list_for_owner(db, user.sub, resume_id)
     n = comments.counts(db, [s.id for s in rows])
-    return [_out(s, now, n.get(s.id, (0, 0))) for s in rows]
+    emails = _emails(idp, [s.shared_with for s in rows])
+    return [_out(s, now, n.get(s.id, (0, 0)), emails.get(s.shared_with)) for s in rows]
 
 
 @owner_router.post("/shares/{share_id}/extend", response_model=ShareOut)
@@ -195,9 +206,11 @@ def mark_comment_read(share_id: uuid.UUID, comment_id: uuid.UUID, user: Authenti
 # --- 멘토 (읽기 전용) -------------------------------------------------------
 
 @mentor_router.get("", response_model=list[ReceivedShare])
-def received_shares(user: Mentor, db: Db):
+def received_shares(user: Mentor, db: Db, idp: Annotated[object, Depends(get_cognito_client)]):
     rows = repo.list_for_mentor(db, user.sub, datetime.now(UTC))
-    return [ReceivedShare(id=s.id, resume_title=title, end_date=period.end_date_of(s.expires_at))
+    emails = _emails(idp, [s.owner_id for s, _ in rows])  # 누가 공유했는지(10/29)
+    return [ReceivedShare(id=s.id, resume_title=title, end_date=period.end_date_of(s.expires_at),
+                          owner_email=emails.get(s.owner_id), shared_at=s.created_at)
             for s, title in rows]
 
 
