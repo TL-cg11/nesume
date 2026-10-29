@@ -56,6 +56,8 @@ class RecommendationOut(BaseModel):
     keyword_score: float
     #: 왜 추천됐는지 — 사용자 보유 ∩ 공고 요구 역량.
     matched_keywords: list[str]
+    #: False = 공고에 비교할 사전 기술이 없음 → 키워드 0은 "안 맞음"이 아니라 "정보 없음"(점수 공식은 그대로)
+    keyword_available: bool = True
     posting: PostingBrief | None = None
 
 

@@ -76,6 +76,7 @@ def recommend(payload: RecommendRequest, user: AuthenticatedUser, db: Db):
                 vector_score=r.vector_score,
                 keyword_score=r.keyword_score,
                 matched_keywords=list(r.matched_keywords),
+                keyword_available=r.keyword_available,
                 posting=brief,
             )
         )

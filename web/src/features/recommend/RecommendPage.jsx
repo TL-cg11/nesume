@@ -196,7 +196,14 @@ export default function RecommendPage() {
                 )}
                 <div className="rec-item-meta">
                   <span className="rec-chip rec-chip-vec">벡터 {pct(it.vector_score)}</span>
-                  <span className="rec-chip rec-chip-kw">키워드 {pct(it.keyword_score)}</span>
+                  {it.keyword_available === false ? (
+                    // 공고에 비교할 기술 키워드가 없음 — 0%(안 맞음)와 구분
+                    <span className="rec-chip rec-chip-kw" title="공고에서 비교할 기술 키워드를 찾지 못해 문맥(벡터) 점수로만 추천했어요">
+                      키워드 정보 없음
+                    </span>
+                  ) : (
+                    <span className="rec-chip rec-chip-kw">키워드 {pct(it.keyword_score)}</span>
+                  )}
                 </div>
                 {it.matched_keywords.length > 0 && (
                   <div className="rec-matched">

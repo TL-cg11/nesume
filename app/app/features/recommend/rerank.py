@@ -38,6 +38,8 @@ class KeywordMatch:
 
     rate: float
     matched: tuple[str, ...] = ()
+    #: 공고에서 비교할 사전 기술이 하나라도 나왔나. False면 rate 0은 "안 맞음"이 아니라 "비교 불가"
+    available: bool = True
 
 
 @dataclass(frozen=True)
@@ -49,6 +51,8 @@ class Recommendation:
     keyword_score: float
     final_score: float
     matched_keywords: tuple[str, ...] = field(default_factory=tuple)
+    #: False = 공고에 비교할 사전 기술이 없어 키워드율이 의미 없음(화면은 "키워드 정보 없음")
+    keyword_available: bool = True
 
 
 def similarity_from_distance(distance: float) -> float:
@@ -84,7 +88,7 @@ def keyword_match_rate(
     """
     required = list(dict.fromkeys(required_keys))
     if not required:
-        return KeywordMatch(0.0, ())
+        return KeywordMatch(0.0, (), available=False)
     held = set(held_keys)
     matched = tuple(k for k in required if k in held)
     return KeywordMatch(len(matched) / len(required), matched)
@@ -104,7 +108,7 @@ def rerank(
     """
     recs: list[Recommendation] = []
     for c in candidates:
-        km = keyword_by_posting.get(c.posting_id, KeywordMatch(0.0, ()))
+        km = keyword_by_posting.get(c.posting_id, KeywordMatch(0.0, (), available=False))
         final = vector_weight * c.vector_score + keyword_weight * km.rate
         recs.append(
             Recommendation(
@@ -113,6 +117,7 @@ def rerank(
                 keyword_score=km.rate,
                 final_score=final,
                 matched_keywords=km.matched,
+                keyword_available=km.available,
             )
         )
     recs.sort(key=lambda r: (r.final_score, r.vector_score), reverse=True)
