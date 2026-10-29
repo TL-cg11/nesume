@@ -122,7 +122,12 @@ resource "aws_iam_role_policy" "app" {
           "arn:aws:bedrock:*::foundation-model/${p}*",
         ]])
       },
-      { Effect = "Allow", Action = ["cognito-idp:Admin*"], Resource = var.cognito_user_pool_arn },
+      # Admin*: 역할 변경·MFA 조회. ListUsers·ListUsersInGroup: 역할 관리 화면 검색·운영자/멘토 목록(GET /admin/users)
+      {
+        Effect   = "Allow"
+        Action   = ["cognito-idp:Admin*", "cognito-idp:ListUsers", "cognito-idp:ListUsersInGroup"]
+        Resource = var.cognito_user_pool_arn
+      },
       { Effect = "Allow", Action = ["secretsmanager:GetSecretValue"], Resource = var.app_secret_arn },
     ]
   })
