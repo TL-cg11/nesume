@@ -20,7 +20,14 @@ export const reviewApi = {
   spelling: (text, signal) => api.post('/writing/proofread', { text, use_llm: true }, { signal }),
   // STAR 네 요소를 AI가 판정한다. AI를 못 쓰면 서버가 규칙 판정으로 내려간다
   star: (text, signal) => api.post('/writing/star', { text }, { signal }),
+  // 사용자가 고른 요소만 AI가 써 넣거나(write) 다듬는다(improve). omit 은 만들지 말라고 전한다.
+  // fill: [{ element, mode, hint }]
+  starComplete: ({ text, fill, omit }, signal) =>
+    api.post('/writing/star/complete', { text, fill, omit }, { signal }),
 }
+
+// 요소별 참고 사실 길이 (서버 star_complete.MAX_HINT_LEN)
+export const MAX_HINT_LEN = 300
 
 // ── A6 다시 쓰기 (내 말투)
 //

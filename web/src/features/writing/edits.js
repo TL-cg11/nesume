@@ -39,6 +39,44 @@ export function toEdits(text, proofread) {
     .sort((a, b) => a.start - b.start || a.end - b.end)
 }
 
+// 원문 → 제안을 낱말 단위로 비교한다. 바뀐 낱말만 표시하려고 쓴다
+// (문장 통째로 빨간 줄을 그으면 어디가 바뀌었는지 사용자가 다시 찾아야 한다).
+//
+// 낱말 = 공백이 아닌 덩어리. 공백도 조각으로 남겨 이어 붙이면 원문이 그대로 나온다.
+// 띄어쓰기만 바뀐 경우("진행 했습니다" → "진행했습니다")도 낱말이 달라져 잡힌다.
+const TOKEN = /\s+|[^\s]+/g
+
+export function diffWords(before, after) {
+  const a = before.match(TOKEN) ?? []
+  const b = after.match(TOKEN) ?? []
+  // LCS 표. 제안은 한두 문장이라 낱말 수가 작다
+  const dp = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0))
+  for (let i = a.length - 1; i >= 0; i--) {
+    for (let j = b.length - 1; j >= 0; j--) {
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1])
+    }
+  }
+  const out = []
+  const push = (op, text) => {
+    const last = out[out.length - 1]
+    if (last && last.op === op) last.text += text
+    else out.push({ op, text })
+  }
+  let i = 0
+  let j = 0
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) {
+      push('equal', a[i])
+      i++
+      j++
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) push('del', a[i++])
+    else push('ins', b[j++])
+  }
+  while (i < a.length) push('del', a[i++])
+  while (j < b.length) push('ins', b[j++])
+  return out
+}
+
 export const overlaps = (a, b) => a.start < b.end && b.start < a.end
 
 // 겹치지 않게 앞에서부터 고른다 ("모두 선택")

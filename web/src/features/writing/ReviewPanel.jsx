@@ -2,11 +2,13 @@
 //
 //   맞춤법   규칙(맞춤법·띄어쓰기) + AI 문장 제안. 고칠 곳을 골라 반영한다
 //   STAR    상황·과제·행동·결과가 드러나는지 AI가 판정한다(충분·부족·없음).
-//           ★ 빠진 것은 **질문**으로만 알려준다. 대신 써 주면 없는 경험을 지어낸다
-//           (A7 star.py·2026-10-22 팀 회의와 같은 판단).
+//           빠진 요소가 있으면 팝업으로 요소마다 "AI가 작성" / "빼기" 를 묻는다(2026-10-29).
+//           ★ AI가 지어 쓴 내용은 실제 경험이 아닐 수 있다. 그래서 묻지 않고 쓰지 않고,
+//             결과에서 바뀐 곳과 새로 생긴 숫자를 서버가 짚어 보여준다.
 
 import { useMemo, useState } from 'react'
-import { applyEdits, overlaps, pickNonOverlapping, StaleEdit, toEdits } from './edits.js'
+import StarFillDialog from './StarFillDialog.jsx'
+import { applyEdits, diffWords, overlaps, pickNonOverlapping, StaleEdit, toEdits } from './edits.js'
 import { reviewApi } from './api.js'
 
 const STATUS = {
@@ -15,8 +17,17 @@ const STATUS = {
   missing: { label: '없음', tone: 'danger' },
 }
 
-export default function ReviewPanel({ text, run, busy, onApplied, spelling, setSpelling, star, setStar }) {
+export default function ReviewPanel({
+  text, run, busy, onApplied, spelling, setSpelling, star, setStar,
+  starFill, setStarFill, starOmit, setStarOmit,
+}) {
   const empty = !text.trim()
+  const [dialogOpen, setDialogOpen] = useState(false)
+
+  // 보완을 권할 요소 — 충분하지 않고, 사용자가 빼기로 하지 않은 것
+  const needs = (result) =>
+    result ? result.elements.filter((e) => e.status !== 'ok' && !starOmit.has(e.element)) : []
+  const pending = needs(star)
 
   const checkSpelling = async () => {
     const body = await run('spelling', (signal) => reviewApi.spelling(text, signal))
@@ -24,8 +35,20 @@ export default function ReviewPanel({ text, run, busy, onApplied, spelling, setS
   }
 
   const checkStar = async () => {
+    setStarFill(null)
     const body = await run('star', (signal) => reviewApi.star(text, signal))
-    if (body) setStar(body)
+    if (!body) return
+    setStar(body)
+    // ★ 빠진 요소가 있을 때만 바로 묻는다. 약한 요소만 있으면 버튼으로 연다 — 매번 뜨면 성가시다
+    if (needs(body).some((e) => e.status === 'missing')) setDialogOpen(true)
+  }
+
+  const submitFill = async ({ fill, omit }) => {
+    setDialogOpen(false)
+    if (omit.length) setStarOmit((cur) => new Set([...cur, ...omit]))
+    if (!fill.length) return
+    const body = await run('starfill', (signal) => reviewApi.starComplete({ text, fill, omit }, signal))
+    if (body) setStarFill(body)
   }
 
   return (
@@ -54,12 +77,46 @@ export default function ReviewPanel({ text, run, busy, onApplied, spelling, setS
         </div>
         {!star && !busy.star && (
           <p className="muted">
-            상황·과제·행동·결과가 글에 드러나는지 AI가 판정합니다. 부족한 것은 질문으로 알려
-            드리고, 내용을 대신 써 넣지는 않습니다.
+            상황·과제·행동·결과가 글에 드러나는지 AI가 판정합니다. 빠진 요소가 있으면 AI가 써
+            넣을지, 빼고 갈지 물어봅니다.
           </p>
         )}
-        {star && !busy.star && <StarResult result={star} />}
+        {star && !busy.star && (
+          <StarResult
+            result={star}
+            omitted={starOmit}
+            onRestore={(el) => setStarOmit((cur) => new Set([...cur].filter((x) => x !== el)))}
+          />
+        )}
+        {star && !busy.star && pending.length > 0 && (
+          <div className="row">
+            <span className="grow" />
+            <button onClick={() => setDialogOpen(true)} disabled={busy.starfill}>
+              {busy.starfill ? 'AI가 쓰는 중...' : `AI로 보완하기 (${pending.length})`}
+            </button>
+          </div>
+        )}
+        {busy.starfill && <p className="muted">AI가 고른 요소를 써 넣는 중입니다.</p>}
+        {starFill && !busy.starfill && (
+          <FillResult
+            result={starFill}
+            onUse={() =>
+              onApplied(
+                starFill.body,
+                'AI가 보완한 글로 바꿨습니다. 표시됐던 부분이 사실과 맞는지 꼭 확인해 주십시오.',
+              )
+            }
+            onDiscard={() => setStarFill(null)}
+          />
+        )}
       </section>
+
+      <StarFillDialog
+        open={dialogOpen}
+        elements={pending}
+        onSubmit={submitFill}
+        onClose={() => setDialogOpen(false)}
+      />
     </div>
   )
 }
@@ -122,12 +179,19 @@ function SpellingResult({ text, result, onApplied }) {
               <li key={e.id} className="wr-item">
                 <label className="head">
                   <input type="checkbox" checked={accepted.has(e.id)} onChange={() => toggle(e)} />
-                  <span>
+                  {/* 바뀐 낱말만 표시하고 나머지는 보통 글씨로 둔다 */}
+                  <span className="wr-diff">
                     {e.before !== undefined && <span className="muted">…{e.before}</span>}
-                    <span className="wr-from">{e.original}</span>
-                    {' → '}
-                    <span className="wr-to">{e.replacement || '(삭제)'}</span>
-                    {e.after !== undefined && <span className="muted"> {e.after}…</span>}
+                    {diffWords(e.original, e.replacement).map((s, i) =>
+                      s.op === 'equal' ? (
+                        <span key={i}>{s.text}</span>
+                      ) : (
+                        <span key={i} className={s.op === 'del' ? 'wr-from' : 'wr-to'}>
+                          {s.text}
+                        </span>
+                      ),
+                    )}
+                    {e.after !== undefined && <span className="muted">{e.after}…</span>}
                   </span>
                 </label>
                 <p className="reason">
@@ -166,8 +230,9 @@ function SpellingResult({ text, result, onApplied }) {
   )
 }
 
-function StarResult({ result }) {
+function StarResult({ result, omitted, onRestore }) {
   const okCount = result.elements.filter((e) => e.status === 'ok').length
+  const todo = result.elements.filter((e) => e.status !== 'ok' && !omitted.has(e.element)).length
 
   return (
     <>
@@ -184,22 +249,88 @@ function StarResult({ result }) {
             {e.element}
           </span>
         ))}
-        <span className="muted">{okCount === 4 ? '네 요소가 모두 드러납니다.' : `${4 - okCount}개를 보완하면 좋습니다.`}</span>
+        <span className="muted">
+          {okCount === 4
+            ? '네 요소가 모두 드러납니다.'
+            : todo
+              ? `${todo}개를 보완하면 좋습니다.`
+              : '빼기로 한 요소 말고는 모두 드러납니다.'}
+        </span>
       </div>
 
       <ul className="list">
-        {result.elements.map((e) => (
-          <li key={e.element} className="wr-star-row">
-            <div className="row">
-              <strong className="grow">{e.name}</strong>
-              <span className={`wr-badge ${STATUS[e.status].tone}`}>{STATUS[e.status].label}</span>
-            </div>
-            {e.quote && <p className="wr-quote">{`"${e.quote}"`}</p>}
-            {e.comment && <p className="reason">{e.comment}</p>}
-            {e.question && <p className="wr-question">{e.question}</p>}
-          </li>
-        ))}
+        {result.elements.map((e) => {
+          const off = omitted.has(e.element) && e.status !== 'ok'
+          return (
+            <li key={e.element} className="wr-star-row">
+              <div className="row">
+                <strong className="grow">{e.name}</strong>
+                {off ? (
+                  <>
+                    <span className="wr-badge">빼기로 함</span>
+                    <button className="secondary wr-small" onClick={() => onRestore(e.element)}>
+                      되돌리기
+                    </button>
+                  </>
+                ) : (
+                  <span className={`wr-badge ${STATUS[e.status].tone}`}>{STATUS[e.status].label}</span>
+                )}
+              </div>
+              {e.quote && <p className="wr-quote">{`"${e.quote}"`}</p>}
+              {!off && e.comment && <p className="reason">{e.comment}</p>}
+              {!off && e.question && <p className="wr-question">{e.question}</p>}
+            </li>
+          )
+        })}
       </ul>
     </>
+  )
+}
+
+// AI가 보완한 글. ★ 바뀐 곳은 서버가 원문과 비교해 준 것이다 — 모델의 자기 신고가 아니다
+function FillResult({ result, onUse, onDiscard }) {
+  if (result.llm_unavailable) {
+    return <p className="notice">AI를 쓸 수 없어 보완하지 못했습니다. 잠시 후 다시 시도해 주십시오.</p>
+  }
+  if (result.blocked_reason) return <p className="error">해당 요청은 처리할 수 없습니다.</p>
+  if (!result.body) {
+    return result.notices.map((n) => (
+      <p key={n} className="notice">{n}</p>
+    ))
+  }
+
+  return (
+    <div className="card wr-rewrite stack">
+      <div className="row">
+        <strong className="grow">AI가 보완한 글</strong>
+        <span className="muted">{result.char_count.toLocaleString()}자</span>
+        <span className="wr-badge check">확인 필요</span>
+      </div>
+      <p>
+        {result.segments.map((s, i) =>
+          s.op === 'equal' ? (
+            <span key={i}>{s.before}</span>
+          ) : (
+            <span key={i}>
+              {s.before && <span className="wr-from">{s.before}</span>}
+              {s.after && <mark className="wr-ai">{s.after}</mark>}
+            </span>
+          ),
+        )}
+      </p>
+      <p className="muted">색칠된 부분이 AI가 새로 쓰거나 고친 곳입니다. 실제와 다르면 고친 뒤 쓰십시오.</p>
+      {result.new_numbers.length > 0 && (
+        <p className="notice">
+          원문에 없던 숫자: {result.new_numbers.join(', ')} — AI가 만든 값일 수 있습니다. 실제 수치로
+          바꿔 주십시오.
+        </p>
+      )}
+      <div className="row">
+        <button onClick={onUse}>이 글로 바꾸기</button>
+        <button className="secondary" onClick={onDiscard}>
+          버리기
+        </button>
+      </div>
+    </div>
   )
 }
