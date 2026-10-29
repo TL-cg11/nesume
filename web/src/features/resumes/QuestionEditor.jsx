@@ -218,8 +218,6 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete, 
               v{loaded.no}{loaded.id === versions[0]?.id ? ' (최신)' : ''} 편집 중
             </span>
           )}
-          {/* A6 리라이팅: 고른 후보를 이 문항의 새 버전으로 저장할 수 있게 자소서·문항 ID를 넘긴다(A 요청 10/28) */}
-          <Link to={`/writing?${new URLSearchParams({ resume: resumeId, question: question.id })}`}>글 다듬기</Link>
           <button className="danger" onClick={onDelete}>
             문항 삭제
           </button>
@@ -312,6 +310,7 @@ export default function QuestionEditor({ resumeId, question, onSaved, onDelete, 
             {linked.map((e) => (
               <li key={e.id}>
                 {/* 행을 누르면 경험 열람. 연결 해제 버튼은 덮개 위라 따로 동작 */}
+                <span className="linked-type">{normalizeType(e.type)}</span>
                 <Link to={`/experiences/${e.id}`} className="linked-title">{e.title}</Link>
                 <span className="muted">{period(e) || '기간 없음'}</span>
                 <button className="secondary" onClick={() => unlinkExperience(e.id)}>

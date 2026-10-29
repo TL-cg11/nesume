@@ -1,7 +1,6 @@
 """멘토 공유 입출력. 소유자·버전·만료 시각은 서버가 정한다."""
 import uuid
 from datetime import date, datetime
-
 from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
@@ -13,8 +12,12 @@ MentorLabel = Annotated[str, StringConstraints(strip_whitespace=True, min_length
 class ShareCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    mentor_id: str = Field(min_length=1, max_length=128)
+    # 멘토 지정: 이메일(화면, 10/29) 또는 사용자 ID(기존·내부). 둘 중 하나
+    mentor_email: str | None = Field(default=None, min_length=3, max_length=254)
+    mentor_id: str | None = Field(default=None, min_length=1, max_length=128)
     mentor_label: MentorLabel
+    # 공유할 버전(문항당 하나). 비우면 문항별 최신 버전 전부
+    version_ids: list[uuid.UUID] | None = Field(default=None, max_length=100)
     end_date: date | None = None  # 비우면 공유일 포함 7일째 날
     confirm: bool = False         # 같은 멘토에게 유효한 공유가 있을 때 확인 후 true로 다시 요청
 
@@ -36,6 +39,7 @@ class ShareOut(BaseModel):
     resume_id: uuid.UUID
     mentor_id: str
     mentor_label: str
+    mentor_email: str | None = None  # 목록 조회에서만 채움(Cognito, 10/29)
     end_date: date
     expires_at: datetime
     status: str  # active / expired / revoked
@@ -49,6 +53,8 @@ class ReceivedShare(BaseModel):
     id: uuid.UUID
     resume_title: str
     end_date: date
+    owner_email: str | None = None  # 누가 공유했는지(10/29)
+    shared_at: datetime | None = None
 
 
 CommentBody = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]

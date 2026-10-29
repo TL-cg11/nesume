@@ -17,9 +17,9 @@ const NAV_META = {
   learning: { icon: 'spark', group: '취업 준비' },
   applications: { icon: 'case', group: '취업 준비' },
   github: { icon: 'git', group: '소개' },
-  // B17 멘토 공유, B9 프롬프트 템플릿(발표 시안의 '관리' 그룹)
+  // B17 멘토 공유, B11 AI 사용 기록(발표 시안의 '관리' 그룹)
   mentor: { icon: 'user', group: '관리' },
-  templates: { icon: 'shield', group: '관리' },
+  'ai-logs': { icon: 'shield', group: '관리' }, // B11 AI 사용 기록(운영자). 10/29 프롬프트 템플릿 대신
   'admin/users': { icon: 'user', group: '관리' }, // D6 역할 관리
 }
 const GROUP_ORDER = ['워크스페이스', 'AI 도구', '취업 준비', '소개', '관리', '기타']

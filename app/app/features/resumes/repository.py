@@ -82,6 +82,11 @@ def list_versions(db: Session, owner_id: str, question_id: uuid.UUID) -> Sequenc
     ).all()
 
 
+def get_version_any_question(db: Session, owner_id: str, version_id: uuid.UUID) -> Version | None:
+    """본인 버전(문항 무관). 멘토 공유에서 고른 버전을 확인할 때(B10, 10/29)."""
+    return db.scalar(select(Version).where(Version.id == version_id, Version.owner_id == owner_id))
+
+
 def get_version(
     db: Session, owner_id: str, question_id: uuid.UUID, version_id: uuid.UUID
 ) -> Version | None:

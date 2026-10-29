@@ -8,15 +8,17 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated
 
+from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from app.auth import AuthenticatedUser, CurrentUser, Role
-from app.core.errors import ConflictError
+from app.auth.admin_router import get_cognito_client
+from app.core.errors import AppError, ConflictError
 from app.db import get_db
 from app.features.resumes import pii_hooks
 from app.features.resumes.service import ensure_user, restore_body as service_restore
-from app.features.share import comments, denials, display, period, service
+from app.features.share import comments, denials, directory, display, period, service
 from app.features.share import repository as repo
 from app.features.share.schemas import (
     CommentCreate, CommentEdit, MentorComment, OwnerComment, ReceivedShare, SharedQuestion, SharedResume,
@@ -49,9 +51,17 @@ def require_mentor(user: AuthenticatedUser) -> CurrentUser:
 Mentor = Annotated[CurrentUser, Depends(require_mentor)]
 
 
-def _out(s: Share, now: datetime, count: tuple[int, int] = (0, 0)) -> ShareOut:
+def _emails(idp, ids: list[str]) -> dict[str, str]:
+    """사용자 ID → 이메일(표시용). Cognito를 못 쓰면 빈 결과 — 화면은 ID를 대신 보여준다."""
+    try:
+        return directory.emails_for(idp, ids)
+    except (directory.DirectoryUnavailable, BotoCoreError, ClientError):
+        return {}
+
+
+def _out(s: Share, now: datetime, count: tuple[int, int] = (0, 0), email: str | None = None) -> ShareOut:
     return ShareOut(
-        comment_count=count[0], unread_count=count[1],
+        comment_count=count[0], unread_count=count[1], mentor_email=email,
         id=s.id, resume_id=s.resume_id, mentor_id=s.shared_with, mentor_label=s.mentor_label,
         end_date=period.end_date_of(s.expires_at),
         expires_at=s.expires_at, status=service.status_of(s, now), created_at=s.created_at,
@@ -69,12 +79,28 @@ def _share_or_404(db: Session, owner_id: str, share_id: uuid.UUID) -> Share:
 # --- 소유자 ----------------------------------------------------------------
 
 @owner_router.post("/resumes/{resume_id}/shares", response_model=ShareOut, status_code=status.HTTP_201_CREATED)
-def create_share(resume_id: uuid.UUID, payload: ShareCreate, user: AuthenticatedUser, db: Db):
+def create_share(
+    resume_id: uuid.UUID, payload: ShareCreate, user: AuthenticatedUser, db: Db,
+    idp: Annotated[object, Depends(get_cognito_client)],  # D6 Cognito 클라이언트(이메일로 멘토 찾기)
+):
     ensure_user(db, user.sub)
     now = datetime.now(UTC)
+    mentor_id = payload.mentor_id
+    if payload.mentor_email:  # 이메일로 지정(화면): 멘토 그룹 계정만(10/29)
+        try:
+            mentor_id = directory.find_mentor_sub(idp, payload.mentor_email)
+        except directory.DirectoryUnavailable:
+            raise AppError("멘토를 찾을 수 없습니다(로그인 설정 없음).", code="directory_unavailable",
+                           status_code=503) from None
+        if mentor_id is None:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT,
+                                "멘토 계정을 찾을 수 없습니다. 멘토로 가입한 이메일인지 확인해 주세요.")
+    if not mentor_id:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "공유할 멘토의 이메일을 입력해 주세요.")
     try:
-        share = service.create_share(db, user.sub, resume_id, payload.mentor_id, payload.end_date,
-                                     mentor_label=payload.mentor_label, confirm=payload.confirm, now=now)
+        share = service.create_share(db, user.sub, resume_id, mentor_id, payload.end_date,
+                                     mentor_label=payload.mentor_label, confirm=payload.confirm, now=now,
+                                     version_ids=payload.version_ids)
     except service.ShareConfirmRequired as e:
         raise ConflictError(e.message, code="share_confirm_required", errors={"kind": e.kind}) from None
     except period.PeriodInvalid:
@@ -85,6 +111,9 @@ def create_share(resume_id: uuid.UUID, payload: ShareCreate, user: Authenticated
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "본인에게는 공유할 수 없습니다.") from None
     except service.MentorNotFound:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "공유할 멘토를 찾을 수 없습니다.") from None
+    except service.VersionsInvalid:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT,
+                            "공유할 버전을 다시 골라 주세요(문항마다 하나, 이 자소서의 버전만).") from None
     except service.NothingToShare:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_CONTENT, "공유할 내용이 없습니다. 문항에 내용을 저장한 뒤 공유해 주세요."
@@ -95,13 +124,15 @@ def create_share(resume_id: uuid.UUID, payload: ShareCreate, user: Authenticated
 
 
 @owner_router.get("/resumes/{resume_id}/shares", response_model=list[ShareOut])
-def list_shares(resume_id: uuid.UUID, user: AuthenticatedUser, db: Db):
+def list_shares(resume_id: uuid.UUID, user: AuthenticatedUser, db: Db,
+                idp: Annotated[object, Depends(get_cognito_client)]):
     if repo.lock_resume(db, user.sub, resume_id) is None:
         raise _NOT_FOUND
     now = datetime.now(UTC)
     rows = repo.list_for_owner(db, user.sub, resume_id)
     n = comments.counts(db, [s.id for s in rows])
-    return [_out(s, now, n.get(s.id, (0, 0))) for s in rows]
+    emails = _emails(idp, [s.shared_with for s in rows])
+    return [_out(s, now, n.get(s.id, (0, 0)), emails.get(s.shared_with)) for s in rows]
 
 
 @owner_router.post("/shares/{share_id}/extend", response_model=ShareOut)
@@ -175,9 +206,11 @@ def mark_comment_read(share_id: uuid.UUID, comment_id: uuid.UUID, user: Authenti
 # --- 멘토 (읽기 전용) -------------------------------------------------------
 
 @mentor_router.get("", response_model=list[ReceivedShare])
-def received_shares(user: Mentor, db: Db):
+def received_shares(user: Mentor, db: Db, idp: Annotated[object, Depends(get_cognito_client)]):
     rows = repo.list_for_mentor(db, user.sub, datetime.now(UTC))
-    return [ReceivedShare(id=s.id, resume_title=title, end_date=period.end_date_of(s.expires_at))
+    emails = _emails(idp, [s.owner_id for s, _ in rows])  # 누가 공유했는지(10/29)
+    return [ReceivedShare(id=s.id, resume_title=title, end_date=period.end_date_of(s.expires_at),
+                          owner_email=emails.get(s.owner_id), shared_at=s.created_at)
             for s, title in rows]
 
 

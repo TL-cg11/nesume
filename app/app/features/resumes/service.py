@@ -168,12 +168,35 @@ def restore_body(db: Session, owner_id: str, requester_id: str, version: Version
 _TOKEN = re.compile(r"\s+|[^\s]+")
 
 
-def diff_segments(before: str, after: str) -> list[dict]:
-    """단어(공백 보존) 단위 차이. 한국어 문단에서 줄 단위보다 읽기 쉽다."""
-    a, b = _TOKEN.findall(before), _TOKEN.findall(after)
+CHAR_DIFF_MAX = 5000  # 바뀐 구간을 글자 단위로 다시 볼 최대 길이(넘으면 단어 단위 그대로)
+
+
+def _char_segments(before: str, after: str) -> list[dict]:
+    """바뀐 단어 구간 안에서 글자 단위로 다시 비교한다. 띄어쓰기 없이 이어진 글이나
+    조사만 바뀐 경우(초안을 → 초안이)에 단어 전체가 삭제·추가로 보이지 않게(10/29)."""
     out = []
+    for op, i1, i2, j1, j2 in difflib.SequenceMatcher(a=before, b=after, autojunk=False).get_opcodes():
+        out.append({"op": op, "before": before[i1:i2], "after": after[j1:j2]})
+    return out
+
+
+def diff_segments(before: str, after: str) -> list[dict]:
+    """단어(공백 보존) 단위 차이 + 바뀐 구간은 글자 단위로 세분. 연속된 같은 종류 조각은 합친다."""
+    a, b = _TOKEN.findall(before), _TOKEN.findall(after)
+    raw: list[dict] = []
     for op, i1, i2, j1, j2 in difflib.SequenceMatcher(a=a, b=b, autojunk=False).get_opcodes():
-        out.append({"op": op, "before": "".join(a[i1:i2]), "after": "".join(b[j1:j2])})
+        seg_before, seg_after = "".join(a[i1:i2]), "".join(b[j1:j2])
+        if op == "replace" and len(seg_before) + len(seg_after) <= CHAR_DIFF_MAX:
+            raw.extend(_char_segments(seg_before, seg_after))
+        else:
+            raw.append({"op": op, "before": seg_before, "after": seg_after})
+    out: list[dict] = []
+    for seg in raw:
+        if out and out[-1]["op"] == seg["op"]:
+            out[-1]["before"] += seg["before"]
+            out[-1]["after"] += seg["after"]
+        else:
+            out.append(dict(seg))
     return out
 
 
