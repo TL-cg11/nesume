@@ -1,9 +1,8 @@
-// 검사 결과(A7 제안 + A13 줄이기)를 한 목록으로 묶고, 고른 것만 글에 반영한다.
+// 맞춤법 검사 결과(A7 제안)를 목록 모양으로 바꾸고, 고른 것만 글에 반영한다.
 //
-// ★ 서버 /writing/apply · /style/apply 를 쓰지 않는 이유: 두 서버의 제안을 한 목록에서
-//   고르는데, 한쪽 /apply 는 다른 쪽 제안 모양을 모른다. 대신 서버와 같은 두 가지를 지킨다.
-//     - 위치의 글이 제안을 받을 때와 같은지 본다 (서버 409 와 같은 판단)
-//     - 겹치는 제안은 함께 고를 수 없다
+// 서버 /writing/apply 와 같은 두 가지를 화면에서 지킨다.
+//   - 위치의 글이 제안을 받을 때와 같은지 본다 (서버 409 와 같은 판단)
+//   - 겹치는 제안은 함께 고를 수 없다
 
 // 이보다 짧은 조각("는" → "은")은 어디인지 알 수 없어 앞뒤 글을 붙여 보여준다
 const SHORT = 8
@@ -18,39 +17,25 @@ function withContext(text, e) {
   }
 }
 
-// 서버 응답 → 공통 모양 { id, start, end, original, replacement, reason, tags, before?, after? }
-export function toEdits(text, proofread, style) {
-  const fixes = proofread.suggestions
+// 서버 응답 → { id, start, end, original, replacement, reason, tags, before?, after? }
+export function toEdits(text, proofread) {
+  return proofread.suggestions
     .filter((s) => s.is_replacement)
-    .map((s) => ({
-      id: `p:${s.id}`,
-      start: s.start,
-      end: s.end,
-      original: s.original,
-      replacement: s.suggested,
-      reason: s.reason,
-      tags: [
-        s.source === 'llm' ? { label: 'AI 제안', tone: 'llm' } : { label: '맞춤법' },
-        // 모델 제안은 근거를 댈 수 없다. 규칙 제안과 같은 무게로 보이면 구분 없이 수락하게 된다
-        ...(s.confidence === 'medium' ? [{ label: '확인 필요', tone: 'check' }] : []),
-      ],
-    }))
-
-  const trims = style.trims.map((t) => ({
-    id: `t:${t.id}`,
-    start: t.start,
-    end: t.end,
-    original: t.original,
-    replacement: t.replacement,
-    reason: t.reason,
-    tags: [
-      { label: `-${t.saved}자` },
-      ...(t.confidence === 'medium' ? [{ label: '확인 필요', tone: 'check' }] : []),
-    ],
-  }))
-
-  return [...fixes, ...trims]
-    .map((e) => withContext(text, e))
+    .map((s) =>
+      withContext(text, {
+        id: s.id,
+        start: s.start,
+        end: s.end,
+        original: s.original,
+        replacement: s.suggested,
+        reason: s.reason,
+        tags: [
+          s.source === 'llm' ? { label: 'AI 제안', tone: 'llm' } : { label: '맞춤법' },
+          // 모델 제안은 근거를 댈 수 없다. 규칙 제안과 같은 무게로 보이면 구분 없이 수락하게 된다
+          ...(s.confidence === 'medium' ? [{ label: '확인 필요', tone: 'check' }] : []),
+        ],
+      }),
+    )
     .sort((a, b) => a.start - b.start || a.end - b.end)
 }
 
