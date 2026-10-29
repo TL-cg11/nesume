@@ -116,28 +116,22 @@
 .timeline li:hover .ver-delete, .timeline li:has(:focus-visible) .ver-delete { opacity: 1; }
 .timeline .ver-delete:hover { filter: none; background: var(--danger-soft); border-radius: var(--radius-sm); }
 
-/* 버전 비교(10/28): 요약 + 이전|이후 나란히, 문단 맞춤 */
+/* 버전 비교(10/29): 요약 + 한 줄로 합친 보기 */
 .diff2-pick { display: inline-flex; align-items: center; gap: var(--space-2); }
 .diff2 { margin-top: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); overflow: hidden; }
 .diff2-summary { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); flex-wrap: wrap;
   padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); font-size: var(--text-sm); }
 .diff2-added { color: var(--success); font-weight: 650; }
 .diff2-removed { color: var(--danger); font-weight: 650; }
+.diff2-legend { display: inline-flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
 .diff2 > p { padding: var(--space-4); margin: 0; }
-.diff2-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-.diff2-head { padding: var(--space-2) var(--space-4); font-size: var(--text-sm); font-weight: 650; color: var(--muted); border-bottom: 1px solid var(--border); }
-.diff2-head + .diff2-head, .diff2-cell + .diff2-cell { border-left: 1px solid var(--border); }
-.diff2-row { display: contents; }
-.diff2-cell { padding: var(--space-3) var(--space-4); line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; border-bottom: 1px solid var(--border); }
-.diff2-row.changed .diff2-cell { background: color-mix(in srgb, var(--accent-soft) 35%, transparent); }
-.diff2-fold { grid-column: 1 / -1; padding: var(--space-2) var(--space-4); text-align: center; font-size: var(--text-sm); color: var(--muted); border-bottom: 1px solid var(--border); }
-.diff2 mark { color: inherit; border-radius: 3px; padding: 0 1px; }
-.diff2 mark.diff-del { background: var(--danger-soft); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--danger) 60%, transparent); }
-.diff2 mark.diff-ins { background: var(--success-soft); }
-@media (max-width: 720px) {
-  .diff2-grid { grid-template-columns: minmax(0, 1fr); }
-  .diff2-head + .diff2-head, .diff2-cell + .diff2-cell { border-left: 0; }
-}
+.diff2-body { padding: var(--space-2) 0; }
+.diff2-para { margin: 0; padding: var(--space-2) var(--space-4); line-height: 1.85; white-space: pre-wrap; overflow-wrap: anywhere; }
+.diff2-para.changed { background: color-mix(in srgb, var(--accent-soft) 30%, transparent); }
+.diff2-fold { padding: var(--space-1) var(--space-4); text-align: center; font-size: var(--text-sm); color: var(--muted); }
+.diff2 mark { color: inherit; border-radius: 3px; padding: 0 2px; }
+.diff2 mark.diff-del { background: var(--danger-soft); color: var(--danger); text-decoration: line-through; text-decoration-thickness: 1.5px; }
+.diff2 mark.diff-ins { background: var(--success-soft); color: var(--success); font-weight: 600; }
 
 /* 체크박스 + 문구 한 줄(10/28): 공용 입력칸 규칙(최소 높이·여백)이 체크박스를 키워 문구가 다음 줄로 밀리던 문제 */
 .share-toggle, .diff2-summary label {
