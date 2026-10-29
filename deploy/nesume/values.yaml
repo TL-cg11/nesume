@@ -106,7 +106,8 @@ cronjobs:
     limits: { cpu: 500m, memory: 512Mi }
 
 # D20 bge-m3 임베딩 서비스(embedder/Dockerfile, TEI). C3 파이프라인·C8 추천이 EMBEDDING_URL 로 호출한다.
-# fp32 CPU 서빙: RSS ~3GB. 전용 노드그룹(infra eks: aws_eks_node_group.embedding, taint nesume.io/workload=embedding)에 올린다.
+# fp32 ONNX CPU 서빙. 10-28 로컬 실측(arm64, MAX_BATCH_TOKENS=2048): 기동 65s, RSS 정상 4.4GB·피크 4.45GB.
+# 전용 노드그룹(infra eks: aws_eks_node_group.embedding, m7g.large 할당 가능 7.2GB, taint nesume.io/workload=embedding)에 올린다.
 embedder:
   enabled: true
   replicas: 1                        # 노드 1대. 늘리려면 노드그룹 desired 도 같이
@@ -114,12 +115,12 @@ embedder:
   service:
     port: 8080
   resources:
-    requests: { cpu: "1", memory: 2560Mi }
-    limits: { cpu: "2", memory: 3584Mi }
-  startupFailureThreshold: 60        # 5s x 60 = 5분. 모델 로드가 이보다 길면 노드가 너무 작다
+    requests: { cpu: "1", memory: 4608Mi }
+    limits: { cpu: "2", memory: 6144Mi }   # 피크 4.45GB + 여유. 노드 1대를 전용으로 쓰므로 넉넉히
+  startupFailureThreshold: 60        # 5s x 60 = 5분. 로컬 65s. 이보다 길면 노드가 너무 작다
   env:                               # TEI 설정. 이미지 ENV 기본값을 덮는다
-    MAX_CLIENT_BATCH_SIZE: "64"
-    MAX_BATCH_TOKENS: "16384"
+    MAX_CLIENT_BATCH_SIZE: "32"
+    MAX_BATCH_TOKENS: "2048"         # 올리면 메모리 급증(8192 는 OOM). 입력은 이 길이에서 잘린다
     MAX_CONCURRENT_REQUESTS: "64"
   nodeSelector:
     nesume.io/workload: embedding

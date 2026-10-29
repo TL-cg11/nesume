@@ -6,28 +6,37 @@
 
 ARG TEI_IMAGE=ghcr.io/huggingface/text-embeddings-inference:cpu-arm64-1.9
 
-# --- fetch: 모델 가중치·토크나이저만 내려받는다(ONNX·colbert·sparse 헤드·이미지 제외, ~2.3GB) ---
+# --- fetch: ONNX 가중치·토크나이저만 내려받는다(pytorch_model.bin·colbert·sparse 헤드·이미지 제외, ~2.3GB) ---
+# ONNX 를 쓰는 이유: TEI CPU 이미지는 ORT(onnxruntime) 백엔드가 기본이고, candle(pytorch_model.bin) 폴백은 CPU 에서
+# 10배 이상 느렸다(10-28 로컬 실측: 32건×800토큰 205s). ORT 는 /model/onnx/model.onnx(+ 외부 데이터) 를 읽는다.
 FROM python:3.12.16-slim-bookworm AS fetch
 ARG MODEL_ID=BAAI/bge-m3
 ARG MODEL_REVISION=main
 ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1 HF_HUB_DISABLE_TELEMETRY=1
 RUN pip install "huggingface_hub==2.3.0"
-RUN hf download "${MODEL_ID}" --revision "${MODEL_REVISION}" --local-dir /model \
-      --include "config.json" "tokenizer.json" "tokenizer_config.json" "special_tokens_map.json" \
-                "sentencepiece.bpe.model" "modules.json" "sentence_bert_config.json" \
-                "config_sentence_transformers.json" "1_Pooling/*" "pytorch_model.bin" \
+# 파일명은 위치 인자로 준다. `--include a b c` 는 hf CLI 가 "파일명 직접 지정"으로 해석해 --include 를 무시하고
+# config.json 을 빠뜨렸다(10-28 실측: TEI 기동 시 `config.json not found`). 끝의 test 가 빌드 단계에서 잡는다.
+RUN hf download "${MODEL_ID}" \
+      config.json tokenizer.json tokenizer_config.json special_tokens_map.json \
+      sentencepiece.bpe.model modules.json sentence_bert_config.json \
+      config_sentence_transformers.json 1_Pooling/config.json \
+      onnx/model.onnx onnx/model.onnx_data onnx/Constant_7_attr__value \
+      --revision "${MODEL_REVISION}" --local-dir /model \
  && rm -rf /model/.cache \
- && ls -la /model
+ && ls -la /model /model/1_Pooling /model/onnx \
+ && test -f /model/config.json && test -f /model/tokenizer.json && test -f /model/onnx/model.onnx
 
 # --- runtime: TEI 바이너리 + 모델. 비루트(10001)·읽기 전용 루트에서 동작 ---
 FROM ${TEI_IMAGE} AS runtime
 COPY --from=fetch --chown=10001:10001 /model /model
 # TEI 는 MODEL_ID 가 로컬 경로면 다운로드 없이 그대로 읽는다. 풀링은 /model/1_Pooling/config.json(CLS) 에서 가져온다.
+# MAX_BATCH_TOKENS=2048: bge-m3 최대 길이 8192 로 워밍업하면 어텐션(16헤드×8192²×4B≈4GB/레이어)이 CPU 메모리를 넘는다
+# (10-28 실측: 7GB 에서도 OOM). 2048 이면 피크 ~4.4GB. 입력은 2048 토큰에서 잘린다(C 는 512~1024 토큰 청크로 보낸다).
 ENV MODEL_ID=/model \
     HF_HUB_OFFLINE=1 \
     PORT=8080 \
-    MAX_CLIENT_BATCH_SIZE=64 \
-    MAX_BATCH_TOKENS=16384 \
+    MAX_CLIENT_BATCH_SIZE=32 \
+    MAX_BATCH_TOKENS=2048 \
     MAX_CONCURRENT_REQUESTS=64 \
     JSON_OUTPUT=true
 USER 10001
