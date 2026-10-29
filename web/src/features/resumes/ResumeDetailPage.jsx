@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router'
 import { resumesApi } from './api.js'
 import QuestionEditor from './QuestionEditor.jsx'
@@ -22,7 +22,15 @@ export default function ResumeDetailPage() {
   // 탭(10/29): 작성 | 버전 관리·비교 | 멘토 공유. 주소(?tab=)에 남겨 새로고침·뒤로 가기에도 유지
   const [params, setParams] = useSearchParams()
   const tab = TABS.some((t) => t.id === params.get('tab')) ? params.get('tab') : 'write'
-  const goTab = (id) => setParams(id === 'write' ? {} : { tab: id }, { replace: true })
+  const tabsRef = useRef(null)
+  // 탭을 바꿀 때 스크롤 통일(10/29): 탭 줄보다 아래로 내려가 있었다면 세 탭 모두 탭 줄이 맨 위에 오게 올린다.
+  // (짧은 공유 탭만 페이지가 줄어 저절로 올라가던 차이를 없앤다) 탭 줄이 보이는 위치면 그대로 둔다
+  const goTab = (id) => {
+    setParams(id === 'write' ? {} : { tab: id }, { replace: true })
+    const el = tabsRef.current
+    // 새 탭이 그려진 뒤에 맞춘다(그리기 전에 옮기면 짧은 탭에서 위치가 어긋남)
+    if (el && el.getBoundingClientRect().top < 0) requestAnimationFrame(() => el.scrollIntoView({ block: 'start' }))
+  }
   const [resume, setResume] = useState(null)
   const [selectedId, setSelectedId] = useState(null)
   const [newQuestion, setNewQuestion] = useState({ title: '', char_limit: String(DEFAULT_LIMIT) })
@@ -114,7 +122,7 @@ export default function ResumeDetailPage() {
       </div>
       {error && <p className="error">{error}</p>}
 
-      <div className="resume-tabs" role="tablist" aria-label="자소서 기능">
+      <div className="resume-tabs" role="tablist" aria-label="자소서 기능" ref={tabsRef}>
         {TABS.map((t) => (
           <button key={t.id} type="button" role="tab" aria-selected={tab === t.id}
             className={tab === t.id ? 'on' : undefined} onClick={() => goTab(t.id)}>
