@@ -5,7 +5,8 @@ import { resumesApi } from './api.js'
 // 자소서 상세 '글 다듬기' 탭(10/29): 다듬을 문항·버전을 고르면 그 본문으로 A의 글 다듬기 화면(검사·교정, 다시 쓰기)을 연다.
 // 기능은 A 화면 그대로. 다시 쓰기 결과의 '새 버전으로 저장'은 주소의 resume·question을 읽으므로(A6) 상위에서 넣어 준다
 export default function PolishTab({ resumeId, questions, questionId, onQuestion }) {
-  const [versions, setVersions] = useState([])
+  // 버전 목록은 어느 문항 것인지 함께 둔다 — 문항을 바꾼 직후 이전 문항의 버전으로 본문을 부르지 않게(404 방지)
+  const [versions, setVersions] = useState({ qid: null, list: [] })
   const [versionId, setVersionId] = useState('')
   const [body, setBody] = useState(null) // null = 불러오는 중
   const [error, setError] = useState(null)
@@ -16,29 +17,36 @@ export default function PolishTab({ resumeId, questions, questionId, onQuestion 
     if (!questionId) return
     let alive = true
     setBody(null)
+    setVersionId('')
     resumesApi
       .listVersions(resumeId, questionId)
       .then((list) => {
         if (!alive) return
-        setVersions(list)
+        setVersions({ qid: questionId, list })
         setVersionId(list[0]?.id ?? '')
         if (!list.length) setBody('')
+        setError(null)
       })
       .catch((e) => alive && setError(e.message))
     return () => { alive = false }
   }, [resumeId, questionId])
 
   // 버전을 고르면 그 본문을 불러온다
+  const ready = versions.qid === questionId && versions.list.some((v) => v.id === versionId)
   useEffect(() => {
-    if (!versionId) return
+    if (!ready) return
     let alive = true
     setBody(null)
     resumesApi
       .getVersion(resumeId, questionId, versionId)
-      .then((v) => alive && setBody(v.body))
+      .then((v) => {
+        if (!alive) return
+        setBody(v.body)
+        setError(null)
+      })
       .catch((e) => alive && setError(e.message))
     return () => { alive = false }
-  }, [resumeId, questionId, versionId])
+  }, [resumeId, questionId, versionId, ready])
 
   if (!questions.length) return <p className="muted">문항을 먼저 추가해 주세요.</p>
 
@@ -53,10 +61,10 @@ export default function PolishTab({ resumeId, questions, questionId, onQuestion 
         </label>
         <label>
           버전
-          <select value={versionId} onChange={(e) => setVersionId(e.target.value)} disabled={!versions.length}
+          <select value={versionId} onChange={(e) => setVersionId(e.target.value)} disabled={!versions.list.length}
             aria-label="다듬을 버전">
-            {versions.length === 0 && <option value="">저장된 버전 없음</option>}
-            {versions.map((v, i) => (
+            {versions.list.length === 0 && <option value="">저장된 버전 없음</option>}
+            {versions.list.map((v, i) => (
               <option key={v.id} value={v.id}>
                 v{v.version_no}{i === 0 ? ' (최신)' : ''} · {v.char_count.toLocaleString()}자
               </option>
