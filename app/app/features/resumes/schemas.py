@@ -62,11 +62,17 @@ class VersionShareTag(BaseModel):
     ended_on: date | None  # 만료일 또는 취소일(KST). 유효하면 None
 
 
+class SummaryMentor(BaseModel):
+    label: str  # 작성자가 붙인 멘토 이름
+    end_date: date
+
+
 class ShareSummary(BaseModel):
     """자소서의 유효한 멘토 공유 요약."""
 
     active_count: int
     earliest_end_date: date
+    mentors: list[SummaryMentor] = []  # 누구와 공유 중인지(목록 '공유 중'에 마우스를 올리면, 10/29)
 
 
 class VersionSummary(BaseModel):

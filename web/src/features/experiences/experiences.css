@@ -15,7 +15,7 @@
 .exp-empty { margin-top: var(--space-4); text-align: center; padding: var(--space-6) var(--space-4); }
 .exp-empty p { margin: var(--space-1) 0; }
 .exp-list > li { display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
-.exp-list .exp-title { color: var(--fg); font-weight: 600; text-decoration: none; }
+.exp-list .exp-title { color: var(--fg); font-weight: 600; text-decoration: none; overflow-wrap: anywhere; min-width: 0; }
 .exp-list .exp-title:hover { color: var(--accent-text); }
 /* 행 전체 클릭: 제목 링크가 행을 덮는다(링크는 행마다 하나) */
 .exp-list > li:has(> .exp-title) { position: relative; padding-inline: var(--space-5); border-radius: var(--radius-sm); cursor: pointer; }
@@ -35,7 +35,7 @@
 .exp-detail-row { display: grid; grid-template-columns: 8em 1fr; gap: var(--space-3); padding: var(--space-3) 0; border-bottom: 1px solid var(--border); }
 .exp-detail-row:last-child { border-bottom: 0; }
 .exp-detail dt { color: var(--muted); font-size: var(--text-sm); }
-.exp-detail dd { margin: 0; color: var(--fg); white-space: pre-wrap; }
+.exp-detail dd { margin: 0; color: var(--fg); white-space: pre-wrap; overflow-wrap: anywhere; }
 @media (max-width: 720px) { .exp-detail-row { grid-template-columns: 1fr; gap: var(--space-1); } }
 .exp-list p { margin: var(--space-1) 0 0; }
 

@@ -89,11 +89,25 @@ a { color: var(--accent-text); }
 .app-side-bottom { margin-top: auto; display: flex; flex-direction: column; gap: var(--space-2); }
 .app-user {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   gap: var(--space-2);
   padding-top: var(--space-3);
   border-top: 1px solid var(--border);
 }
+.app-user-id { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+/* 로그아웃: 이메일 아래 줄, 작은 버튼. 왼쪽을 이메일 글자 시작(아바타 34px + 간격)에 맞춘다 */
+.app-user-logout {
+  align-self: flex-start;
+  margin-left: calc(34px + var(--space-2));
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 26px;
+  padding: 0 var(--space-2);
+  font-size: 12px;
+}
+.app-user-logout svg { width: 14px; height: 14px; }
 .app-user-av {
   width: 34px;
   height: 34px;
@@ -108,8 +122,9 @@ a { color: var(--accent-text); }
 }
 .app-user-av svg { width: 16px; height: 16px; }
 .app-user-info { min-width: 0; flex: 1; }
-.app-user-name { font-size: var(--text-sm); font-weight: 700; color: var(--side-fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.app-user-role { font-size: 11px; color: var(--side-muted); }
+/* span 이라 display:block 이 있어야 말줄임(…)이 걸린다. 없으면 긴 이메일이 옆으로 넘친다 */
+.app-user-name { display: block; font-size: var(--text-sm); font-weight: 700; color: var(--side-fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app-user-role { display: block; font-size: 11px; color: var(--side-muted); }
 .app-login-link {
   display: flex;
   align-items: center;
@@ -271,8 +286,10 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
   .app-side.open .app-nav { display: flex; }
   .app-nav-label { padding-left: var(--space-2); }
   .app-side-bottom { margin-top: 0; margin-left: auto; flex-direction: row; align-items: center; }
-  .app-user { padding-top: 0; border-top: 0; }
+  .app-user { flex-direction: row; align-items: center; padding-top: 0; border-top: 0; }
   .app-user-info { display: none; }
+  .app-user-logout { margin-left: 0; min-height: 34px; }
+  .app-user-logout-label { display: none; }
   .app-menu-btn {
     display: grid;
     place-items: center;

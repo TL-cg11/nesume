@@ -57,6 +57,7 @@ config:
   COGNITO_JWKS_URL: ""
   OPERATOR_MFA_REQUIRED: "true"      # D7: 운영자 보호 API 에 TOTP 등록 + 최근 로그인 요구
   MFA_SESSION_MINUTES: "15"
+  MFA_EXEMPT_TEST_OPERATORS: "false" # test 그룹 운영자(test-operator1) MFA 면제. dev·staging 만 true, production 은 앱이 무시
   # A2 LLM. 자격증명은 IRSA(app 역할의 bedrock:InvokeModel). 모델 교체는 LLM_MODEL_ID 한 줄
   LLM_PROVIDER: bedrock
   LLM_MODEL_ID: global.amazon.nova-2-lite-v1:0   # Anthropic 게이트가 열리면 global.anthropic.claude-haiku-5-5
@@ -67,6 +68,9 @@ config:
   DB_USER: nesume
   EMBEDDING_MODEL: bge-m3            # D20/C3. 차원 1024 와 짝(app/app/models/embedding.py MODEL_VERSION)
   EMBEDDING_URL: ""                  # 비우면 차트 안의 embedder Service(http://<release>-embedder:8080). 외부 서빙이면 여기에
+  # C4·C14 공공 API 주소. 키(WORK24_*_API_KEY, SEOUL_OPENAPI_KEY, KMOOC_API_KEY)는 externalSecrets.remoteKey JSON 에 넣는다
+  WORK24_API_BASE_URL: https://www.work24.go.kr
+  SEOUL_OPENAPI_BASE_URL: http://openapi.seoul.go.kr:8088   # 서울시는 8088 http 만 응답(https 핸드셰이크 실패, 10-29 확인)
 
 # 비밀값. externalSecrets.enabled=true 면 Secrets Manager에서 가져오고 이 맵은 무시된다.
 # false(kind)일 때만 secret.yaml 이 이 값으로 Secret을 만든다. 운영 values에 값을 적지 않는다.

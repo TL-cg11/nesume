@@ -10,6 +10,8 @@
     def activate(user: CurrentUser = Depends(require_operator_mfa)): ...     # operator + TOTP + 최근 로그인
 
 403 은 D3 AppError 형식({"detail","code","request_id"}). 401 은 B 형식 그대로(get_current_user).
+
+operator_mfa_gate 는 라우트가 아니라 앱 전역(main.py FastAPI(dependencies=...))에 건다.
 """
 import time
 from collections.abc import Callable
@@ -59,13 +61,13 @@ def require_operator_mfa(
 ) -> CurrentUser:
     """운영자 보호 API. operator 역할 + TOTP 등록 + 최근 N분 내 로그인(auth_time).
 
-    OPERATOR_MFA_REQUIRED=false(로컬) 면 역할만 확인한다.
+    OPERATOR_MFA_REQUIRED=false(로컬)거나 MFA 면제 테스트 운영자(mfa_enforced 참고)면 역할만 확인한다.
     액세스 토큰에 amr 이 없어 MFA 통과 여부는 알 수 없다. 대신 TOTP 등록 여부(AdminGetUser)와
     로그인 시각으로 판단한다(D6 1장). auth_time 이 없는 토큰(일부 로컬 발급 경로)은 iat 로 대체한다.
     """
     if user.role is not Role.OPERATOR:
         raise ForbiddenError("운영자만 사용할 수 있습니다.")
-    if not settings.operator_mfa_required:
+    if not mfa_enforced(user, settings):
         return user
     if not mfa.totp_enrolled(user.sub):
         raise ForbiddenError("TOTP 등록이 필요합니다.", code="mfa_required")
@@ -73,6 +75,59 @@ def require_operator_mfa(
     if logged_in_at is None or time.time() - logged_in_at > settings.mfa_session_minutes * 60:
         raise ForbiddenError("다시 로그인해 주세요.", code="mfa_session_expired")
     return user
+
+
+def mfa_enforced(user: CurrentUser, settings: Settings) -> bool:
+    """이 운영자에게 TOTP·최근 로그인을 요구하는가.
+
+    MFA_EXEMPT_TEST_OPERATORS=true(dev·staging)면 test 그룹 운영자(시드 test-operator1)는 면제한다.
+    test 그룹은 시드(seed.py)만 넣고 역할 변경 API 는 건드리지 않으므로, 콘솔에서 운영자로 올린 실제 계정은
+    면제되지 않는다. production 에서는 설정과 무관하게 면제하지 않는다.
+    """
+    if not settings.operator_mfa_required:
+        return False
+    exempt = settings.mfa_exempt_test_operators and user.is_test and settings.app_env != "production"
+    return not exempt
+
+
+def operator_mfa_pending(user: CurrentUser, settings: Settings, *, refresh: bool = False) -> bool:
+    """TOTP 를 아직 등록하지 않은 운영자인가. MFA 를 요구하지 않는 경우(mfa_enforced) 항상 False."""
+    if user.role is not Role.OPERATOR or not mfa_enforced(user, settings):
+        return False
+    if refresh:
+        mfa.invalidate(user.sub)  # /auth/me: 방금 등록했으면 캐시(5분)를 기다리지 않고 바로 풀린다
+    return not mfa.totp_enrolled(user.sub)
+
+
+# TOTP 미등록 운영자도 부를 수 있는 경로. 등록은 브라우저가 Cognito 에 직접 하므로 /auth/me 만 연다.
+MFA_GATE_EXEMPT_PATHS = frozenset({"/auth/me"})
+
+
+def operator_mfa_gate(
+    request: Request,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_optional_bearer)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> None:
+    """앱 전역 의존성(main.py). TOTP 미등록 운영자 토큰은 /auth/me 외 모든 API 에서 403 mfa_required.
+
+    roles-grades.md: "MFA 미완료 운영자 토큰은 user 로 격하하지 않고 거부한다".
+    토큰이 없거나 유효하지 않으면 그냥 통과시킨다 → 401/503 판단은 각 라우트의 get_current_user 몫.
+    검증기는 Depends 로 받지 않는다: Cognito 설정이 없는 테스트 앱에서 공개 API 까지 500 이 나지 않게
+    본문에서 꺼낸다(dependency_overrides 는 그대로 따른다).
+    """
+    if not settings.operator_mfa_required:
+        return
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        return
+    if request.url.path in MFA_GATE_EXEMPT_PATHS:
+        return
+    try:
+        factory = request.app.dependency_overrides.get(get_token_verifier, get_token_verifier)
+        user = factory().verify(credentials.credentials)
+    except Exception:  # noqa: BLE001  TokenInvalid·설정 누락·JWKS 장애
+        return
+    if operator_mfa_pending(user, settings):
+        raise ForbiddenError("TOTP 등록이 필요합니다.", code="mfa_required")
 
 
 def get_current_user_optional(

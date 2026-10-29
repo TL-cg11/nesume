@@ -17,9 +17,10 @@ const NAV_META = {
   learning: { icon: 'spark', group: '취업 준비' },
   applications: { icon: 'case', group: '취업 준비' },
   github: { icon: 'git', group: '소개' },
-  // B17 멘토 공유, B9 프롬프트 템플릿(발표 시안의 '관리' 그룹)
+  // B17 멘토 공유, B11 AI 사용 기록(발표 시안의 '관리' 그룹)
   mentor: { icon: 'user', group: '관리' },
-  templates: { icon: 'shield', group: '관리' },
+  'ai-logs': { icon: 'shield', group: '관리' }, // B11 AI 사용 기록(운영자). 10/29 프롬프트 템플릿 대신
+  'admin/users': { icon: 'user', group: '관리' }, // D6 역할 관리
 }
 const GROUP_ORDER = ['워크스페이스', 'AI 도구', '취업 준비', '소개', '관리', '기타']
 
@@ -38,7 +39,7 @@ function pageTitle(pathname, navItems) {
   if (!seg) return '대시보드'
   const hit = navItems.find((n) => n.path === seg)
   if (hit) return hit.nav
-  const label = { login: '로그인', signup: '계정 만들기', confirm: '이메일 확인', forgot: '비밀번호 재설정', mfa: '인증' }
+  const label = { login: '로그인', signup: '계정 만들기', confirm: '이메일 확인', forgot: '비밀번호 재설정', mfa: '인증', admin: '역할 관리' }
   return label[seg] || 'nesume'
 }
 
@@ -54,17 +55,21 @@ function UserBlock() {
   }
   return (
     <div className="app-user">
-      <span className="app-user-av">
-        <Icon name="user" />
-      </span>
-      <span className="app-user-info">
-        <span className="app-user-name" title={email ?? ''}>
-          {email ?? me?.username ?? ''}
+      <div className="app-user-id">
+        <span className="app-user-av">
+          <Icon name="user" />
         </span>
-        <span className="app-user-role">{me ? ROLE_LABEL[me.role] ?? me.role : ''}</span>
-      </span>
-      <button type="button" className="secondary" onClick={logout} title="로그아웃" aria-label="로그아웃">
+        <span className="app-user-info">
+          <span className="app-user-name" title={email ?? ''}>
+            {email ?? me?.username ?? ''}
+          </span>
+          <span className="app-user-role">{me ? ROLE_LABEL[me.role] ?? me.role : ''}</span>
+        </span>
+      </div>
+      {/* 이메일을 가리지 않도록 사용자 정보 아래 줄에 작게 둔다(모바일 상단 바에서는 옆에 아이콘만) */}
+      <button type="button" className="secondary app-user-logout" onClick={logout} title="로그아웃" aria-label="로그아웃">
         <Icon name="logout" />
+        <span className="app-user-logout-label">로그아웃</span>
       </button>
     </div>
   )
