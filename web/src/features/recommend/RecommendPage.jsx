@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { recommendApi } from './api.js'
 import { applicationsApi } from '../applications/api.js'
 import { ApiError } from '../../app/api/client.js'
@@ -102,11 +102,12 @@ export default function RecommendPage({ resumeId = null, embedded = false }) {
   }
 
   const run = async (e) => {
-    e.preventDefault()
+    e?.preventDefault()
     setLoading(true)
     setError(null)
     try {
-      const held_keys = heldText
+      // [B 10/29] 자소서 기준이면 역량은 서버가 그 자소서에서 뽑는다(resume_id → gather_evidence). 입력값은 쓰지 않음
+      const held_keys = resumeId ? [] : heldText
         .split(',')
         .map((s) => s.trim())
         .filter(Boolean)
@@ -127,6 +128,12 @@ export default function RecommendPage({ resumeId = null, embedded = false }) {
     }
   }
 
+  // [B 10/29] 자소서 기준이면 탭을 열 때 바로 추천한다
+  useEffect(() => {
+    if (resumeId) run()
+    // resumeId가 바뀔 때만 다시 추천(run은 매번 새로 만들어지므로 의존성에서 뺀다)
+  }, [resumeId])
+
   return (
     <div className="rec-page">
       {!embedded && (
@@ -137,6 +144,14 @@ export default function RecommendPage({ resumeId = null, embedded = false }) {
         </div>
       )}
 
+      {resumeId ? (
+        <div className="c-panel rec-form-grid">
+          <p className="rec-form-wide">열려 있는 자기소개서의 내용과 연결한 경험을 바탕으로 맞는 공고를 찾습니다.</p>
+          <button className="c-btn-primary c-btn-full" type="button" onClick={() => run()} disabled={loading}>
+            {loading ? '분석 중…' : '다시 추천'}
+          </button>
+        </div>
+      ) : (
       <form className="c-panel" onSubmit={run}>
         <div className="rec-form-grid">
           <div className="rec-form-wide">
@@ -154,6 +169,7 @@ export default function RecommendPage({ resumeId = null, embedded = false }) {
           </button>
         </div>
       </form>
+      )}
 
       {/* 1) 추천 공고 목록 — 실제 /recommendations 응답 */}
       <section className="c-panel">
@@ -177,7 +193,7 @@ export default function RecommendPage({ resumeId = null, embedded = false }) {
         )}
 
         {!loading && !error && result === null && (
-          <div className="rec-state">보유 역량을 넣고 <strong>맞춤 분석 실행</strong>을 눌러 주세요.</div>
+          <div className="rec-state">{resumeId ? '추천을 준비하고 있습니다.' : <>보유 역량을 넣고 <strong>맞춤 분석 실행</strong>을 눌러 주세요.</>}</div>
         )}
 
         {!loading && !error && result?.cold_start && (

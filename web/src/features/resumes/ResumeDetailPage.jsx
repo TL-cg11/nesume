@@ -157,7 +157,6 @@ export default function ResumeDetailPage() {
 
       {tab === 'recommend' && (
         <div className="resume-tab-body">
-          <p className="muted">이 자기소개서({resume.title})에 맞는 공고를 추천합니다.</p>
           <RecommendPage resumeId={resumeId} embedded />
         </div>
       )}
