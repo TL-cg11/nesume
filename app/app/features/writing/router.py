@@ -21,7 +21,7 @@ from app.features.profile.router import get_store as get_profile_store
 from app.features.profile.store import ProfileStore
 from app.features.resumes import pii_hooks
 from app.features.resumes import service as resumes_service
-from app.features.writing import rewrite_service, service, star_review
+from app.features.writing import rewrite_service, service, star_complete, star_review
 from app.features.writing.rewrite import RewriteOptionError
 from app.features.writing.schemas import (
     ApplyRequest,
@@ -32,6 +32,8 @@ from app.features.writing.schemas import (
     RewriteApplyResponse,
     RewriteRequest,
     RewriteResponse,
+    StarCompleteRequest,
+    StarCompleteResponse,
     StarOut,
     StarReviewRequest,
     StarReviewResponse,
@@ -100,6 +102,25 @@ async def review_star(
         payload.text, guard=guard, **guardrail_kwargs(user, session_id),
     )
     return StarReviewResponse.of(result)
+
+
+@router.post("/star/complete", response_model=StarCompleteResponse)
+async def complete_star(
+    payload: StarCompleteRequest,
+    # 글을 만들어 내는 대화형 엔드포인트다. 리라이팅과 같이 시스템 계정은 막는다
+    user: CurrentUser = Depends(require_interactive),
+    guard: Guardrail = Depends(get_guardrail),
+    session_id: str | None = Depends(session_header),
+) -> StarCompleteResponse:
+    """사용자가 고른 STAR 요소를 모델이 써 넣거나 다듬은 글을 돌려준다. 저장하지 않는다."""
+    try:
+        result = await star_complete.complete(
+            payload.text, payload.fills(), list(payload.omit),
+            guard=guard, **guardrail_kwargs(user, session_id),
+        )
+    except star_complete.StarCompleteError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from None
+    return StarCompleteResponse.of(payload.text, result)
 
 
 @router.post("/apply", response_model=ApplyResponse)

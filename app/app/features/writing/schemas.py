@@ -21,6 +21,7 @@ from app.features.writing.rewrite import (
 )
 from app.features.writing.rewrite_service import Candidate, RewriteResult
 from app.features.writing.star import ELEMENT_NAMES, StarAnalysis
+from app.features.writing.star_complete import MAX_HINT_LEN, Fill, StarCompletion
 from app.features.writing.star_review import ElementReview, StarReview
 from app.features.writing.suggestions import Suggestion
 
@@ -288,4 +289,60 @@ class StarReviewResponse(BaseModel):
             llm_used=r.llm_used,
             llm_unavailable=r.llm_unavailable,
             blocked_reason=r.blocked_reason,
+        )
+
+
+# --- STAR 보완 (모델이 써 넣기) ------------------------------------------------
+
+
+class StarFillIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    element: str
+    #: write(없는 요소를 써 넣기) · improve(약한 요소 다듬기)
+    mode: str
+    #: 글쓴이가 알려 주는 실제 사실. 있으면 모델은 이것만 쓴다
+    hint: str = Field(default="", max_length=MAX_HINT_LEN)
+
+
+class StarCompleteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text: str = Field(min_length=1, max_length=MAX_TEXT_LEN)
+    fill: list[StarFillIn] = Field(min_length=1, max_length=4)
+    #: 넣지 않기로 한 요소. 모델에게 "새로 만들지 말라" 고 적는다
+    omit: list[str] = Field(default_factory=list, max_length=4)
+
+    def fills(self) -> list[Fill]:
+        return [Fill(element=f.element, mode=f.mode, hint=f.hint) for f in self.fill]  # type: ignore[arg-type]
+
+
+class StarCompleteResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    #: 보완한 글 전체. 모델을 못 썼으면 None
+    body: str | None
+    char_count: int
+    original_char_count: int
+    #: 원문 대비 단어 단위 차이 (서버가 비교 — 바뀐 곳을 모델이 숨길 수 없다)
+    segments: list[DiffSegment]
+    #: 원문·힌트에 없던 숫자. 사실과 맞는지 사용자가 확인해야 한다
+    new_numbers: list[str]
+    llm_used: bool
+    llm_unavailable: bool
+    blocked_reason: str | None
+    notices: list[str]
+
+    @classmethod
+    def of(cls, text: str, r: StarCompletion) -> StarCompleteResponse:
+        return cls(
+            body=r.body,
+            char_count=len(r.body or ""),
+            original_char_count=len(text),
+            segments=[DiffSegment(**s) for s in r.segments],
+            new_numbers=list(r.new_numbers),
+            llm_used=r.llm_used,
+            llm_unavailable=r.llm_unavailable,
+            blocked_reason=r.blocked_reason,
+            notices=list(r.notices),
         )
