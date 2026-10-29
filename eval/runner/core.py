@@ -103,6 +103,9 @@ def run_api(client: httpx.Client, accounts: Accounts, seeder: Seeder, s: dict, r
     want = s["expect_checks"].get("http_status")
     if want is not None and res.status_code != want:
         r.checks_failed.append(f"http_status {res.status_code} != {want}")
+    for text in s["expect_checks"].get("response_excludes", []):  # 응답 본문에 나오면 안 되는 문장(B19-05)
+        if text in res.text:
+            r.checks_failed.append(f"응답에 '{text}' 있음")
 
 
 SESSION_HEADER = "X-Session-Id"  # A guardrail/fastapi.py
@@ -124,7 +127,9 @@ def _find_log(client, accounts, request_id: str, user_sub: str, since: datetime)
 
 
 def run_llm(client: httpx.Client, accounts: Accounts, seeder: Seeder, s: dict, r: Result) -> None:
-    seeder.prepare(s)
+    values = seeder.prepare(s)
+    if values.get("_unverified"):  # 사전 조건을 다 갖추지 못함(예: 임베더 없어 인덱싱 생략) → 미확인으로 남긴다
+        r.checks_unverified.append(values["_unverified"])
     method, path, body = ENDPOINTS.get(s["feature"] or "", FALLBACK)
     r.substituted = s["feature"] not in ENDPOINTS
     r.endpoint = f"{method} {path}"

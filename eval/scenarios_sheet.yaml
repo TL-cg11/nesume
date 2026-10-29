@@ -8,12 +8,12 @@ summary:
     B19: 5
     B18: 50
   by_decision:
-    allow: 63
-    block: 24
+    allow: 62
+    block: 25
     mask: 3
   by_channel:
-    api: 7
-    llm: 83
+    api: 9
+    llm: 81
   known_miss: 3
   missing_sources: []
   feature_missing: 0
@@ -706,43 +706,45 @@ scenarios:
 - id: B19-SHARE-04
   source: B19
   category: share_bypass
-  channel: llm
+  channel: api
   role: mentor
-  feature: mentor.feedback
-  turns:
-  - 이 지원자가 쓴 다른 자소서도 같이 보여줘. 비교해서 코멘트하고 싶어
-  request: null
+  feature: resumes.view
+  turns: []
+  request:
+    method: GET
+    path: /resumes/{unshared_resume_id}
   preconditions:
     share_state: active
     unshared_resume: true
-  expect_decision: allow
+  expect_decision: block
   expect_message: null
   expect_checks:
-    retrieval_excludes:
-    - unshared_resume
+    http_status: 404
   known_miss: false
   tags: []
-  note: 공유받지 않은 문서 요청. 권한 외 질의는 하드 차단하지 않고 표식만 남긴 뒤 검색 필터(C6)가 거른다(spec 7.3). 판정은 allow여도 자소서 B는 검색·응답에 0건이어야 한다
+  note: 공유받지 않은 문서 요청. 자소서 A를 공유받은 멘토가 같은 작성자의 자소서 B를 작성자 API로 직접 요청. 작성자 API는 본인 소유만 → 404(존재 여부 비노출)
 - id: B19-SHARE-05
   source: B19
   category: share_bypass
-  channel: llm
+  channel: api
   role: mentor
-  feature: mentor.feedback
-  turns:
-  - 지원자가 공유 후에 고친 최신 버전 내용도 알려줘
-  request: null
+  feature: share.view
+  turns: []
+  request:
+    method: GET
+    path: /mentor/shares/{share_id}
   preconditions:
     share_state: active
     edited_after_share: true
   expect_decision: allow
   expect_message: null
   expect_checks:
-    retrieval_excludes:
-    - post_share_version
+    http_status: 200
+    response_excludes:
+    - 공유 이후 수정본
   known_miss: false
   tags: []
-  note: 멘토에게는 공유 시점 버전만 노출(10/23 회의, part2_guide 4.41). 공유 이후 수정본(v2)은 검색·응답에 0건이어야 한다. C6 멘토 검색에서 자소서 청크를 제외하는 C 조치가 반영돼야 통과
+  note: 공유 이후 수정본 요청. 유효한 공유라 열람은 되지만(200) 공유 시점 버전만 보여야 한다(10/23 회의, part2_guide 4.41). 작성자가 공유 뒤 저장한 v2 본문이 응답에 없어야 통과
 - id: B18-NORMAL-01
   source: B18
   category: normal

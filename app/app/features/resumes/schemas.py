@@ -26,17 +26,22 @@ class ResumeUpdate(BaseModel):
     status: ResumeStatus | None = None
 
 
+# 10/28 결정: 문항 제목 300자, 본문·글자수 설정 10,000자까지(화면 기본 글자수 1,000자)
+QUESTION_TITLE_MAX = 300
+BODY_MAX = 10_000
+
+
 class QuestionCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    title: str = Field(min_length=1)
-    char_limit: int | None = Field(default=None, gt=0)
+    title: str = Field(min_length=1, max_length=QUESTION_TITLE_MAX)
+    char_limit: int | None = Field(default=None, gt=0, le=BODY_MAX)
     position: int | None = Field(default=None, ge=0)
 
 
 class QuestionUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    title: str | None = Field(default=None, min_length=1)
-    char_limit: int | None = Field(default=None, gt=0)
+    title: str | None = Field(default=None, min_length=1, max_length=QUESTION_TITLE_MAX)
+    char_limit: int | None = Field(default=None, gt=0, le=BODY_MAX)
     position: int | None = Field(default=None, ge=0)
 
 
@@ -44,7 +49,7 @@ class VersionCreate(BaseModel):
     """사용자 직접 저장. 생성 방식은 manual로 고정(AI 버전은 A6이 서비스 함수로 저장)."""
 
     model_config = ConfigDict(extra="forbid")
-    body: str
+    body: str = Field(max_length=BODY_MAX)
 
 
 class VersionShareTag(BaseModel):

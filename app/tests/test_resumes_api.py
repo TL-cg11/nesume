@@ -348,3 +348,18 @@ def test_cannot_delete_version_in_use(alice):
     res = alice.delete(f"{base}/{v2['id']}")
     assert res.status_code == 409 and res.json()["errors"] == {"by": "share"}
     assert alice.delete(f"{base}/{uuid.uuid4()}").status_code == 404
+
+
+# --- 10/28 글자 수 상한: 문항 제목 300자, 글자수 설정·본문 10,000자 -----------------------
+
+def test_question_and_body_length_limits(alice):
+    c = alice
+    rid = c.post("/resumes", json={"title": "상한"}).json()["id"]
+    assert c.post(f"/resumes/{rid}/questions", json={"title": "가" * 301}).status_code == 422
+    assert c.post(f"/resumes/{rid}/questions", json={"title": "q", "char_limit": 10_001}).status_code == 422
+    q = c.post(f"/resumes/{rid}/questions", json={"title": "가" * 300, "char_limit": 10_000})
+    assert q.status_code == 201
+    qid = q.json()["id"]
+    assert c.patch(f"/resumes/{rid}/questions/{qid}", json={"char_limit": 10_001}).status_code == 422
+    assert c.post(f"/resumes/{rid}/questions/{qid}/versions", json={"body": "a" * 10_001}).status_code == 422
+    assert c.post(f"/resumes/{rid}/questions/{qid}/versions", json={"body": "a" * 10_000}).status_code == 201

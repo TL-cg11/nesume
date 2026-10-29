@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 import { resumesApi } from '../../features/resumes/api.js'
 import { shortDate } from '../../features/resumes/ShareTags.jsx'
 import './home.css'
@@ -29,8 +29,10 @@ function Stat({ label, value, caption }) {
 }
 
 export default function Home() {
+  const navigate = useNavigate()
   const [d, setD] = useState(null)
   const [error, setError] = useState(null)
+  const [creating, setCreating] = useState(false)
 
   useEffect(() => {
     const ctrl = new AbortController()
@@ -40,6 +42,18 @@ export default function Home() {
       .catch((e) => e.name !== 'AbortError' && setError(e.status === 401 ? '로그인 후 이용할 수 있습니다.' : e.message))
     return () => ctrl.abort()
   }, [])
+
+  const create = async () => {
+    setCreating(true)
+    try {
+      const r = await resumesApi.createUntitled()
+      navigate(`/resumes/${r.id}`, { state: { focusTitle: true } })
+    } catch (e) {
+      // 50개 상한(409)이면 서버 안내 문구를 그대로 보여준다
+      setError(e.status === 401 ? '로그인 후 이용할 수 있습니다.' : e.message)
+      setCreating(false)
+    }
+  }
 
   return (
     <section className="home">
@@ -51,9 +65,10 @@ export default function Home() {
           설득력 있는 이야기로 완성하세요.
         </h1>
         <p className="muted">경험 기록부터 자기소개서 첨삭까지, 취업 준비의 모든 단계를 한곳에서 관리하세요.</p>
-        <Link to="/resumes" className="home-cta">
-          자기소개서 작성하기
-        </Link>
+        {/* 목록을 거치지 않고 바로 새 자기소개서를 만들어 상세(편집) 화면으로(10/28 요청) */}
+        <button type="button" className="home-cta" onClick={create} disabled={creating}>
+          {creating ? '만드는 중…' : '자기소개서 작성하기'}
+        </button>
       </div>
 
       {error && <p className="error">{error}</p>}
@@ -105,13 +120,13 @@ export default function Home() {
               </ul>
             </div>
 
-            <div className="stack home-side">
+            <div className="home-side">
               <div className="card">
                 <h2>빠른 시작</h2>
                 <p className="muted">취업 준비를 효율적으로 시작하세요.</p>
                 <ul className="list">
                   {QUICK.map((q) => (
-                    <li key={q.title}>
+                    <li key={q.title} className={q.to ? 'home-quick' : undefined}>
                       {q.to ? (
                         <Link to={q.to} className="home-quick-title">
                           {q.title}
