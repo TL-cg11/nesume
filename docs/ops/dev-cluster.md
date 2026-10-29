@@ -106,7 +106,7 @@ kubectl -n dev rollout restart deploy/nesume-app
 ## 8. 배포 흐름(참고)
 
 - main push → `ci.yml`(D11)이 app·web 이미지를 ECR `nesume/{app,web}:<git sha>`로 올리고 `helm upgrade`.
-- D11 전까지는 D가 로컬에서 빌드·푸시·`infra/scripts/up.ps1`.
+- `infra/scripts/up.ps1`·`deploy.ps1`·`down.ps1`은 **로컬 체크아웃 상태와 무관하게 origin/main 최신본**으로 동작한다(`_main-src.ps1`이 임시 worktree를 만들어 차트·Terraform·빌드 컨텍스트를 거기서 읽고 끝나면 지운다). 이미지 태그는 origin/main sha를 우선하고, CI가 아직 안 올렸으면 ECR 최신 태그로 내려가며 경고한다.
 - 마이그레이션은 `pre-upgrade` hook으로 앱보다 먼저 돈다. 되돌릴 수 없는 마이그레이션은 사전에 B와 합의(`docs/dev/backend-guide.md`).
 - 롤백은 `helm -n dev rollback nesume <REVISION>`. 마이그레이션은 되돌리지 않는다.
 - embedder 이미지(D20)는 별도 워크플로 `embedder.yml`이 `embedder/` 변경 시에만 `nesume/embedder:<sha>`로 올린다. `up.ps1`/`deploy.ps1`은 ECR 최신 embedder 태그를 자동으로 집고, 저장소가 비어 있으면 `embedder.enabled=false`로 배포한다.

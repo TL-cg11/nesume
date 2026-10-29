@@ -5,8 +5,11 @@ if (-not $env:AWS_PROFILE) { throw "AWS_PROFILE is not set" }
 $Account = "852138520969"; $Region = "ap-northeast-2"; $Cluster = "nesume-dev"
 if ((aws sts get-caller-identity --query Account --output text) -ne $Account) { throw "wrong AWS account (expected $Account)" }
 
-$Repo    = (Resolve-Path "$PSScriptRoot\..\..").Path
-$Compute = Join-Path $Repo "infra\envs\dev\compute"
+# Terraform 은 origin/main worktree 에서 읽는다(원격 state. 로컬 체크아웃이 다른 브랜치여도 main 의 리소스 정의로 destroy).
+. "$PSScriptRoot\_main-src.ps1"
+$Src = Get-MainSource
+$Compute = Join-Path $Src "infra\envs\dev\compute"
+try {
 
 $clusters = aws eks list-clusters --query clusters --output text
 if ($clusters -match $Cluster) {
@@ -37,3 +40,4 @@ foreach ($p in @(@("NAT", $nat), @("EIP(unassociated)", $eip), @("EKS", $eks), @
   if ($p[1]) { Write-Warning "$($p[0]) still exists: $($p[1])" } else { Write-Host "$($p[0]): none" }
 }
 Write-Host "`nDOWN complete"
+} finally { Remove-MainSource $Src }
