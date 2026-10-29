@@ -2,21 +2,13 @@ import { useState } from 'react'
 import { recommendApi } from './api.js'
 import { applicationsApi } from '../applications/api.js'
 import { ApiError } from '../../app/api/client.js'
+import { safeUrl } from '../safeUrl.js'
 import '../c-common.css'
 import './recommend.css'
 
 // 출처 문구 — 서울시 공고는 "서울특별시 공공데이터" 표시가 약관상 의무(Plan.md 6절).
 const SOURCE_LABEL = { seoul: '서울특별시 공공데이터', work24_open: '고용24 공채속보' }
 
-// 원문 링크는 기업별 외부 도메인이라 서버가 http/https만 저장한다. 화면에서도 한 번 더 확인(심층 방어).
-function safeUrl(url) {
-  try {
-    const u = new URL(url)
-    return u.protocol === 'https:' || u.protocol === 'http:' ? u.href : null
-  } catch {
-    return null
-  }
-}
 
 const pct = (v) => `${Math.round((v ?? 0) * 100)}%`
 

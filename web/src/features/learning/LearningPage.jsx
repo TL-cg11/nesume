@@ -6,6 +6,7 @@ import { recommendApi } from '../recommend/api.js'
 import { ApiError } from '../../app/api/client.js'
 import CandidatesDialog from './CandidatesDialog.jsx'
 import SavedRoadmapsPopover from './SavedRoadmapsPopover.jsx'
+import { safeUrl } from '../safeUrl.js'
 import '../c-common.css'
 import './learning.css'
 
@@ -506,6 +507,17 @@ export default function LearningPage() {
             <>
               <div className="lp-step-head">
                 <h4>③ 역량 갭</h4>
+                {(() => {
+                  // 선택한 공고의 원문(기업 채용 페이지) — 새 창, 서버는 가져오지 않음
+                  const href = safeUrl(postings?.find((p) => p.posting_id === postingId)?.posting?.url)
+                  return href ? (
+                    <a className="lp-link" href={href} target="_blank" rel="noopener noreferrer" title="외부 사이트(기업 채용 페이지)로 이동">
+                      원문 보기 ↗
+                    </a>
+                  ) : (
+                    <span className="c-roadmap-muted">원문 링크 없음</span>
+                  )
+                })()}
               </div>
               {gapsLoading && <p className="c-roadmap-muted">자소서·경험과 공고를 비교하는 중…</p>}
 
