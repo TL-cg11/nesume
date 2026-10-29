@@ -23,8 +23,11 @@ from app.features.profile.router import router as profile_router
 from app.features.recommend.router import router as recommend_router
 from app.features.resumes.router import router as resumes_router
 from app.features.roadmap.router import router as roadmap_router
+from app.features.share.router import mentor_router as share_mentor_router
+from app.features.share.router import owner_router as share_owner_router
 from app.features.skill_gap.router import router as learning_gaps_router
 from app.features.style.router import router as style_router
+from app.features.templates.router import router as templates_router
 from app.features.writing.router import router as writing_router
 from app.postings.router import router as postings_router
 
@@ -64,6 +67,9 @@ def create_app() -> FastAPI:
     application.include_router(writing_router)  # A7 글 다듬기
     application.include_router(auth_router)  # D7 /auth/me
     application.include_router(admin_router)  # D6 운영자 역할 변경
+    application.include_router(templates_router)  # B9 프롬프트 템플릿
+    application.include_router(share_owner_router)  # B10 멘토 공유(작성자)
+    application.include_router(share_mentor_router)  # B17 멘토 공유(멘토)
     return application
 
 
