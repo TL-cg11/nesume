@@ -1,9 +1,10 @@
-﻿# origin/main 최신본을 dev 에 배포: 이미지 빌드·푸시(ECR 에 main sha 가 없을 때만) -> 클러스터가 켜져 있으면 helm upgrade -> /api/health
-# 실행: $env:AWS_PROFILE = "nesume"; .\infra\scripts\deploy.ps1            (빌드 포함 약 10분)
-#       .\infra\scripts\deploy.ps1 -SkipBuild    ECR 에 이미 main sha 태그가 있을 때 helm 만(CI 가 올린 뒤 보통 이 경우)
-# 로컬 체크아웃의 브랜치·미커밋 상태와 무관하다. 빌드 컨텍스트·차트는 origin/main 임시 worktree(_main-src.ps1)에서 읽는다.
-# 클러스터가 꺼져 있으면 푸시까지만 하고 끝난다. 다음 up.ps1 이 main sha 태그를 집어 올린다.
-param([switch]$SkipBuild)
+﻿# origin/main 최신본을 dev 에 배포: ECR 에 main sha 이미지가 있으면 바로 helm, 없으면 CI(ci.yml build-deploy)가 올릴 때까지 기다린다.
+# 실행: $env:AWS_PROFILE = "nesume"; .\infra\scripts\deploy.ps1               (CI 완료 대기 포함 보통 5분 이내)
+#       .\infra\scripts\deploy.ps1 -LocalBuild    CI 가 고장났을 때만: 이 PC 에서 빌드·푸시(집 회선이라 느리고 끊길 수 있다, 10-29 실측)
+#       .\infra\scripts\deploy.ps1 -SkipBuild     ECR 에 main sha 가 없으면 기다리지 않고 바로 실패
+# 로컬 체크아웃의 브랜치·미커밋 상태와 무관하다. 차트(와 -LocalBuild 의 빌드 컨텍스트)는 origin/main 임시 worktree(_main-src.ps1)에서 읽는다.
+# 클러스터가 꺼져 있으면 이미지 확인까지만 하고 끝난다. 다음 up.ps1 이 main sha 태그를 집어 올린다.
+param([switch]$SkipBuild, [switch]$LocalBuild, [int]$WaitMinutes = 20)
 $ErrorActionPreference = "Stop"
 function Check($step) { if ($LASTEXITCODE) { throw "$step failed (exit $LASTEXITCODE)" } }
 if (-not $env:AWS_PROFILE) { throw "AWS_PROFILE is not set. Run: `$env:AWS_PROFILE = 'nesume'" }
@@ -28,7 +29,27 @@ $Builds = @(
   @{ repo = "web"; args = @("-f", (Join-Path $Src "web\Dockerfile"), (Join-Path $Src "web")) }
 )
 $needBuild = @($Builds | Where-Object { -not (Has-EcrTag $_.repo $Sha) })
-if ($SkipBuild -and $needBuild) { throw "ECR nesume/$($needBuild[0].repo) has no tag $Sha. Run without -SkipBuild, or wait for CI on main." }
+if ($SkipBuild -and $needBuild) { throw "ECR nesume/$($needBuild[0].repo) has no tag $Sha. Wait for CI on main (gh run list --workflow ci --branch main), then re-run." }
+
+# 기본 경로: CI 가 main 푸시마다 arm64 이미지를 올리므로 기다린다. 로컬 빌드는 -LocalBuild 로만(CI 장애 시).
+if ($needBuild -and -not $LocalBuild) {
+  Write-Host "ECR has no nesume/$($needBuild[0].repo):$Sha yet. Waiting for CI (ci.yml build-deploy on main, up to $WaitMinutes min)..."
+  $deadline = (Get-Date).AddMinutes($WaitMinutes)
+  while ($true) {
+    $run = (cmd /c "gh run list --repo TL-cg11/nesume --workflow ci --branch main --commit $(git -C $Src rev-parse HEAD) --limit 1 --json status,conclusion,url 2>nul" | Out-String).Trim()
+    $r = if ($run -and $run -ne "[]") { ($run | ConvertFrom-Json)[0] } else { $null }
+    if ($r -and $r.status -eq "completed") {
+      if ($r.conclusion -ne "success") { throw "CI for $Sha finished with '$($r.conclusion)': $($r.url). Fix CI, or run with -LocalBuild if the build itself is fine." }
+      $needBuild = @($Builds | Where-Object { -not (Has-EcrTag $_.repo $Sha) })
+      if (-not $needBuild) { break }
+      throw "CI for $Sha succeeded but ECR still lacks nesume/$($needBuild[0].repo):$Sha. Check the build-deploy job: $($r.url)"
+    }
+    if ((Get-Date) -gt $deadline) { throw "CI for $Sha has not finished in $WaitMinutes min (status: $(if ($r) { $r.status } else { 'no run found' })). Re-run later, or use -LocalBuild." }
+    Write-Host ("  {0:HH:mm:ss} CI {1} ..." -f (Get-Date), $(if ($r) { $r.status } else { "run not started yet" }))
+    Start-Sleep 20
+  }
+  Write-Host "CI pushed nesume/app:$Sha and nesume/web:$Sha."
+}
 if ($needBuild) {
   # PS 5.1 + $ErrorActionPreference=Stop 에서는 네이티브 명령의 stderr 리다이렉트가 예외로 바뀐다. cmd 로 감싼다.
   cmd /c "docker info >nul 2>&1"
@@ -41,7 +62,7 @@ if ($needBuild) {
     docker push $image; Check "docker push $($b.repo)"
   }
 } else {
-  Write-Host "ECR already has nesume/app:$Sha and nesume/web:$Sha. Skipping build."
+  if (-not $LocalBuild) { Write-Host "ECR already has nesume/app:$Sha and nesume/web:$Sha." }
 }
 
 $clusters = aws eks list-clusters --query clusters --output text
