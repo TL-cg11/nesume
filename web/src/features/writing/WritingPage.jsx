@@ -33,8 +33,10 @@ function errorText(e) {
   return e.message
 }
 
-export default function WritingPage() {
-  const [text, setText] = useState('')
+// [B 추가 10/29] 자소서 상세의 '글 다듬기' 탭에 넣을 때: initialText = 고른 문항·버전 본문, embedded = 제목·안내 숨김.
+// 둘 다 생략하면 기존 /writing 화면과 똑같이 동작한다.
+export default function WritingPage({ initialText = '', embedded = false }) {
+  const [text, setText] = useState(initialText)
   const [tab, setTab] = useState('review')
   const [spelling, setSpelling] = useState(null)
   const [star, setStar] = useState(null)
@@ -103,11 +105,15 @@ export default function WritingPage() {
 
   return (
     <section>
-      <h1>글 다듬기</h1>
-      <p className="muted">
-        자소서 문항 하나를 붙여 넣으십시오. 맞춤법과 STAR 구성을 검사하고, 내가 쓴 글의
-        말투로 다시 써 드립니다. 여기서는 저장하지 않습니다.
-      </p>
+      {!embedded && (
+        <>
+          <h1>글 다듬기</h1>
+          <p className="muted">
+            자소서 문항 하나를 붙여 넣으십시오. 맞춤법과 STAR 구성을 검사하고, 내가 쓴 글의
+            말투로 다시 써 드립니다. 여기서는 저장하지 않습니다.
+          </p>
+        </>
+      )}
 
       {error && <p className="error">처리하지 못했습니다: {errorText(error)}</p>}
       {done && <p className="success">{done}</p>}

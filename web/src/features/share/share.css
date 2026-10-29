@@ -1,5 +1,16 @@
 /* 멘토 공유 화면(B17). 값은 theme.css 변수만 사용. 접두사 share-view- */
-.share-view-list > li { display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); }
+.share-view-list > li { display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+/* 받은 공유 목록(10/29): 자소서 목록과 같은 카드·행 전체 클릭 */
+.share-view-card { margin-top: var(--space-4); padding: var(--space-2); }
+.share-view-empty { margin-top: var(--space-4); text-align: center; padding: var(--space-6) var(--space-4); }
+.share-view-empty p { margin: var(--space-1) 0; }
+.share-view-main { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.share-view-from { font-size: var(--text-sm); overflow-wrap: anywhere; }
+.share-view-list > li:has(.share-view-main > a) { position: relative; padding-inline: var(--space-5); border-radius: var(--radius-sm); cursor: pointer; }
+.share-view-list > li:has(.share-view-main > a):hover { background: color-mix(in srgb, var(--accent-soft) 60%, transparent); }
+.share-view-list > li:has(:focus-visible) { box-shadow: var(--focus-ring); }
+.share-view-list .share-view-main > a::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
+.share-view-list .share-view-main > a:focus-visible { outline: none; }
 .share-view-list a { color: var(--fg); font-weight: 600; text-decoration: none; }
 .share-view-list a:hover { color: var(--accent-text); }
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router'
 import { resumesApi } from './api.js'
+import PolishTab from './PolishTab.jsx'
 import QuestionEditor from './QuestionEditor.jsx'
 import SharePanel from './SharePanel.jsx'
 import { BODY_MAX, DEFAULT_LIMIT, LIMIT_STEP, TITLE_MAX, clampLimit } from './limits.js'
@@ -13,6 +14,7 @@ const TABS = [
   { id: 'write', label: '자기소개서 작성' },
   { id: 'versions', label: '버전 관리 및 비교' },
   { id: 'share', label: '멘토 공유' },
+  { id: 'polish', label: '글 다듬기' }, // 10/29: 글 다듬기 메뉴를 자소서 안으로
 ]
 
 export default function ResumeDetailPage() {
@@ -25,8 +27,16 @@ export default function ResumeDetailPage() {
   const tabsRef = useRef(null)
   // 탭을 바꿀 때 스크롤 통일(10/29): 탭 줄보다 아래로 내려가 있었다면 세 탭 모두 탭 줄이 맨 위에 오게 올린다.
   // (짧은 공유 탭만 페이지가 줄어 저절로 올라가던 차이를 없앤다) 탭 줄이 보이는 위치면 그대로 둔다
+  // 글 다듬기 탭은 주소에 resume·question을 함께 둔다 — A6 '새 버전으로 저장'이 이 값을 읽는다
+  const tabParams = (id, qid) =>
+    id === 'write' ? {} : id === 'polish' && qid ? { tab: id, resume: resumeId, question: qid } : { tab: id }
   const goTab = (id) => {
-    setParams(id === 'write' ? {} : { tab: id }, { replace: true })
+    // 글 다듬기에서 나오면 버전 목록을 다시 불러온다(거기서 새 버전을 저장했을 수 있다)
+    if (tab === 'polish' && id !== 'polish') {
+      setShareRev((n) => n + 1)
+      load()
+    }
+    setParams(tabParams(id, selectedId ?? resume?.questions[0]?.id), { replace: true })
     const el = tabsRef.current
     // 새 탭이 그려진 뒤에 맞춘다(그리기 전에 옮기면 짧은 탭에서 위치가 어긋남)
     if (el && el.getBoundingClientRect().top < 0) requestAnimationFrame(() => el.scrollIntoView({ block: 'start' }))
@@ -133,6 +143,16 @@ export default function ResumeDetailPage() {
         ))}
       </div>
 
+      {tab === 'polish' && (
+        <div className="resume-tab-body">
+          <PolishTab resumeId={resumeId} questions={resume.questions} questionId={selectedId ?? resume.questions[0]?.id}
+            onQuestion={(qid) => {
+              setSelectedId(qid)
+              setParams(tabParams('polish', qid), { replace: true })
+            }} />
+        </div>
+      )}
+
       {tab === 'share' && (
         <SharePanel
           resumeId={resumeId}
@@ -145,7 +165,7 @@ export default function ResumeDetailPage() {
       )}
 
       {/* 공유 탭에서도 편집 화면은 그대로 둔 채 가린다 — 작성 중인 글이 사라지지 않게 */}
-      <div className="detail-grid" hidden={tab === 'share'}>
+      <div className="detail-grid" hidden={tab === 'share' || tab === 'polish'}>
         <aside>
           <h2>문항</h2>
           <ul className="question-list">
@@ -164,8 +184,13 @@ export default function ResumeDetailPage() {
           {tab === 'write' && !adding && (
             <button type="button" className="add-question-btn" onClick={() => setAdding(true)}>+ 문항 추가</button>
           )}
+
+        </aside>
+        <div>
+          {/* 문항 추가는 오른쪽 작성란에서 입력(10/29). 편집 중인 문항은 가려 둘 뿐 유지(저장 안 한 글 보존) */}
           {tab === 'write' && adding && (
-          <form className="stack" onSubmit={addQuestion} noValidate>
+            <form className="card stack add-question-form" onSubmit={addQuestion} noValidate>
+              <h2>새 문항</h2>
             <input
               autoFocus
               placeholder="문항 제목"
@@ -197,8 +222,7 @@ export default function ResumeDetailPage() {
             </div>
           </form>
           )}
-        </aside>
-        <div>
+          <div hidden={tab === 'write' && adding}>
           {selected ? (
             <QuestionEditor
               key={selected.id}
@@ -213,6 +237,7 @@ export default function ResumeDetailPage() {
           ) : (
             <p className="muted">문항을 추가하거나 선택하세요.</p>
           )}
+          </div>
         </div>
       </div>
     </section>

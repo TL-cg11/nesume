@@ -267,8 +267,9 @@ export default function SharePanel({ resumeId, questions = [], onChanged }) {
                 </span>
               </div>
               <div className="row muted">
-                <span className="grow" title={s.mentor_id}>
-                  ID {s.mentor_id.slice(0, 8)}… · {shortDate(s.created_at.slice(0, 10))} 공유
+                {/* 멘토 이메일 전체(없으면 ID 전체). 자르지 않는다(10/29) */}
+                <span className="grow share-mentor-who">
+                  {s.mentor_email ?? `ID ${s.mentor_id}`} · {shortDate(s.created_at.slice(0, 10))} 공유
                 </span>
                 {s.comment_count > 0 && (
                   <button className="secondary" onClick={() => toggleComments(s.id)} aria-expanded={!!comments[s.id]}>

@@ -39,7 +39,7 @@ export const featureRoutes = [
   { path: 'experiences/:experienceId/edit', element: <ExperienceEditPage /> },
   { path: 'experiences/:experienceId', element: <ExperienceDetailPage /> }, // 열람(행 클릭)
   { path: 'interview', element: <InterviewPage />, nav: '면접 연습' },
-  { path: 'writing', element: <WritingPage />, nav: '글 다듬기' },
+  { path: 'writing', element: <WritingPage /> }, // [B 10/29] 메뉴에서 뺌 — 자소서 상세 '글 다듬기' 탭으로 이동. 주소는 기존 링크용으로 유지
   // C 화면: 본인 데이터라 로그인 필요(백엔드도 토큰 강제 — 이중 방어)
   { path: 'recommend', element: <RequireAuth><RecommendPage /></RequireAuth>, nav: '공고 추천' },
   { path: 'learning', element: <RequireAuth><LearningPage /></RequireAuth>, nav: '학습 로드맵' },

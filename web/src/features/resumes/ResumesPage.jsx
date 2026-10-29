@@ -96,7 +96,8 @@ export default function ResumesPage() {
                   {r.status ?? '상태 없음'} · {new Date(r.updated_at).toLocaleString()}
                 </span>
                 {r.share_summary && (
-                  <span className="share-summary">
+                  <span className="share-summary"
+                    title={(r.share_summary.mentors ?? []).map((m) => `${m.label} · ${shortDate(m.end_date)}까지`).join('\n')}>
                     <span className="share-tag-mark">공유 중</span>
                     {r.share_summary.active_count}명 · 가장 빠른 종료 {shortDate(r.share_summary.earliest_end_date)}
                   </span>
