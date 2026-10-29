@@ -9,15 +9,15 @@
 .resume-list a:hover { color: var(--accent-text); }
 
 /* 행 전체 클릭: 제목 링크가 행을 덮는다(링크는 행마다 하나 — 낭독기는 제목만 읽음) */
-.resume-list > li:has(> a) {
+.resume-list > li:has(.resume-main > a) {
   /* 제목·날짜 양옆 여백(10/28 요청, 홈 최근 자기소개서와 같음) */
   position: relative; padding-inline: var(--space-5);
   border-radius: var(--radius-sm); cursor: pointer;
 }
-.resume-list > li:has(> a):hover { background: color-mix(in srgb, var(--accent-soft) 60%, transparent); }
-.resume-list > li:has(> a):has(:focus-visible) { box-shadow: var(--focus-ring); }
-.resume-list > li > a::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
-.resume-list > li > a:focus-visible { outline: none; }
+.resume-list > li:has(.resume-main > a):hover { background: color-mix(in srgb, var(--accent-soft) 60%, transparent); }
+.resume-list > li:has(.resume-main > a):has(:focus-visible) { box-shadow: var(--focus-ring); }
+.resume-list .resume-main > a::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
+.resume-list .resume-main > a:focus-visible { outline: none; }
 
 .title-input { flex: 1; min-width: 200px; font-size: var(--text-lg); font-weight: 650; }
 .status-input { width: 120px; }
