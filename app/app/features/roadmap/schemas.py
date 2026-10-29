@@ -64,10 +64,12 @@ class RoadmapCreate(BaseModel):
 
 
 class RoadmapUpdate(BaseModel):
-    """로드맵 수정 — 주당 시간만(재배치는 재생성/항목 이동으로)."""
+    """로드맵 수정 — 주당 시간·저장(초안 → 저장본)·이름. 준 필드만 바뀐다. 저장 취소는 없다(삭제로)."""
 
     model_config = ConfigDict(extra="forbid")
-    weekly_hours: int = Field(ge=1, le=60)
+    weekly_hours: int | None = Field(default=None, ge=1, le=60)
+    save: bool = False
+    name: str | None = Field(default=None, max_length=200)
 
 
 class UserItemCreate(BaseModel):
@@ -158,6 +160,8 @@ class RoadmapOut(BaseModel):
     weekly_hours: int
     grade: str
     mode: str | None = None              # 만들 때 고른 학습 방법(null = 전체)
+    saved_at: datetime | None = None     # null = 초안(목록엔 저장본만, 초안은 사용자당 1개)
+    name: str | None = None
     posting_title: str | None = None     # 기준 공고(목록 표시용, 본인이 볼 수 있는 공고만)
     company_name: str | None = None
     created_at: datetime

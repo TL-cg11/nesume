@@ -222,15 +222,52 @@ def test_reindex_contents_new_unchanged_and_cap(db_session):
     assert row.content == "임베딩 B"  # 고용24 요약(기관·지역·기간)은 넣지 않는다
 
 
-def test_roadmap_saves_mode_and_keeps_previous(db_session):
-    owner = _user(db_session)
+def _save(session, owner, gaps, mode=None):
+    plan = service.build_roadmap(session, gaps, mode=mode)
+    rm = service.save_roadmap(
+        session, owner_id=owner, job_posting_id=None, weekly_hours=5, plan=plan, mode=mode
+    )
+    session.flush()
+    return rm
+
+
+def test_new_roadmap_replaces_draft_but_keeps_saved(db_session):
+    owner, other = _user(db_session), _user(db_session)
     _content(db_session, "Swift 온라인", keys=["swz"])
     gaps = [_gap("swz", "Swift")]
-    for mode in (None, "online"):
-        plan = service.build_roadmap(db_session, gaps, mode=mode)
-        service.save_roadmap(
-            db_session, owner_id=owner, job_posting_id=None, weekly_hours=5, plan=plan, mode=mode
-        )
+
+    first = _save(db_session, owner, gaps)
+    service.update_roadmap(db_session, roadmap_id=first.id, owner_id=owner, save=True, name="  내 iOS  ")
     db_session.flush()
-    modes = sorted(str(r.mode) for r in service.list_roadmaps(db_session, owner_id=owner))
-    assert modes == ["None", "online"]  # 학습 방법별로 따로 남는다
+    others_draft = _save(db_session, other, gaps)
+    draft1 = _save(db_session, owner, gaps, mode="online")
+    draft2 = _save(db_session, owner, gaps)  # 이전 초안(draft1)은 지워진다
+    db_session.expire_all()
+
+    mine = {r.id: r for r in service.list_roadmaps(db_session, owner_id=owner)}
+    assert set(mine) == {first.id, draft2.id} and draft1.id not in mine
+    assert mine[first.id].saved_at is not None and mine[first.id].name == "내 iOS"
+    assert mine[draft2.id].saved_at is None
+    theirs = [r.id for r in service.list_roadmaps(db_session, owner_id=other)]
+    assert theirs == [others_draft.id]  # 남의 초안은 그대로
+
+
+def test_save_twice_keeps_first_time_and_blank_name_clears(db_session):
+    owner = _user(db_session)
+    _content(db_session, "Dart 온라인", keys=["dartz"])
+    rm = _save(db_session, owner, [_gap("dartz", "Dart")])
+    service.update_roadmap(db_session, roadmap_id=rm.id, owner_id=owner, save=True, name="a")
+    db_session.flush()
+    db_session.refresh(rm)
+    first_time = rm.saved_at
+    service.update_roadmap(db_session, roadmap_id=rm.id, owner_id=owner, save=True, name="  ")
+    db_session.flush()
+    db_session.refresh(rm)
+    assert rm.saved_at == first_time and rm.name is None
+
+
+def test_update_other_owner_not_found(db_session):
+    owner, other = _user(db_session), _user(db_session)
+    rm = _save(db_session, owner, [_gap("nz", "N")])
+    with pytest.raises(service.RoadmapNotFound):
+        service.update_roadmap(db_session, roadmap_id=rm.id, owner_id=other, save=True)

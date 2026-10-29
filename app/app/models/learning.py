@@ -8,8 +8,9 @@
 ※ 마이그레이션 번호·`models/__init__.py` 등록은 B가 취합(tasks.md). `job_posting_id` FK는 B가 취합 시 추가.
 """
 import uuid
+from datetime import datetime
 
-from sqlalchemy import Boolean, Float, ForeignKey, Index, Integer, String, Text, Uuid, text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, Uuid, text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -79,6 +80,9 @@ class LearningRoadmap(Base):
     weekly_hours: Mapped[int] = mapped_column(Integer, default=5, server_default="5")  # 사용자 입력
     # 만들 때 고른 학습 방법(online/offline). NULL = 전체(온·오프 1개씩). 목록 표시용.
     mode: Mapped[str | None] = mapped_column(String(10))
+    # 사용자가 [저장]한 시각. NULL = 초안(사용자당 1개, 새로 만들면 이전 초안은 지운다). 목록엔 저장본만.
+    saved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    name: Mapped[str | None] = mapped_column(String(200))  # 저장할 때 붙인 이름(선택)
     grade: Mapped[str] = grade_column(Grade.PERSONAL)
     created_at: Mapped[CreatedAt]
     updated_at: Mapped[UpdatedAt]

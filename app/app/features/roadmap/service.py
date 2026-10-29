@@ -14,7 +14,7 @@ import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
 
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.features.roadmap.match import (
@@ -355,6 +355,14 @@ def save_roadmap(
     )
     session.add(roadmap)
     session.flush()  # roadmap.id 확보
+    # 초안은 사용자당 1개 — 저장 안 한 이전 초안은 지운다(항목 CASCADE). 저장본은 그대로.
+    session.execute(
+        delete(LearningRoadmap).where(
+            LearningRoadmap.owner_id == owner_id,
+            LearningRoadmap.saved_at.is_(None),
+            LearningRoadmap.id != roadmap.id,
+        )
+    )
 
     place = _placement(plan.weeks)
     for idx, sel in enumerate(plan.selections):
@@ -411,12 +419,26 @@ def get_items(
     )
 
 
-def update_weekly_hours(
-    session: Session, *, roadmap_id: uuid.UUID, owner_id: str, weekly_hours: int
+def update_roadmap(
+    session: Session,
+    *,
+    roadmap_id: uuid.UUID,
+    owner_id: str,
+    weekly_hours: int | None = None,
+    save: bool = False,
+    name: str | None = None,
 ) -> LearningRoadmap:
-    """주당 가용 시간만 수정(재배치는 호출측이 재계산해 항목 주차를 바꾼다)."""
+    """주당 시간·저장·이름 수정. 준 것만 바뀐다.
+
+    `save`면 초안을 저장본으로(이미 저장본이면 처음 저장 시각 유지). 이름은 빈 값이면 지운다.
+    """
     rm = _owned(session, roadmap_id, owner_id)
-    rm.weekly_hours = weekly_hours
+    if weekly_hours is not None:
+        rm.weekly_hours = weekly_hours
+    if save and rm.saved_at is None:
+        rm.saved_at = func.now()
+    if name is not None:
+        rm.name = name.strip() or None
     return rm
 
 

@@ -5,12 +5,30 @@ import { applicationsApi } from '../applications/api.js'
 import { recommendApi } from '../recommend/api.js'
 import { ApiError } from '../../app/api/client.js'
 import CandidatesDialog from './CandidatesDialog.jsx'
+import SavedRoadmapsPopover from './SavedRoadmapsPopover.jsx'
 import '../c-common.css'
 import './learning.css'
 
 const IMPORTANCE_LABEL = { required: '필수', preferred: '우대', mentioned: '참고' }
 const MODE_LABEL = { online: '온라인', offline: '오프라인' }
 const SOURCE_LABEL = { kmooc: 'K-MOOC', work24: '고용24' }
+
+// 로드맵 항목에 저장된 역량(gap_key·gap_label)을 처음 나온 순서대로 — 중요도는 왼쪽 목록에 같은 역량이 있으면 그 값
+function roadmapGaps(r, known) {
+  const seen = new Map()
+  for (const i of [...(r.items ?? [])].sort((a, b) => (a.week ?? 99) - (b.week ?? 99) || a.position - b.position)) {
+    if (i.gap_key && !seen.has(i.gap_key)) {
+      const k = known.find((g) => g.key === i.gap_key)
+      seen.set(i.gap_key, {
+        key: i.gap_key,
+        label: i.gap_label ?? i.gap_key,
+        importance: k?.importance ?? 'required',
+        evidence_fields: k?.evidence_fields ?? [],
+      })
+    }
+  }
+  return [...seen.values()]
+}
 
 // "내 로드맵" 선택 상자 문구: 생성일 · 회사 · 공고 · 학습 방법 · 진행
 function roadmapLabel(r) {
@@ -61,7 +79,8 @@ export default function LearningPage() {
   const [gapsLoading, setGapsLoading] = useState(false)
 
   const [roadmap, setRoadmap] = useState(null) // 현재 로드맵(RoadmapOut) 또는 null
-  const [roadmaps, setRoadmaps] = useState([]) // 내 로드맵 목록(최신순) — 고르거나 지운다
+  const [roadmaps, setRoadmaps] = useState([]) // 저장본 전부 + 초안(사용자당 최대 1개), 최신순
+  const [naming, setNaming] = useState(null) // [저장] 이름 입력 중이면 문자열
   const [loading, setLoading] = useState(true) // 최초 목록 조회
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState(null)
@@ -73,7 +92,8 @@ export default function LearningPage() {
       const list = await roadmapsApi.list({ signal })
       if (signal?.aborted) return
       setRoadmaps(list)
-      setRoadmap(list.length ? list[0] : null) // 서버가 최근 수정순으로 준다 → 첫 번째가 최신
+      // 하던 초안이 있으면 그것, 없으면 가장 최근 저장본(서버가 최근 수정순으로 준다)
+      setRoadmap(list.find((r) => !r.saved_at) ?? list[0] ?? null)
       setError(null)
     } catch (e) {
       if (e.name === 'AbortError') return
@@ -161,13 +181,13 @@ export default function LearningPage() {
   }
 
   // 새 로드맵을 만들어 목록 맨 위에 넣고 연다(이전 로드맵은 목록에 남는다)
-  const generate = async ({ modeValue = mode } = {}) => {
-    if (!gaps.length) return
+  const generate = async ({ modeValue = mode, gapsValue = gaps, postingValue = postingId } = {}) => {
+    if (!gapsValue.length) return
     setCreating(true)
     setError(null)
     try {
       const payload = {
-        gaps: gaps.map((g) => ({
+        gaps: gapsValue.map((g) => ({
           key: g.key,
           label: g.label,
           importance: g.importance,
@@ -175,11 +195,12 @@ export default function LearningPage() {
         })),
         weekly_hours: weeklyHours,
       }
-      if (postingId) payload.job_posting_id = postingId
+      if (postingValue) payload.job_posting_id = postingValue
       if (modeValue) payload.mode = modeValue
       const created = await roadmapsApi.create(payload)
       setRoadmap(created)
-      setRoadmaps((list) => [created, ...list])
+      // 서버가 이전 초안을 지웠다(초안은 1개) — 목록에서도 저장본만 남기고 새 초안을 앞에
+      setRoadmaps((list) => [created, ...list.filter((r) => r.saved_at)])
     } catch (e) {
       setError(e instanceof ApiError ? e.message : '로드맵 생성에 실패했습니다.')
     } finally {
@@ -187,24 +208,44 @@ export default function LearningPage() {
     }
   }
 
-  // 학습 방법을 바꾸면 바로 새로 만든다(로드맵이 있고 넣을 역량이 있을 때). 이전 것은 "내 로드맵" 목록에 남는다.
+  // 학습 방법을 바꾸면 **지금 보고 있는 로드맵의 역량·공고 그대로** 바로 새로 만든다(이전 것은 목록에 남음).
+  // 역량 정보(gap_key)가 없는 예전 로드맵이면 왼쪽 "로드맵에 넣을 역량"을 쓴다.
   const changeMode = (next) => {
     if (creating) return
     setMode(next)
-    if (roadmap && gaps.length) generate({ modeValue: next })
+    if (!roadmap) return
+    const fromRoadmap = roadmapGaps(roadmap, gaps)
+    if (fromRoadmap.length) {
+      generate({ modeValue: next, gapsValue: fromRoadmap, postingValue: roadmap.job_posting_id })
+    } else if (gaps.length) {
+      generate({ modeValue: next })
+    }
   }
 
-  // 목록에서 고른 로드맵 열기 / 지금 로드맵 삭제(되돌릴 수 없어 확인)
+  // 저장된 로드맵 열기 / 삭제(되돌릴 수 없어 확인). 보고 있던 것을 지우면 초안 → 최근 저장본 순으로 연다.
+  const savedRoadmaps = roadmaps.filter((r) => r.saved_at)
   const openRoadmap = (id) => setRoadmap(roadmaps.find((r) => r.id === id) ?? null)
-  const deleteRoadmap = async () => {
-    if (!roadmap || !window.confirm('이 로드맵을 삭제할까요? 완료 체크·추가한 항목도 함께 지워집니다.')) return
+  const deleteRoadmap = async (target) => {
+    if (!target || !window.confirm(`'${target.name || roadmapLabel(target)}' 로드맵을 삭제할까요? 완료 체크·추가한 항목도 함께 지워집니다.`)) return
     try {
-      await roadmapsApi.remove(roadmap.id)
-      const rest = roadmaps.filter((r) => r.id !== roadmap.id)
+      await roadmapsApi.remove(target.id)
+      const rest = roadmaps.filter((r) => r.id !== target.id)
       setRoadmaps(rest)
-      setRoadmap(rest[0] ?? null)
+      if (roadmap?.id === target.id) setRoadmap(rest.find((r) => !r.saved_at) ?? rest[0] ?? null)
     } catch (e) {
       setError(e instanceof ApiError ? e.message : '로드맵을 삭제하지 못했습니다.')
+    }
+  }
+
+  // 초안 → 저장본(이름은 선택, 비우면 서랍에 "회사 공고"로 보인다)
+  const saveRoadmap = async () => {
+    if (!roadmap) return
+    try {
+      const saved = await roadmapsApi.save(roadmap.id, (naming ?? '').trim())
+      setRoadmap(saved)
+      setNaming(null)
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : '로드맵을 저장하지 못했습니다.')
     }
   }
 
@@ -324,6 +365,14 @@ export default function LearningPage() {
           </button>
         ))}
         <span className="c-roadmap-muted">선택 안 하면 전체에서 추천</span>
+        {resumeId && (
+          <SavedRoadmapsPopover
+            roadmaps={savedRoadmaps}
+            currentId={roadmap?.id}
+            onOpen={openRoadmap}
+            onDelete={deleteRoadmap}
+          />
+        )}
       </div>
 
       <div className="c-roadmap-layout">
@@ -469,21 +518,41 @@ export default function LearningPage() {
                 <h3>내 로드맵</h3>
                 {resumeId && roadmap && <span className="c-roadmap-edit-label">{roadmap.grade}</span>}
               </div>
-              {resumeId && roadmaps.length > 0 && (
+              {resumeId && roadmap && (
                 <div className="lp-roadmap-picker">
-                  <label className="c-sr-only" htmlFor="lp-roadmap-select">내 로드맵 고르기</label>
-                  <select id="lp-roadmap-select" value={roadmap?.id ?? ''} onChange={(e) => openRoadmap(e.target.value)}>
-                    {roadmaps.map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {roadmapLabel(r)}
-                      </option>
-                    ))}
-                  </select>
-                  {roadmap && (
-                    <button type="button" className="lp-roadmap-delete" onClick={deleteRoadmap}>
-                      이 로드맵 삭제
-                    </button>
+                  {roadmap.saved_at ? (
+                    <span className="lp-saved-tag">저장됨 · {roadmap.name || roadmapLabel(roadmap)}</span>
+                  ) : naming === null ? (
+                    <>
+                      <span className="lp-draft-tag">초안 · 저장 안 됨 (새로 만들면 사라집니다)</span>
+                      <button type="button" className="c-btn-primary lp-save-btn" onClick={() => setNaming('')}>
+                        저장
+                      </button>
+                    </>
+                  ) : (
+                    <form
+                      className="lp-save-form"
+                      onSubmit={(e) => {
+                        e.preventDefault()
+                        saveRoadmap()
+                      }}
+                    >
+                      <input
+                        autoFocus
+                        maxLength={200}
+                        placeholder="이름 (선택) 예: 삼성 보안 준비"
+                        value={naming}
+                        onChange={(e) => setNaming(e.target.value)}
+                      />
+                      <button type="submit" className="c-btn-primary">저장</button>
+                      <button type="button" className="c-btn-secondary" onClick={() => setNaming(null)}>
+                        취소
+                      </button>
+                    </form>
                   )}
+                  <button type="button" className="c-btn-secondary lp-save-btn lp-danger-btn" onClick={() => deleteRoadmap(roadmap)}>
+                    삭제
+                  </button>
                 </div>
               )}
               <p>필수 역량부터 앞 주차에 배치됩니다.</p>

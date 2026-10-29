@@ -132,8 +132,9 @@ def get_roadmap(roadmap_id: uuid.UUID, user: AuthenticatedUser, db: Db):
 @router.patch("/{roadmap_id}", response_model=RoadmapOut)
 def update_roadmap(roadmap_id: uuid.UUID, payload: RoadmapUpdate, user: AuthenticatedUser, db: Db):
     try:
-        rm = service.update_weekly_hours(
-            db, roadmap_id=roadmap_id, owner_id=user.sub, weekly_hours=payload.weekly_hours
+        rm = service.update_roadmap(
+            db, roadmap_id=roadmap_id, owner_id=user.sub,
+            weekly_hours=payload.weekly_hours, save=payload.save, name=payload.name,
         )
     except service.RoadmapNotFound:
         raise _NOT_FOUND from None

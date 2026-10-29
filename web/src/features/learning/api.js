@@ -8,6 +8,8 @@ export const roadmapsApi = {
   // payload: { gaps:[{key,label,importance,evidence_fields[]}], weekly_hours, mode?, max_weeks? }
   create: (payload, opts) => api.post('/roadmaps', payload, opts),
   remove: (id, opts) => api.delete(`/roadmaps/${id}`, opts),
+  // 초안 → 저장본(+이름). 저장 취소는 없다(삭제로)
+  save: (id, name, opts) => api.patch(`/roadmaps/${id}`, { save: true, name: name || null }, opts),
   updateHours: (id, weeklyHours, opts) => api.patch(`/roadmaps/${id}`, { weekly_hours: weeklyHours }, opts),
   addItem: (id, item, opts) => api.post(`/roadmaps/${id}/items`, item, opts),
   // patch: { status?, week?, position? }
