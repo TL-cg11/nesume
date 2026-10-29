@@ -19,3 +19,27 @@ def list_owner_experiences(db: Session, owner_id: str, *, limit: int = 50, offse
         raise ValueError("limit은 1~100, offset은 0 이상")
     rows = repo.list_experiences(db, owner_id, [], limit, offset)
     return [service.to_owner_view(db, owner_id, owner_id, e) for e in rows]
+
+
+def tokenized_experience_docs(db: Session) -> list[dict]:
+    """C3 색인 배치 전용 — 삭제 안 된 모든 경험의 **토큰화 상태 값**(원문 복원 안 함)을 글 1개로.
+
+    API 응답·로그로 내보내지 않는다(서버 안 배치 전용). 경험은 공유가 없어 `shared_with`는 빈 값.
+    """
+    from sqlalchemy import select
+
+    from app.models.experience import Experience
+
+    rows = db.scalars(select(Experience).where(Experience.deleted_at.is_(None))).all()
+    out = []
+    for e in rows:
+        lists = (" ".join(e.tech_stack or []), " ".join(e.tags or []))
+        parts = [e.title, e.type, e.role, e.outcome, e.detail, *lists]
+        out.append({
+            "id": e.id,
+            "owner_id": e.owner_id,
+            "grade": e.grade,
+            "shared_with": [],
+            "text": "\n".join(p for p in parts if p),
+        })
+    return out

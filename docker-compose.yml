@@ -123,6 +123,10 @@ services:
       BEDROCK_ACCESS_KEY_ID: ${BEDROCK_ACCESS_KEY_ID:-}
       BEDROCK_SECRET_ACCESS_KEY: ${BEDROCK_SECRET_ACCESS_KEY:-}
       BEDROCK_SESSION_TOKEN: ${BEDROCK_SESSION_TOKEN:-}
+      # D20/C3 임베딩. 비우면 임베딩 없이 동작. 로컬에서 쓰려면 `--profile embed up -d embedder` 후
+      # .env 에 EMBEDDING_URL=http://embedder:8080
+      EMBEDDING_URL: ${EMBEDDING_URL:-}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-bge-m3}
     ports:
       - "${HOST_BIND_IP}:${APP_PORT:?APP_PORT is required}:8000"
     depends_on:

@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     bedrock_secret_access_key: str | None = None
     bedrock_session_token: str | None = None
 
+    # D20/C3 임베딩 서비스(TEI + bge-m3). 비우면 임베딩 없음 → C6 리트리버 미주입·추천 빈 결과.
+    # 운영은 Helm ConfigMap 이 채운다(클러스터 내부 http://<release>-embedder:8080).
+    embedding_url: str = ""
+    # 차원 1024 와 짝(app/models/embedding.py MODEL_VERSION). 값 확인용 — 바꾸면 재임베딩 필요.
+    embedding_model: str = "bge-m3"
+
     cognito_user_pool_id: str | None = None
     cognito_client_id: str | None = None
     # D6/D7: 앱 클라이언트가 web·runner 둘이라 복수 허용(쉼표 구분). 비어 있으면 cognito_client_id 하나.

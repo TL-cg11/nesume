@@ -1,7 +1,8 @@
 """C — 공고·학습 콘텐츠 수집 배치 (cron 엔트리).
 
 Helm `cronjob-jobs-collector`(D5)가 `python -m app.batch.jobs_collector`로 실행한다.
-하루 1회 **서울시 공고·고용24 공채속보(C4)** 와 **K-MOOC·고용24 훈련과정(C14)** 을 수집해 upsert한다.
+하루 1회 **서울시 공고·고용24 공채속보(C4)** 와 **K-MOOC·고용24 훈련과정(C14)** 을 수집해 upsert하고,
+**임베딩 색인(C3)** — 공고·자소서·경험 중 바뀐 것만 — 을 갱신한다(`EMBEDDING_URL` 없으면 건너뜀).
 수집 로직은 각 기능에 있고(여기선 **배선·세션·커밋·로깅**만), API 키는 D가 Secrets로 주입한다:
   - 서울시: `SEOUL_OPENAPI_BASE_URL`, `SEOUL_OPENAPI_KEY`
   - K-MOOC: `KMOOC_API_KEY`, `KMOOC_API_BASE_URL`(기본값 있음)
@@ -24,7 +25,7 @@ from app.db import SessionLocal
 
 logger = logging.getLogger("app.batch.jobs_collector")
 
-SOURCES = ("seoul", "work24_open", "kmooc", "work24")
+SOURCES = ("seoul", "work24_open", "kmooc", "work24", "embed_postings", "embed_personal")
 
 
 def collect_seoul(session: Session) -> dict:
@@ -107,11 +108,37 @@ def collect_work24(session: Session) -> dict:
     return upsert_contents(session, courses, source=WORK24_SOURCE, mode="offline")
 
 
+def _embed(session: Session, reindex) -> dict:
+    from app.retrieval.embedder import get_embedder
+
+    embedder = get_embedder()
+    if embedder is None:
+        logger.info("EMBEDDING_URL 없음 — 임베딩 색인 건너뜀")
+        return {"skipped": "no EMBEDDING_URL"}
+    return reindex(session, embedder)
+
+
+def embed_postings(session: Session) -> dict:
+    """활성 공고 → 공개 인덱스(C3). 공고 수집 뒤에 돌아야 새 공고가 바로 색인된다(SOURCES 순서)."""
+    from app.retrieval.reindex import reindex_postings
+
+    return _embed(session, reindex_postings)
+
+
+def embed_personal(session: Session) -> dict:
+    """자소서·경험 → 개인 인덱스(C3). B 저장 훅 연결 전까지 이 배치가 갱신한다(토큰화 값 그대로)."""
+    from app.retrieval.reindex import reindex_personal
+
+    return _embed(session, reindex_personal)
+
+
 _RUNNERS: dict[str, Callable[[Session], dict]] = {
     "seoul": collect_seoul,
     "work24_open": collect_work24_open,
     "kmooc": collect_kmooc,
     "work24": collect_work24,
+    "embed_postings": embed_postings,
+    "embed_personal": embed_personal,
 }
 
 

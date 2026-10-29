@@ -21,6 +21,12 @@ from app.retrieval.embedder import Embedder
 from app.retrieval.preprocess import preprocess_external_text
 
 
+def clean_posting_text(raw_text: str) -> str:
+    """공고 원문 → 임베딩·저장할 텍스트(A1 mask → C5 전처리). 결정적이라 "바뀌었나" 비교에도 쓴다."""
+    # pre.flags(인젝션 탐지 신호)는 감사 로그(B3)에 남기는 것을 권장
+    return preprocess_external_text(mask(raw_text)).text
+
+
 def index_posting(
     session: Session,
     embedder: Embedder,
@@ -30,9 +36,7 @@ def index_posting(
     chunk_index: int = 0,
 ) -> JobPostingEmbedding:
     """공고(외부 텍스트) 1청크 적재. A1 mask → C5 전처리 → 임베딩 → 공개 인덱스."""
-    pre = preprocess_external_text(mask(raw_text))
-    # pre.flags(인젝션 탐지 신호)는 감사 로그(B3)에 남기는 것을 권장
-    clean = pre.text
+    clean = clean_posting_text(raw_text)
     vec = embedder.embed([clean])[0]
     row = JobPostingEmbedding(
         source_id=source_id, chunk_index=chunk_index, content=clean, embedding=vec
