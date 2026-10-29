@@ -13,6 +13,9 @@ image:
   web:
     repository: nesume/web
     tag: ""
+  embedder:                          # D20. embedder/ 를 바꾼 커밋의 sha. 매 커밋 빌드하지 않으므로 app·web 과 태그가 다르다
+    repository: nesume/embedder
+    tag: ""
   pullPolicy: IfNotPresent           # kind: Never
 
 app:
@@ -24,6 +27,7 @@ app:
   livenessPath: /health
   startupPath: /health
   terminationGracePeriodSeconds: 30
+  preStopSleepSeconds: 5           # 엔드포인트 제거가 퍼질 시간. grace 30초 안에 포함된다
 
 web:
   replicas: 2
@@ -53,10 +57,16 @@ config:
   COGNITO_JWKS_URL: ""
   OPERATOR_MFA_REQUIRED: "true"      # D7: 운영자 보호 API 에 TOTP 등록 + 최근 로그인 요구
   MFA_SESSION_MINUTES: "15"
+  # A2 LLM. 자격증명은 IRSA(app 역할의 bedrock:InvokeModel). 모델 교체는 LLM_MODEL_ID 한 줄
+  LLM_PROVIDER: bedrock
+  LLM_MODEL_ID: global.amazon.nova-2-lite-v1:0   # Anthropic 게이트가 열리면 global.anthropic.claude-haiku-5-5
+  BEDROCK_REGION: ap-northeast-2
   DB_HOST: ""
   DB_PORT: "5432"
   DB_NAME: nesume
   DB_USER: nesume
+  EMBEDDING_MODEL: bge-m3            # D20/C3. 차원 1024 와 짝(app/app/models/embedding.py MODEL_VERSION)
+  EMBEDDING_URL: ""                  # 비우면 차트 안의 embedder Service(http://<release>-embedder:8080). 외부 서빙이면 여기에
 
 # 비밀값. externalSecrets.enabled=true 면 Secrets Manager에서 가져오고 이 맵은 무시된다.
 # false(kind)일 때만 secret.yaml 이 이 값으로 Secret을 만든다. 운영 values에 값을 적지 않는다.
@@ -71,6 +81,7 @@ externalSecrets:
   secretStoreRef:
     name: aws-secretsmanager
     kind: ClusterSecretStore
+  createStore: false                 # true: 차트가 ClusterSecretStore 를 만든다(clustersecretstore.yaml). 클러스터 스코프라 클러스터당 한 릴리스만 true
   remoteKey: nesume/production/app   # Secrets Manager 키. JSON 필드명 = secrets.* 키
   refreshInterval: 1h
 
@@ -94,6 +105,31 @@ cronjobs:
   resources:
     requests: { cpu: 100m, memory: 128Mi }
     limits: { cpu: 500m, memory: 512Mi }
+
+# D20 bge-m3 임베딩 서비스(embedder/Dockerfile, TEI). C3 파이프라인·C8 추천이 EMBEDDING_URL 로 호출한다.
+# fp32 ONNX CPU 서빙. 10-28 로컬 실측(arm64, MAX_BATCH_TOKENS=2048): 기동 65s, RSS 정상 4.4GB·피크 4.45GB.
+# 전용 노드그룹(infra eks: aws_eks_node_group.embedding, m7g.large 할당 가능 7.2GB, taint nesume.io/workload=embedding)에 올린다.
+embedder:
+  enabled: true
+  replicas: 1                        # 노드 1대. 늘리려면 노드그룹 desired 도 같이
+  containerPort: 8080
+  service:
+    port: 8080
+  resources:
+    requests: { cpu: "1", memory: 4608Mi }
+    limits: { cpu: "2", memory: 6144Mi }   # 피크 4.45GB + 여유. 노드 1대를 전용으로 쓰므로 넉넉히
+  startupFailureThreshold: 60        # 5s x 60 = 5분. 로컬 65s. 이보다 길면 노드가 너무 작다
+  env:                               # TEI 설정. 이미지 ENV 기본값을 덮는다
+    MAX_CLIENT_BATCH_SIZE: "32"
+    MAX_BATCH_TOKENS: "2048"         # 올리면 메모리 급증(8192 는 OOM). 입력은 이 길이에서 잘린다
+    MAX_CONCURRENT_REQUESTS: "64"
+  nodeSelector:
+    nesume.io/workload: embedding
+  tolerations:
+    - key: nesume.io/workload
+      operator: Equal
+      value: embedding
+      effect: NoSchedule
 
 seed:                                # D6. staging 만 true
   enabled: false

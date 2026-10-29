@@ -27,6 +27,7 @@ from app.features.roadmap.schemas import (
     UserItemCreate,
 )
 from app.guardrail import Guardrail, LlmUnavailable
+from app.guardrail.fastapi import get_guardrail as shared_guardrail
 from app.models.learning import LearningContent, LearningRoadmap, LearningRoadmapItem
 
 router = APIRouter(prefix="/roadmaps", tags=["roadmaps"])
@@ -34,12 +35,13 @@ Db = Annotated[Session, Depends(get_db)]
 
 
 def get_guardrail() -> Guardrail:
-    """A8 파이프라인(기능은 이것만 호출, llm_client 직접 import 금지). 프로바이더 배선은 D 통합 시.
+    """앱 공유 가드레일(A8) — `app.guardrail.fastapi.get_guardrail`에 위임.
 
-    A `matching`/`style` 라우터와 같은 패턴 — 기본 생성자는 `NotConfiguredProvider`라
-    실제 호출 시 `LlmUnavailable`. 테스트·import는 되고 런타임 LLM만 막힌다.
+    전에는 여기서 빈 `Guardrail()`을 만들어 **감사 로그(B11 DbAuditSink)가 빠진 LLM 경로**였고,
+    D가 공유 가드레일에 LLM 제공자를 주입해도 C14 설명엔 안 들어왔다. 공유 인스턴스를 쓰면
+    감사·대화 이력·제공자 주입이 다른 기능과 같아진다. 테스트는 이 의존성을 덮어써서 갈아끼운다.
     """
-    return Guardrail()
+    return shared_guardrail()
 
 
 GuardrailDep = Annotated[Guardrail, Depends(get_guardrail)]

@@ -1,18 +1,19 @@
-/* 글 다듬기 화면 전용 (A7·A13·A14). 값은 theme.css 변수만 사용 (프론트 가이드 8절) */
+/* 글 다듬기 화면 전용 (A6·A7). 값은 theme.css 변수만 사용 (프론트 가이드 8절) */
 
-.wr-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 480px); gap: var(--space-4); align-items: start; }
-@media (max-width: 720px) {
+.wr-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(380px, 520px); gap: var(--space-4); align-items: start; }
+@media (max-width: 900px) {
   .wr-grid { grid-template-columns: 1fr; }
   /* 좁은 화면에서는 입력창을 줄인다 — 420px 면 탭이 화면 밖으로 밀려 한참 내려야 보인다 */
   .wr-input { min-height: 220px; }
-  .wr-tab-hint { display: none; }
 }
+
+.wr-field { display: flex; flex-direction: column; gap: 2px; }
 
 .wr-input { width: 100%; min-height: 420px; line-height: var(--leading); resize: vertical; }
 .wr-count { color: var(--muted); font-size: var(--text-sm); }
 .wr-count.over { color: var(--danger); font-weight: 600; }
 
-/* 탭 — 같은 글을 보는 세 가지 검사 */
+/* 탭 — 할 일 기준 둘 */
 .wr-tabs { display: flex; gap: var(--space-1); border-bottom: 1px solid var(--border); }
 .wr-tab {
   flex: 1; display: flex; flex-direction: column; gap: 2px; align-items: flex-start;
@@ -24,44 +25,57 @@
 .wr-tab.on { color: var(--accent-text); border-bottom-color: var(--accent); background: transparent; }
 .wr-tab-hint { font-size: var(--text-sm); font-weight: 400; color: var(--muted); }
 
-/* STAR 요약 */
-.wr-star { margin-bottom: var(--space-3); }
-.wr-star-marks { display: flex; gap: var(--space-2); margin: var(--space-2) 0; }
+/* 검사 칸 (맞춤법 · STAR) */
+.wr-section { padding: var(--space-3) var(--space-4); }
+.wr-section > .row:first-child { margin-top: 0; }
+
+/* STAR 판정 */
+.wr-star-marks { display: flex; gap: var(--space-1); align-items: center; margin: var(--space-2) 0; }
+.wr-star-marks .muted { margin-left: var(--space-2); }
 .wr-star-mark {
-  width: 34px; height: 34px; border-radius: var(--radius-pill);
+  width: 28px; height: 28px; border-radius: var(--radius-pill);
   display: grid; place-items: center; font-weight: 700; font-size: var(--text-sm);
   border: 1px solid var(--border-input); color: var(--muted); background: var(--surface);
 }
-.wr-star-mark.on { background: var(--success); border-color: var(--success); color: var(--on-accent); }
+/* 색만으로 구분하지 않는다 — 옆 목록에 충분·부족·없음 글자가 함께 나온다 (가이드 10절) */
+.wr-star-mark.ok { background: var(--success); border-color: var(--success); color: var(--on-accent); }
+.wr-star-mark.weak { background: var(--warning-soft); border-color: var(--warning); color: var(--warning); }
+.wr-star-mark.missing { border-style: dashed; }
+.wr-star-row p { margin: var(--space-1) 0 0; }
+.wr-star-row .row { margin: 0; }
+.wr-star-row .reason { color: var(--muted); font-size: var(--text-sm); }
+.wr-quote { font-size: var(--text-sm); border-left: 3px solid var(--border-input); padding-left: var(--space-2); }
+.wr-question { font-size: var(--text-sm); background: var(--warning-soft); border-radius: var(--radius-sm); padding: var(--space-1) var(--space-2); }
 
 /* 제안 목록 */
-.wr-item .head { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
+.wr-item .head { display: flex; gap: var(--space-2); align-items: flex-start; cursor: pointer; }
+.wr-item .head input { margin-top: 4px; }
 .wr-item p { margin: var(--space-1) 0 0; }
 .wr-item .reason { color: var(--muted); font-size: var(--text-sm); }
+.wr-item .reason .wr-badge { margin-right: var(--space-1); }
 .wr-item.guidance { background: var(--warning-soft); border-radius: var(--radius-sm); padding: var(--space-2); }
+.wr-item.guidance + .wr-item.guidance { margin-top: var(--space-2); }
 
 .wr-badge {
   font-size: var(--text-sm); padding: 0 var(--space-2); border-radius: var(--radius-pill);
   border: 1px solid var(--border-input); color: var(--muted); background: var(--surface);
+  white-space: nowrap;
 }
 .wr-badge.llm { border-color: var(--accent); color: var(--accent-text); background: var(--accent-soft); }
 .wr-badge.check { border-color: var(--warning); color: var(--warning); background: var(--warning-soft); }
+.wr-badge.danger { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
 
 /* 바뀌는 부분 — 색만으로 구분하지 않도록 취소선·굵기도 함께 준다 (가이드 10절) */
 .wr-from { text-decoration: line-through; color: var(--danger); }
 .wr-to { color: var(--success); font-weight: 600; }
 
-/* 글자 수·말투 요약 카드 */
-.wr-metric { padding: var(--space-3); }
-.wr-metric .list > li { padding: var(--space-2) 0; }
-
 /* AI 가 다시 쓴 글 */
 .wr-rewrite { padding: var(--space-3); border-color: var(--accent); }
 .wr-rewrite p { margin: var(--space-2) 0 0; line-height: var(--leading); }
 
-/* 입력 한 쌍 (제한·문체) */
-.wr-field { display: flex; flex-direction: column; gap: 2px; }
-.wr-field input { width: 110px; }
+/* 말투 샘플 */
+.wr-sample-field { margin-top: 0; }
+.wr-sample { width: 100%; min-height: 140px; line-height: var(--leading); resize: vertical; }
 
 /* 프롬프트에 들어가는 문단 — 무엇이 모델에 가는지 그대로 보여준다 */
 .wr-fragment summary { cursor: pointer; color: var(--accent-text); font-size: var(--text-sm); }
@@ -69,4 +83,28 @@
   margin: var(--space-2) 0 0; padding: var(--space-3);
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
   white-space: pre-wrap; font-family: inherit; font-size: var(--text-sm); line-height: var(--leading);
+}
+
+/* 맞춤법 제안 — 바뀐 낱말만 표시하고 나머지는 보통 글씨 */
+.wr-diff .wr-from, .wr-diff .wr-to { padding: 0 1px; }
+
+/* STAR 보완 팝업 (브라우저 기본 <dialog>) */
+.wr-dialog {
+  width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 64px);
+  padding: var(--space-4) var(--space-5); border: 1px solid var(--border);
+  border-radius: var(--radius-md); background: var(--surface); color: var(--fg);
+  box-shadow: var(--shadow-md);
+}
+.wr-dialog::backdrop { background: rgb(0 0 0 / 45%); }
+.wr-dialog h2 { margin: 0; font-size: var(--text-lg); }
+.wr-dialog .stack { margin-top: 0; }
+.wr-fill-row p { margin: var(--space-1) 0 0; }
+.wr-choice { display: inline-flex; gap: var(--space-1); align-items: center; cursor: pointer; margin-right: var(--space-3); }
+.wr-hint { width: 100%; }
+.wr-small { padding: 0 var(--space-2); font-size: var(--text-sm); }
+
+/* AI가 써 넣거나 고친 부분 — 색만으로 구분하지 않도록 밑줄도 준다 (가이드 10절) */
+.wr-ai {
+  background: var(--accent-soft); color: var(--fg); border-radius: 3px;
+  padding: 0 2px; text-decoration: underline dotted var(--accent);
 }

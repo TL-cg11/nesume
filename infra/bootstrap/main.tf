@@ -15,8 +15,14 @@ provider "aws" {
   }
 }
 
-variable "region" { default = "ap-northeast-2" }
-variable "project" { default = "nesume" }
+variable "region" {
+  type    = string
+  default = "ap-northeast-2"
+}
+variable "project" {
+  type    = string
+  default = "nesume"
+}
 
 data "aws_caller_identity" "me" {}
 
@@ -29,6 +35,8 @@ resource "aws_s3_bucket_versioning" "tfstate" {
   versioning_configuration { status = "Enabled" }
 }
 
+# trivy 예외: tfstate 버킷은 AWS 관리 키(aws/s3)의 SSE-KMS면 충분하다. CMK를 만들면 bootstrap이 KMS에 의존하게 된다.
+#trivy:ignore:AVD-AWS-0132
 resource "aws_s3_bucket_server_side_encryption_configuration" "tfstate" {
   bucket = aws_s3_bucket.tfstate.id
   rule {
@@ -45,8 +53,13 @@ resource "aws_s3_bucket_public_access_block" "tfstate" {
 }
 
 # IMMUTABLE: 같은 sha 태그를 덮어쓰지 못하게 ECR 차원에서 강제한다(README 태그 규칙).
+# D20 embedder: 모델 내장 이미지가 ~2.5GB 라 보존 수를 따로 둔다(아래 lifecycle). 태그는 embedder/ 를 바꾼 커밋의 sha.
+locals {
+  ecr_keep_tagged = { app = 30, web = 30, embedder = 3 }
+}
+
 resource "aws_ecr_repository" "repo" {
-  for_each             = toset(["app", "web"])
+  for_each             = toset(keys(local.ecr_keep_tagged))
   name                 = "${var.project}/${each.key}"
   image_tag_mutability = "IMMUTABLE"
   image_scanning_configuration { scan_on_push = true }
@@ -66,8 +79,8 @@ resource "aws_ecr_lifecycle_policy" "repo" {
       },
       {
         rulePriority = 2
-        description  = "keep last 30 tagged images"
-        selection    = { tagStatus = "any", countType = "imageCountMoreThan", countNumber = 30 }
+        description  = "keep last ${local.ecr_keep_tagged[each.key]} tagged images"
+        selection    = { tagStatus = "any", countType = "imageCountMoreThan", countNumber = local.ecr_keep_tagged[each.key] }
         action       = { type = "expire" }
       },
     ]

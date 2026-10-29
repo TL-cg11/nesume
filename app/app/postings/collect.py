@@ -68,6 +68,14 @@ def _extract_salary(text: str | None) -> tuple[int | None, int | None]:
     return min(amounts), (max(amounts) if len(amounts) > 1 else None)
 
 
+def _edu_range(lo: str | None, hi: str | None) -> str | None:
+    """학력 글 범위(예: "대졸(4년)~석사"). 같거나 한쪽만 있으면 그 값."""
+    lo, hi = (lo or "").strip(), (hi or "").strip()
+    if lo and hi and lo != hi:
+        return f"{lo}~{hi}"
+    return lo or hi or None
+
+
 def parse_seoul_row(row: dict[str, Any]) -> dict[str, Any]:
     """서울시 recMntList 응답 1건 → `JobPosting` 필드 dict(순수). 연락처 필드는 담지 않는다."""
     close_text = row.get("CLOSE_DT")
@@ -85,6 +93,8 @@ def parse_seoul_row(row: dict[str, Any]) -> dict[str, Any]:
         "region_name": row.get("REGION"),
         "work_address": row.get("WORK_REGION"),
         "career_code": row.get("ENTER_TP_CD"),
+        "career_text": row.get("CAREER") or None,
+        "edu_text": _edu_range(row.get("MIN_EDUBG"), row.get("MAX_EDUBG")),
         "min_edu_code": row.get("MIN_EDUBG_ICD"),
         "max_edu_code": row.get("MAX_EDUBG_ICD"),
         "emp_type_code": row.get("EMP_TP_CD"),
@@ -169,8 +179,13 @@ def run_collection(
     *,
     recent: list[int] | None = None,
     source: str = SOURCE_SEOUL,
+    parse: Callable[[dict[str, Any]], dict[str, Any]] = parse_seoul_row,
 ) -> dict[str, Any]:
     """전량 재수집분 1회 처리: 건강성 게이트 → 파싱·mask·upsert → 사라짐 처리 → 이력 기록.
+
+    `parse`는 응답 1건 → 필드 dict(기본 서울시). 이미 필드 dict인 출처(공채속보)는 그대로 넘기는 함수를 준다.
+    사라짐 판정용 키는 **upsert와 같은 규칙**(`source_key`가 있으면 그걸로)으로 계산한다 — 다르면
+    고유번호로 식별되는 공고가 매번 "사라짐"으로 잡힌다.
 
     `recent`(기준선용 최근 정상 건수)를 안 주면 `collection_runs`에서 읽는다. 처리 끝에
     이번 수집을 기록해 다음 게이트의 기준선이 된다. 반환: 요약(gate·액션 집계·비활성 수).
@@ -188,7 +203,7 @@ def run_collection(
     counts = {a: 0 for a in Action}
     seen: list[str] = []
     for raw in rows:
-        fields = parse_seoul_row(raw)
+        fields = parse(raw)
         if fields.get("job_content"):  # 공개 등급 PII 마스킹(연락처 혼입 대비)
             fields["job_content"] = mask(fields["job_content"])
         seen.append(
@@ -199,6 +214,7 @@ def run_collection(
                 region_code=fields.get("region_code"),
                 job_code=fields.get("job_code"),
                 work_address=fields.get("work_address"),
+                native_id=fields.get("source_key"),
             )
         )
         _row, action = upsert_posting(session, source=source, fields=fields)

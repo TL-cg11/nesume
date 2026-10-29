@@ -69,6 +69,7 @@ class RateLimitedError(AppError):
 
 
 INTERNAL_ERROR_MESSAGE = "서버 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
+LLM_ERROR_MESSAGE = "AI 응답을 받지 못했습니다. 잠시 후 다시 시도해 주세요."
 
 
 def error_response(
@@ -102,6 +103,15 @@ def register_exception_handlers(app: FastAPI) -> None:
             "요청 형식이 올바르지 않습니다.",
             _sanitize_validation_errors(exc.errors()),
         )
+
+    # 재시도 후에도 남은 LLM 오류(제한·타임아웃·제공자 장애). 기능들은 LlmUnavailable 만
+    # 잡아 규칙 결과로 내려가므로, 나머지가 여기까지 오면 500 대신 다시 시도할 수 있다고 알린다.
+    from app.guardrail.errors import LlmError
+
+    @app.exception_handler(LlmError)
+    async def _llm_error(_: Request, exc: LlmError) -> JSONResponse:
+        log.warning("llm_error", extra={"fields": {"error_type": type(exc).__name__}})
+        return error_response(503, "llm_error", LLM_ERROR_MESSAGE)
 
     @app.exception_handler(Exception)
     async def _unhandled(_: Request, exc: Exception) -> JSONResponse:

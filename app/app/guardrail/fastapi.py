@@ -37,9 +37,14 @@ def _shared() -> Guardrail:
       같은 세션이 다른 워커로 갈 때 이력이 끊긴다. D7 세션 저장소가 준비되면
       그 구현을 주입한다 (docs/A12.md 6장).
     """
+    from app.config import get_settings
     from app.features.audit.sink import DbAuditSink
+    from app.guardrail.bedrock import build_provider
+    from app.guardrail.llm_client import LlmClient
 
-    return Guardrail(audit=DbAuditSink(), history=InMemoryTurnStore())
+    # A2 제공자 주입 지점. LLM_PROVIDER=none(기본)이면 지금까지와 같은 NotConfiguredProvider 다
+    llm = LlmClient(provider=build_provider(get_settings()))
+    return Guardrail(llm=llm, audit=DbAuditSink(), history=InMemoryTurnStore())
 
 
 def get_guardrail() -> Guardrail:

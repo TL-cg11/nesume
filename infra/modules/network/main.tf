@@ -1,5 +1,7 @@
 # VPC·서브넷·IGW·라우팅·S3 게이트웨이 엔드포인트. NAT는 없다.
 # 프라이빗 라우트 테이블은 기본 경로를 비워 둔다. 0.0.0.0/0 -> NAT 경로는 compute가 aws_route로 추가한다.
+# trivy 예외(dev): VPC Flow Logs는 비용 대비 쓸 일이 없다. 필요해지면 D17에서 켠다.
+#trivy:ignore:AVD-AWS-0178
 resource "aws_vpc" "this" {
   cidr_block           = var.cidr
   enable_dns_support   = true
@@ -12,6 +14,8 @@ resource "aws_internet_gateway" "this" {
   tags   = { Name = var.name }
 }
 
+# trivy 예외: 퍼블릭 서브넷은 ALB·NAT 전용이고 노드는 프라이빗에 있다. 퍼블릭 IP 자동 할당은 의도된 것.
+#trivy:ignore:AVD-AWS-0164
 resource "aws_subnet" "public" {
   count                   = length(var.public_cidrs)
   vpc_id                  = aws_vpc.this.id

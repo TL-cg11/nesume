@@ -102,6 +102,8 @@ class JobPosting(Base):
 
     # --- 조건·코드 ---
     career_code: Mapped[str | None] = mapped_column(String(1))    # ENTER_TP_CD (Z/E/N)
+    career_text: Mapped[str | None] = mapped_column(Text)         # 화면 표시용 경력 글(서울 CAREER / 공채속보 empWantedCareerNm)
+    edu_text: Mapped[str | None] = mapped_column(Text)            # 화면 표시용 학력 글(서울 MIN~MAX_EDUBG / 공채속보 empWantedEduNm)
     min_edu_code: Mapped[str | None] = mapped_column(String(2))   # MIN_EDUBG_ICD
     max_edu_code: Mapped[str | None] = mapped_column(String(2))   # MAX_EDUBG_ICD
     emp_type_code: Mapped[str | None] = mapped_column(String(2))  # EMP_TP_CD

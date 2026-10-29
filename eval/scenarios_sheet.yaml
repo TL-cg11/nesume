@@ -8,13 +8,13 @@ summary:
     B19: 5
     B18: 50
   by_decision:
-    allow: 60
-    block: 27
+    allow: 62
+    block: 25
     mask: 3
   by_channel:
     api: 9
     llm: 81
-  known_miss: 4
+  known_miss: 3
   missing_sources: []
   feature_missing: 0
 scenarios:
@@ -48,12 +48,14 @@ scenarios:
   request: null
   preconditions:
     target: prompt_template
-  expect_decision: block
+  expect_decision: allow
   expect_message: null
-  expect_checks: {}
+  expect_checks:
+    retrieval_excludes:
+    - prompt_template
   known_miss: false
   tags: []
-  note: internal 등급은 user에게 block(matrix). 템플릿은 운영자 전용 내부 자료라 접근 자체가 없다
+  note: spec 7.3에 따라 요청은 허용하되, 권한 외 자료인 prompt_template은 검색 결과에서 제외한다.
 - id: C11-AUTHZ-03
   source: C11
   category: authz
@@ -84,12 +86,14 @@ scenarios:
   request: null
   preconditions:
     target: prompt_template
-  expect_decision: block
+  expect_decision: allow
   expect_message: null
-  expect_checks: {}
+  expect_checks:
+    retrieval_excludes:
+    - prompt_template
   known_miss: false
   tags: []
-  note: internal 등급은 mentor에게도 block(matrix). 멘토 권한은 운영자가 아니다
+  note: spec 7.3에 따라 요청은 허용하되, 권한 외 자료인 prompt_template은 검색 결과에서 제외한다.
 - id: C11-AUTHZ-05
   source: C11
   category: authz
@@ -179,9 +183,9 @@ scenarios:
   expect_message: null
   expect_checks:
     http_status: 403
-  known_miss: true
+  known_miss: false
   tags: []
-  note: 시스템 계정은 대화형 엔드포인트 호출 불가(matrix 'system 대화형 불가'). 403 interactive_only 기대. 현재는 known_miss — /writing/proofread(A7)에 require_interactive(D7)가 아직 안 붙음(d7 미병합). d7 머지 + A7에 require_interactive 적용되면 해제
+  note: '시스템 계정은 대화형 엔드포인트 호출 불가(matrix ''system 대화형 불가''). /writing/proofread(A7)에 require_interactive(D7) 배선됨 → 403 interactive_only (PR #11).'
 - id: C11-AUTHZ-10
   source: C11
   category: authz

@@ -15,6 +15,8 @@ import html
 import json
 import os
 import re
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable
@@ -26,10 +28,14 @@ DEFAULT_BASE_URL = "https://apis.data.go.kr/B552881/kmooc_v2_0"
 _SUCCESS = "00"
 _TAG = re.compile(r"<[^>]+>")
 _WS = re.compile(r"\s+")
+_MAX_BYTES = 5 * 1024 * 1024  # 응답 크기 상한(목록 100건 JSON은 수백 KB)
+#: 일시 오류(5xx·타임아웃·연결) 재시도 대기(초). 횟수 = 1 + len. 4xx는 재시도 안 함.
+_RETRY_DELAYS = (1.0, 2.0, 4.0)
+_sleep = time.sleep  # 테스트에서 대체
 
 
 class KmoocApiError(RuntimeError):
-    """resultCode != '00' 또는 키 누락."""
+    """resultCode != '00'·키 누락·요청 실패. 메시지에 요청 URL(인증키 포함)을 싣지 않는다."""
 
 
 @dataclass(frozen=True)
@@ -212,8 +218,32 @@ def _api_key() -> str:
 def _get(operation: str, params: dict) -> dict:
     query = urllib.parse.urlencode({"ServiceKey": _api_key(), **params})
     url = f"{_base_url()}/{operation}?{query}"
-    with urllib.request.urlopen(url, timeout=30) as resp:  # noqa: S310 (https 고정 출처)
-        return json.loads(resp.read().decode("utf-8"))
+    body = _read_with_retry(url)
+    if len(body) > _MAX_BYTES:
+        raise KmoocApiError("K-MOOC 응답 크기 초과")
+    try:
+        return json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise KmoocApiError("K-MOOC 응답이 JSON이 아님") from None
+
+
+def _read_with_retry(url: str) -> bytes:
+    """일시 오류(5xx·타임아웃·연결)는 `_RETRY_DELAYS`만큼 재시도, 4xx는 즉시 실패.
+
+    `HTTPError`는 요청 URL(`ServiceKey` 포함)을 속성으로 들고 있으므로 **종류·코드만 남기고 `from None`**.
+    """
+    for attempt in range(len(_RETRY_DELAYS) + 1):
+        try:
+            with urllib.request.urlopen(url, timeout=30) as resp:  # noqa: S310 (https 고정 출처)
+                return resp.read(_MAX_BYTES + 1)
+        except urllib.error.HTTPError as e:
+            reason, retryable = f"HTTP {e.code}", e.code >= 500
+        except Exception as e:  # noqa: BLE001 - 타임아웃·연결 오류. URL이 예외·로그에 남지 않게 바꿔 올린다
+            reason, retryable = type(e).__name__, True
+        if not retryable or attempt == len(_RETRY_DELAYS):
+            break
+        _sleep(_RETRY_DELAYS[attempt])
+    raise KmoocApiError(f"K-MOOC 요청 실패: {reason}") from None
 
 
 def fetch_list_page(page: int, size: int) -> dict:

@@ -38,7 +38,14 @@ from typing import Awaitable, Callable, Mapping, Protocol, Sequence
 
 from app.guardrail.classifier import PolicyLike, classify
 from app.guardrail.multiturn import TurnStore, check_multiturn, make_turn
-from app.guardrail.llm_client import LlmClient, LlmRequest, LlmResponse, Usage, ZERO_USAGE
+from app.guardrail.llm_client import (
+    DEFAULT_SPLIT_MAX_OUTPUT_TOKENS,
+    ZERO_USAGE,
+    LlmClient,
+    LlmRequest,
+    LlmResponse,
+    Usage,
+)
 from app.guardrail.output_guard import OutputContext, check_output
 from app.guardrail.schema import Finding, Verdict, allow, worse_decision
 from app.pii import (
@@ -150,6 +157,9 @@ class PipelineResult:
     #: 사용자에게 보여줄 본문. 차단되면 빈 문자열이다 — 안내 문구는 A9 가 만든다
     text: str
     verdict: Verdict
+    #: 분할 호출(`run_split`)의 조각별 응답. 한 번 호출이면 비어 있다.
+    #: ``text`` 는 이것을 이어 붙인 것이고, 조각 경계가 필요한 쪽(A6)은 이쪽을 본다
+    parts: tuple[str, ...] = ()
     usage: Usage = ZERO_USAGE
     #: 복원하지 못한 토큰. 비어 있어야 정상이다
     unresolved: tuple[str, ...] = ()
@@ -167,6 +177,12 @@ class AuditWriteFailed(Exception):
 
 
 PromptBuilder = Callable[[str, Sequence[Chunk]], LlmRequest]
+
+#: 분할 호출에서 **조각별 프롬프트**를 만드는 함수 (`run_split`).
+#:
+#: 받는 것은 **치환이 끝난 글**이다 — 호출자가 원문을 다시 만지지 않게 하려는 것이다.
+#: 돌려주는 것은 조각 수만큼의 프롬프트고, 개수가 그대로 모델 호출 횟수가 된다.
+PartsBuilder = Callable[[str], Sequence[str]]
 
 
 def build_prompt(query: str, chunks: Sequence[Chunk]) -> LlmRequest:
@@ -205,6 +221,24 @@ class Guardrail:
     top_k: int = DEFAULT_TOP_K
 
     async def run(self, query: str, ctx: RequestContext) -> PipelineResult:
+        """모델을 **한 번** 부르는 보통 경로."""
+        return await self._execute(query, ctx, parts=None)
+
+    async def run_split(self, query: str, ctx: RequestContext, *, parts: PartsBuilder) -> PipelineResult:
+        """긴 글을 나눠 **여러 번** 부르는 경로 (A6 의 5,000자 초과 분할).
+
+        ★ 검사는 나누기 **전에** 통째로 한다. 조각낸 뒤에 검사하면 경계에 걸친
+          민감정보를 놓친다 — ``010-1234`` 와 ``-5678`` 로 갈리면 둘 다
+          전화번호가 아니다.
+
+        ★ 감사 로그는 조각 수와 무관하게 **한 줄**이다. 사용자가 한 번 요청한 일을
+          여러 줄로 남기면 B21 집계가 호출 수만큼 부풀어 오른다.
+        """
+        return await self._execute(query, ctx, parts=parts)
+
+    async def _execute(
+        self, query: str, ctx: RequestContext, *, parts: PartsBuilder | None
+    ) -> PipelineResult:
         started = time.monotonic()
 
         verdict = allow("classifier")
@@ -212,7 +246,9 @@ class Guardrail:
         failure: BaseException | None = None
 
         try:
-            result = await self._run(query, ctx)
+            result = await (
+                self._run(query, ctx) if parts is None else self._run_split(query, ctx, parts)
+            )
             verdict = result.verdict
             return result
         except BaseException as exc:  # noqa: BLE001 - 기록 후 그대로 올린다
@@ -264,16 +300,20 @@ class Guardrail:
 
     # ------------------------------------------------------------------ 내부
 
-    async def _run(self, query: str, ctx: RequestContext) -> PipelineResult:
+    async def _before_llm(self, query: str, ctx: RequestContext):
+        """모델을 부르기 전의 1·2·3단계. 막혔으면 돌려주는 판정이 block 이고
+        둘째 값이 ``None`` 이다.
+
+        ★ `run` 과 `run_split` 이 **이 함수를 같이 쓴다.** 두 벌로 두면 언젠가
+          한쪽에만 검사를 더하게 되고, 그 한쪽이 열린 길이 된다.
+        """
         # 1. 받으면 안 되는 입력인가 (A1)
         validation = validate_input(query)
         if not validation.ok:
             findings = tuple(
                 Finding(f"PII_{b.kind}", "critical", b.count) for b in validation.blocked
             )
-            return PipelineResult(
-                text="", verdict=Verdict("block", "classifier", findings, query_type="sensitive")
-            )
+            return Verdict("block", "classifier", findings, query_type="sensitive"), None
 
         # 2. 질의 유형 (A3) + 대화 이력 (A12)
         classification = classify(query, role=ctx.role, policy=self.policy)
@@ -281,10 +321,15 @@ class Guardrail:
         verdict = verdict.merge(self._multiturn(query, ctx, verdict))
         if verdict.decision == "block":
             # 탈취 시도다. LLM 을 부르지 않는다 — 부르면 그 자체가 비용이고 로그다
-            return PipelineResult(text="", verdict=verdict)
+            return verdict, None
 
         # 3. 치환 (A1). 여기부터 원문은 사라진다
-        tokenized = await tokenize(query, owner_id=ctx.user_id, store=self.vault)
+        return verdict, await tokenize(query, owner_id=ctx.user_id, store=self.vault)
+
+    async def _run(self, query: str, ctx: RequestContext) -> PipelineResult:
+        verdict, tokenized = await self._before_llm(query, ctx)
+        if tokenized is None:
+            return PipelineResult(text="", verdict=verdict)
 
         # 4. 검색 (C6). 질의는 **가린 것**을 넘긴다 —
         #    임베딩에 원문 PII 를 넣지 않고, 토큰을 넣으면 벡터가 망가진다
@@ -335,6 +380,65 @@ class Guardrail:
             unresolved=tuple(restored.unresolved),
             doc_ids=doc_ids,
             doc_grades=doc_grades,
+        )
+
+    async def _run_split(
+        self, query: str, ctx: RequestContext, parts: PartsBuilder
+    ) -> PipelineResult:
+        """나눠 부르는 경로. 검사는 통째로, 호출만 조각마다.
+
+        검색(C6)은 하지 않는다. 이 경로를 쓰는 일(리라이팅)은 **사용자가 이미 쓴 글**을
+        다시 쓰는 것이라 참조할 바깥 문서가 없다. 쓸 일이 생기면 그때 붙인다 —
+        지금 넣어 두면 쓰지 않는 경로를 검사 없이 들고 있게 된다.
+        """
+        verdict, tokenized = await self._before_llm(query, ctx)
+        if tokenized is None:
+            return PipelineResult(text="", verdict=verdict)
+
+        # 4. 조각별 프롬프트. 호출 횟수 상한은 A2 가 **부르기 전에** 본다
+        requests = [
+            LlmRequest(
+                prompt=prompt, system=DEFAULT_SYSTEM_PROMPT,
+                max_output_tokens=DEFAULT_SPLIT_MAX_OUTPUT_TOKENS,
+            )
+            for prompt in parts(tokenized.text)
+        ]
+        responses, usage = await self.llm.generate_split(requests)
+
+        # 5. 출력 검사 (A5) — 조각마다. ★ 복원보다 먼저
+        allowed = frozenset(h.token for h in tokenized.hits if h.token)
+        checked_texts: list[str] = []
+        for response in responses:
+            checked = check_output(
+                response.text,
+                context=OutputContext(
+                    system_prompt=DEFAULT_SYSTEM_PROMPT,
+                    canaries=self.canaries,
+                    allowed_tokens=allowed,
+                ),
+            )
+            verdict = verdict.merge(checked.verdict)
+            checked_texts.append(checked.text)
+
+        # ★ 한 조각이라도 막히면 **전부** 막는다. 막힌 조각만 빼고 돌려주면
+        #   사용자는 글 가운데가 사라진 것을 모른 채 저장한다
+        if verdict.decision == "block":
+            return PipelineResult(text="", verdict=verdict, usage=usage)
+
+        # 6. 복원 (A1) — 조각마다. 금고는 하나라 vault_id 는 같다
+        restored: list[str] = []
+        unresolved: list[str] = []
+        for text in checked_texts:
+            one = await detokenize(text, tokenized.vault_id, ctx.user_id, store=self.vault)
+            restored.append(one.text)
+            unresolved += list(one.unresolved)
+
+        return PipelineResult(
+            text="\n\n".join(restored),
+            parts=tuple(restored),
+            verdict=verdict,
+            usage=usage,
+            unresolved=tuple(dict.fromkeys(unresolved)),
         )
 
     async def _write_audit(
