@@ -80,4 +80,12 @@
 /* 내 로드맵 고르기·삭제 */
 .lp-roadmap-picker { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0 4px; }
 .lp-roadmap-picker select { max-width: 100%; border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; font-size: 12px; background: #fff; }
-.lp-roadmap-delete { border: 0; background: none; padding: 0; color: #8A3B3B; font-size: 11px; text-decoration: underline; cursor: pointer; }
+
+/* 삭제 버튼 — 보통 버튼 크기, 색만 경고색 */
+.lp-danger-btn { padding: 5px 12px; font-size: 11px; border-color: #E3C4C4; color: #8A3B3B; }
+.lp-danger-btn:hover { border-color: #C99; background: #FBF3F3; }
+
+/* ① 자소서 선택 칸 — 내용이 길어지면 칸 안에서 스크롤(넓은 화면에서만, 좁으면 위아래로 쌓여 페이지 스크롤) */
+@media (min-width: 1151px) {
+  .skill-panel { position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto; }
+}

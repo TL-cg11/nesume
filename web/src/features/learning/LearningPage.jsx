@@ -12,6 +12,23 @@ const IMPORTANCE_LABEL = { required: '필수', preferred: '우대', mentioned: '
 const MODE_LABEL = { online: '온라인', offline: '오프라인' }
 const SOURCE_LABEL = { kmooc: 'K-MOOC', work24: '고용24' }
 
+// 로드맵 항목에 저장된 역량(gap_key·gap_label)을 처음 나온 순서대로 — 중요도는 왼쪽 목록에 같은 역량이 있으면 그 값
+function roadmapGaps(r, known) {
+  const seen = new Map()
+  for (const i of [...(r.items ?? [])].sort((a, b) => (a.week ?? 99) - (b.week ?? 99) || a.position - b.position)) {
+    if (i.gap_key && !seen.has(i.gap_key)) {
+      const k = known.find((g) => g.key === i.gap_key)
+      seen.set(i.gap_key, {
+        key: i.gap_key,
+        label: i.gap_label ?? i.gap_key,
+        importance: k?.importance ?? 'required',
+        evidence_fields: k?.evidence_fields ?? [],
+      })
+    }
+  }
+  return [...seen.values()]
+}
+
 // "내 로드맵" 선택 상자 문구: 생성일 · 회사 · 공고 · 학습 방법 · 진행
 function roadmapLabel(r) {
   const d = new Date(r.created_at)
@@ -161,13 +178,13 @@ export default function LearningPage() {
   }
 
   // 새 로드맵을 만들어 목록 맨 위에 넣고 연다(이전 로드맵은 목록에 남는다)
-  const generate = async ({ modeValue = mode } = {}) => {
-    if (!gaps.length) return
+  const generate = async ({ modeValue = mode, gapsValue = gaps, postingValue = postingId } = {}) => {
+    if (!gapsValue.length) return
     setCreating(true)
     setError(null)
     try {
       const payload = {
-        gaps: gaps.map((g) => ({
+        gaps: gapsValue.map((g) => ({
           key: g.key,
           label: g.label,
           importance: g.importance,
@@ -175,7 +192,7 @@ export default function LearningPage() {
         })),
         weekly_hours: weeklyHours,
       }
-      if (postingId) payload.job_posting_id = postingId
+      if (postingValue) payload.job_posting_id = postingValue
       if (modeValue) payload.mode = modeValue
       const created = await roadmapsApi.create(payload)
       setRoadmap(created)
@@ -187,11 +204,18 @@ export default function LearningPage() {
     }
   }
 
-  // 학습 방법을 바꾸면 바로 새로 만든다(로드맵이 있고 넣을 역량이 있을 때). 이전 것은 "내 로드맵" 목록에 남는다.
+  // 학습 방법을 바꾸면 **지금 보고 있는 로드맵의 역량·공고 그대로** 바로 새로 만든다(이전 것은 목록에 남음).
+  // 역량 정보(gap_key)가 없는 예전 로드맵이면 왼쪽 "로드맵에 넣을 역량"을 쓴다.
   const changeMode = (next) => {
     if (creating) return
     setMode(next)
-    if (roadmap && gaps.length) generate({ modeValue: next })
+    if (!roadmap) return
+    const fromRoadmap = roadmapGaps(roadmap, gaps)
+    if (fromRoadmap.length) {
+      generate({ modeValue: next, gapsValue: fromRoadmap, postingValue: roadmap.job_posting_id })
+    } else if (gaps.length) {
+      generate({ modeValue: next })
+    }
   }
 
   // 목록에서 고른 로드맵 열기 / 지금 로드맵 삭제(되돌릴 수 없어 확인)
@@ -480,8 +504,8 @@ export default function LearningPage() {
                     ))}
                   </select>
                   {roadmap && (
-                    <button type="button" className="lp-roadmap-delete" onClick={deleteRoadmap}>
-                      이 로드맵 삭제
+                    <button type="button" className="c-btn-secondary lp-danger-btn" onClick={deleteRoadmap}>
+                      삭제
                     </button>
                   )}
                 </div>
