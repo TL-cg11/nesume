@@ -313,6 +313,19 @@ class RoadmapNotFound(Exception):
     """해당 사용자의 로드맵/항목이 아니거나 존재하지 않음(남의 것은 404)."""
 
 
+#: 사용자당 저장본 최대 개수. 넘으면 가장 오래 저장한 것을 지우고 저장(사용자 확인 후).
+MAX_SAVED_ROADMAPS = 10
+
+
+class SavedLimitReached(Exception):
+    """저장본이 이미 한도만큼 있다 — 가장 오래된 것을 지워도 되는지 사용자 확인이 필요."""
+
+
+def _lock_owner(session: Session, owner_id: str) -> None:
+    """같은 사용자의 초안 교체·저장을 트랜잭션 끝까지 한 줄로 세운다(동시 요청에 초안 2개·한도 초과 방지)."""
+    session.execute(select(func.pg_advisory_xact_lock(func.hashtext("roadmap:" + owner_id))))
+
+
 def _owned(session: Session, roadmap_id: uuid.UUID, owner_id: str) -> LearningRoadmap:
     rm = session.get(LearningRoadmap, roadmap_id)
     if rm is None or rm.owner_id != owner_id:
@@ -347,6 +360,13 @@ def save_roadmap(
     시스템 항목은 `content_id`로 콘텐츠 참조(제목·링크는 읽을 때 조인). 매칭 콘텐츠가 없는 갭은
     `content_id=NULL`에 **역량명을 title로** 남겨 "배울 역량(콘텐츠 없음)"으로 보이게 한다.
     """
+    # 초안은 사용자당 1개(DB 부분 고유 인덱스로도 막음) — 새 초안을 넣기 **전에** 이전 초안을 지운다
+    # (항목 CASCADE). 저장본은 그대로.
+    _lock_owner(session, owner_id)
+    session.execute(
+        delete(LearningRoadmap)
+        .where(LearningRoadmap.owner_id == owner_id, LearningRoadmap.saved_at.is_(None))
+    )
     roadmap = LearningRoadmap(
         owner_id=owner_id,
         job_posting_id=job_posting_id,
@@ -355,14 +375,6 @@ def save_roadmap(
     )
     session.add(roadmap)
     session.flush()  # roadmap.id 확보
-    # 초안은 사용자당 1개 — 저장 안 한 이전 초안은 지운다(항목 CASCADE). 저장본은 그대로.
-    session.execute(
-        delete(LearningRoadmap).where(
-            LearningRoadmap.owner_id == owner_id,
-            LearningRoadmap.saved_at.is_(None),
-            LearningRoadmap.id != roadmap.id,
-        )
-    )
 
     place = _placement(plan.weeks)
     for idx, sel in enumerate(plan.selections):
@@ -427,15 +439,34 @@ def update_roadmap(
     weekly_hours: int | None = None,
     save: bool = False,
     name: str | None = None,
+    replace_oldest: bool = False,
 ) -> LearningRoadmap:
     """주당 시간·저장·이름 수정. 준 것만 바뀐다.
 
     `save`면 초안을 저장본으로(이미 저장본이면 처음 저장 시각 유지). 이름은 빈 값이면 지운다.
+    저장본이 이미 `MAX_SAVED_ROADMAPS`개면 `SavedLimitReached` — `replace_oldest`(사용자 확인)면
+    가장 오래 저장한 1개를 지우고 저장한다.
     """
     rm = _owned(session, roadmap_id, owner_id)
     if weekly_hours is not None:
         rm.weekly_hours = weekly_hours
     if save and rm.saved_at is None:
+        _lock_owner(session, owner_id)
+        saved = select(LearningRoadmap.id).where(
+            LearningRoadmap.owner_id == owner_id, LearningRoadmap.saved_at.is_not(None)
+        )
+        count = session.scalar(select(func.count()).select_from(saved.subquery()))
+        if count >= MAX_SAVED_ROADMAPS:
+            if not replace_oldest:
+                raise SavedLimitReached(str(roadmap_id))
+            oldest = session.scalars(
+                saved.order_by(LearningRoadmap.saved_at, LearningRoadmap.id)
+                .limit(count - MAX_SAVED_ROADMAPS + 1)
+            ).all()
+            session.execute(
+                delete(LearningRoadmap)
+                .where(LearningRoadmap.id.in_(oldest))
+                    )
         rm.saved_at = func.now()
     if name is not None:
         rm.name = name.strip() or None

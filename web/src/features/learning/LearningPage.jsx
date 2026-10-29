@@ -12,6 +12,7 @@ import './learning.css'
 const IMPORTANCE_LABEL = { required: '필수', preferred: '우대', mentioned: '참고' }
 const MODE_LABEL = { online: '온라인', offline: '오프라인' }
 const SOURCE_LABEL = { kmooc: 'K-MOOC', work24: '고용24' }
+const MAX_SAVED = 10 // 사용자당 저장본 한도(서버 MAX_SAVED_ROADMAPS와 같게)
 
 // 로드맵 항목에 저장된 역량(gap_key·gap_label)을 처음 나온 순서대로 — 중요도는 왼쪽 목록에 같은 역량이 있으면 그 값
 function roadmapGaps(r, known) {
@@ -237,11 +238,19 @@ export default function LearningPage() {
     }
   }
 
-  // 초안 → 저장본(이름은 선택, 비우면 서랍에 "회사 공고"로 보인다)
+  // 초안 → 저장본(이름은 선택, 비우면 목록에 "회사 공고"로 보인다).
+  // 저장본이 이미 MAX_SAVED개면 가장 오래 저장한 것이 지워진다고 알리고 확인을 받는다(서버도 확인 없으면 409).
   const saveRoadmap = async () => {
     if (!roadmap) return
+    let oldest = null
+    if (savedRoadmaps.length >= MAX_SAVED) {
+      oldest = savedRoadmaps.reduce((a, b) => (a.saved_at <= b.saved_at ? a : b))
+      const label = oldest.name || roadmapLabel(oldest)
+      if (!window.confirm(`로드맵은 최대 ${MAX_SAVED}개까지 저장됩니다. 지금 저장하면 가장 오래된 로드맵 '${label}'이(가) 삭제됩니다. 저장하시겠습니까?`)) return
+    }
     try {
-      const saved = await roadmapsApi.save(roadmap.id, (naming ?? '').trim())
+      const saved = await roadmapsApi.save(roadmap.id, (naming ?? '').trim(), { replaceOldest: !!oldest })
+      if (oldest) setRoadmaps((list) => list.filter((r) => r.id !== oldest.id))
       setRoadmap(saved)
       setNaming(null)
     } catch (e) {

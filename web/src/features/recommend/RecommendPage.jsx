@@ -52,7 +52,7 @@ function PostingDetail({ posting }) {
 }
 
 export default function RecommendPage() {
-  const [heldText, setHeldText] = useState('aws, docker, iam')
+  const [heldText, setHeldText] = useState('')
   const [result, setResult] = useState(null) // null=아직 실행 안 함
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -129,7 +129,7 @@ export default function RecommendPage() {
       <div>
         <p className="c-eyebrow">CAREER MATCH</p>
         <h1 className="c-page-heading">공고 추천 · 역량 분석</h1>
-        <p className="c-page-subtitle">보유 역량을 넣으면 맞춤 공고를 추천합니다. (추천 결과는 데모 데이터입니다)</p>
+        <p className="c-page-subtitle">보유 역량을 넣으면 맞춤 공고를 추천합니다.</p>
       </div>
 
       <form className="c-panel" onSubmit={run}>
@@ -141,7 +141,7 @@ export default function RecommendPage() {
               className="field"
               value={heldText}
               onChange={(e) => setHeldText(e.target.value)}
-              placeholder="예: aws, docker, iam, linux"
+              placeholder="예: Python, SQL, AWS — 쉼표로 구분"
             />
           </div>
           <button className="c-btn-primary c-btn-full" type="submit" disabled={loading}>

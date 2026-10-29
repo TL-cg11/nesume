@@ -71,7 +71,15 @@ class LearningRoadmap(Base):
     """사용자별 학습 로드맵(본인 전용, grade=personal). 공고 한 건 기준의 로드맵."""
 
     __tablename__ = "learning_roadmaps"
-    __table_args__ = (grade_check(), one_of("mode", LEARNING_MODES, "learning_roadmaps_mode"))
+    __table_args__ = (
+        grade_check(),
+        one_of("mode", LEARNING_MODES, "learning_roadmaps_mode"),
+        # 초안(saved_at NULL)은 사용자당 1개 — 서비스가 지키고 DB도 막는다(0021)
+        Index(
+            "uq_learning_roadmaps_one_draft", "owner_id",
+            unique=True, postgresql_where=text("saved_at IS NULL"),
+        ),
+    )
 
     id: Mapped[UuidPk]
     owner_id: Mapped[str] = owner_fk()
@@ -80,7 +88,8 @@ class LearningRoadmap(Base):
     weekly_hours: Mapped[int] = mapped_column(Integer, default=5, server_default="5")  # 사용자 입력
     # 만들 때 고른 학습 방법(online/offline). NULL = 전체(온·오프 1개씩). 목록 표시용.
     mode: Mapped[str | None] = mapped_column(String(10))
-    # 사용자가 [저장]한 시각. NULL = 초안(사용자당 1개, 새로 만들면 이전 초안은 지운다). 목록엔 저장본만.
+    # 사용자가 [저장]한 시각. NULL = 초안(사용자당 1개, 새로 만들면 이전 초안은 지운다).
+    # 목록엔 저장본만(최대 10개).
     saved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     name: Mapped[str | None] = mapped_column(String(200))  # 저장할 때 붙인 이름(선택)
     grade: Mapped[str] = grade_column(Grade.PERSONAL)

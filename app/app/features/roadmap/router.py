@@ -135,9 +135,16 @@ def update_roadmap(roadmap_id: uuid.UUID, payload: RoadmapUpdate, user: Authenti
         rm = service.update_roadmap(
             db, roadmap_id=roadmap_id, owner_id=user.sub,
             weekly_hours=payload.weekly_hours, save=payload.save, name=payload.name,
+            replace_oldest=payload.replace_oldest,
         )
     except service.RoadmapNotFound:
         raise _NOT_FOUND from None
+    except service.SavedLimitReached:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"저장한 로드맵이 이미 {service.MAX_SAVED_ROADMAPS}개입니다. "
+            "가장 오래된 것을 지우고 저장하려면 확인이 필요합니다.",
+        ) from None
     db.flush()
     return _roadmap_out(db, rm, user.sub)
 

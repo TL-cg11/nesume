@@ -5,13 +5,13 @@
 .inline-head { display: flex; align-items: center; gap: 12px; }
 
 /* 오류 상태(roadmap-empty 변형) */
-.roadmap-error { background: #FCEEEE; }
-.roadmap-error strong { color: #8A3B3B; }
+.roadmap-error { background: var(--danger-soft); }
+.roadmap-error strong { color: var(--danger); }
 
 /* skill-panel 안의 생성 버튼은 위 여백을 둔다 */
 .skill-panel .btn-full { margin-top: 16px; }
 
-.lp-select { width: 100%; margin: 4px 0 12px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface, #fff); color: var(--fg); }
+.lp-select { width: 100%; margin: 4px 0 12px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface, var(--surface)); color: var(--fg); }
 .lp-step-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 14px 0 8px; }
 .lp-step-head h4 { margin: 0; font-size: 13px; }
 .lp-filter { display: inline-flex; gap: 4px; }
@@ -43,7 +43,7 @@
 /* 강좌 없는 갭 → 직접 추가(대체) · 항목 삭제 */
 .c-lesson-card { position: relative; padding-right: 30px; }
 .lp-item-remove { position: absolute; top: 8px; right: 10px; border: 0; background: transparent; color: var(--muted); font-size: 16px; line-height: 1; cursor: pointer; padding: 2px 4px; }
-.lp-item-remove:hover { color: #8A3B3B; }
+.lp-item-remove:hover { color: var(--danger); }
 .lp-add-btn { margin-top: 8px; padding: 6px 10px; font-size: 11px; }
 .lp-add-form { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
 .lp-add-form input { border: 1px solid var(--border); border-radius: 8px; padding: 7px 9px; font-size: 12px; }
@@ -51,17 +51,17 @@
 .lp-add-actions button { padding: 6px 12px; font-size: 11px; }
 
 /* 학습 방법 배지(오프라인) · AI 추천 배지 · 전체 보기 */
-.c-mode-offline { background: #E5F4EA; color: #2F7A4B; }
-.lp-ai-badge { border: 1px dashed #C9A54B; border-radius: 999px; padding: 1px 7px; font-size: 10px; color: #8A6A1F; background: #FFF9EA; white-space: nowrap; }
+.c-mode-offline { background: var(--success-soft); color: var(--success); }
+.lp-ai-badge { border: 1px dashed var(--warning); border-radius: 999px; padding: 1px 7px; font-size: 10px; color: var(--warning); background: var(--warning-soft); white-space: nowrap; }
 .lp-browse-btn { margin-top: 6px; border: 0; background: none; padding: 0; color: var(--accent); font-size: 11px; text-decoration: underline; cursor: pointer; }
 
 .lp-cand-dialog { width: min(720px, calc(100vw - 32px)); max-height: calc(100vh - 64px); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; }
-.lp-cand-dialog::backdrop { background: rgba(20, 30, 40, .35); }
+.lp-cand-dialog::backdrop { background: rgb(0 0 0 / 40%); }
 .lp-cand-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .lp-cand-head h3 { font-size: 15px; }
 .lp-cand-close { border: 0; background: none; font-size: 20px; color: var(--muted); cursor: pointer; }
 .lp-cand-filter { display: flex; align-items: center; gap: 6px; margin: 12px 0; flex-wrap: wrap; }
-.lp-cand-filter button { border: 1px solid var(--border); border-radius: 999px; background: #fff; padding: 4px 11px; font-size: 11px; cursor: pointer; }
+.lp-cand-filter button { border: 1px solid var(--border); border-radius: 999px; background: var(--surface); padding: 4px 11px; font-size: 11px; cursor: pointer; }
 .lp-cand-filter button.on { border-color: var(--accent); color: var(--accent); font-weight: 700; }
 .lp-cand-count { margin-left: auto; font-size: 11px; color: var(--muted); }
 .lp-cand-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
@@ -74,16 +74,16 @@
 .lp-cand-tag { font-size: 11px; color: var(--muted); }
 .lp-cand-pager { display: flex; justify-content: center; align-items: center; gap: 10px; margin-top: 12px; font-size: 12px; }
 .lp-cand-empty, .lp-cand-error { font-size: 12px; color: var(--muted); padding: 12px 0; }
-.lp-cand-error { color: #8A3B3B; }
+.lp-cand-error { color: var(--danger); }
 @media (max-width: 560px) { .lp-cand-item { flex-direction: column; } .lp-cand-actions { flex-direction: row; } }
 
 /* 내 로드맵 고르기·삭제 */
 .lp-roadmap-picker { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0 4px; }
-.lp-roadmap-picker select { max-width: 100%; border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; font-size: 12px; background: #fff; }
+.lp-roadmap-picker select { max-width: 100%; border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; font-size: 12px; background: var(--surface); }
 
 /* 초안/저장 상태 · 저장 · 저장된 로드맵 서랍 */
-.lp-draft-tag { font-size: 11px; color: #8A6A1F; background: #FFF9EA; border: 1px dashed #C9A54B; border-radius: 999px; padding: 2px 8px; }
-.lp-saved-tag { font-size: 11px; color: #2F7A4B; background: #E5F4EA; border-radius: 999px; padding: 2px 8px; }
+.lp-draft-tag { font-size: 11px; color: var(--warning); background: var(--warning-soft); border: 1px dashed var(--warning); border-radius: 999px; padding: 2px 8px; }
+.lp-saved-tag { font-size: 11px; color: var(--success); background: var(--success-soft); border-radius: 999px; padding: 2px 8px; }
 .lp-save-btn { padding: 5px 12px; font-size: 11px; }
 .lp-save-form { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .lp-save-form input { border: 1px solid var(--border); border-radius: 8px; padding: 6px 9px; font-size: 12px; min-width: 180px; }
@@ -93,7 +93,7 @@
 /* 저장된 로드맵 팝오버 — 버튼 바로 아래에 펼쳐진다 */
 .lp-pop-wrap { position: relative; margin-left: auto; }
 .lp-pop-btn { padding: 5px 11px; font-size: 11px; white-space: nowrap; }
-.lp-pop { position: absolute; top: calc(100% + 6px); right: 0; z-index: 20; width: min(360px, calc(100vw - 32px)); max-height: 420px; overflow-y: auto; background: #fff; border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 10px 28px rgba(20, 30, 40, .14); padding: 10px; }
+.lp-pop { position: absolute; top: calc(100% + 6px); right: 0; z-index: 20; width: min(360px, calc(100vw - 32px)); max-height: 420px; overflow-y: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow-md); padding: 10px; }
 .lp-pop-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .lp-pop-item { display: flex; flex-direction: column; gap: 3px; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; font-size: 12px; }
 .lp-pop-item.on { border-color: var(--accent); }
@@ -102,8 +102,8 @@
 .lp-pop-actions button { padding: 5px 11px; font-size: 11px; }
 
 /* 삭제 버튼 — 저장 버튼과 같은 크기, 색만 경고색 */
-.lp-danger-btn { border-color: #E3C4C4; color: #8A3B3B; }
-.lp-danger-btn:hover { border-color: #C99; background: #FBF3F3; }
+.lp-danger-btn { border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); color: var(--danger); }
+.lp-danger-btn:hover { border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); background: var(--danger-soft); }
 
 /* ① 자소서 선택 칸 — 내용이 길어지면 칸 안에서 스크롤(넓은 화면에서만, 좁으면 위아래로 쌓여 페이지 스크롤) */
 @media (min-width: 1151px) {

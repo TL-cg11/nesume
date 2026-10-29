@@ -70,6 +70,8 @@ class RoadmapUpdate(BaseModel):
     weekly_hours: int | None = Field(default=None, ge=1, le=60)
     save: bool = False
     name: str | None = Field(default=None, max_length=200)
+    #: 저장본이 한도(10개)면 가장 오래된 것을 지우고 저장 — 사용자가 확인했을 때만 true
+    replace_oldest: bool = False
 
 
 class UserItemCreate(BaseModel):

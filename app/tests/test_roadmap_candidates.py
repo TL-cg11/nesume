@@ -271,3 +271,52 @@ def test_update_other_owner_not_found(db_session):
     rm = _save(db_session, owner, [_gap("nz", "N")])
     with pytest.raises(service.RoadmapNotFound):
         service.update_roadmap(db_session, roadmap_id=rm.id, owner_id=other, save=True)
+
+
+def test_draft_unique_per_owner_in_db(db_session):
+    from sqlalchemy.exc import IntegrityError
+
+    from app.models.learning import LearningRoadmap
+
+    owner = _user(db_session)
+    db_session.add(LearningRoadmap(owner_id=owner))
+    db_session.flush()
+    with pytest.raises(IntegrityError), db_session.begin_nested():
+        db_session.add(LearningRoadmap(owner_id=owner))
+        db_session.flush()
+
+
+def test_save_limit_needs_confirm_then_drops_oldest(db_session):
+    from datetime import UTC, datetime, timedelta
+
+    from app.models.learning import LearningRoadmap
+
+    owner, other = _user(db_session), _user(db_session)
+    base = datetime(2026, 1, 1, tzinfo=UTC)
+    saved = [
+        LearningRoadmap(owner_id=owner, saved_at=base + timedelta(days=i))
+        for i in range(service.MAX_SAVED_ROADMAPS)
+    ]
+    db_session.add_all(saved + [LearningRoadmap(owner_id=other, saved_at=base)])
+    db_session.flush()
+    draft = _save(db_session, owner, [_gap("limz", "L")])
+
+    with pytest.raises(service.SavedLimitReached):
+        service.update_roadmap(db_session, roadmap_id=draft.id, owner_id=owner, save=True)
+    service.update_roadmap(db_session, roadmap_id=draft.id, owner_id=owner, save=True, replace_oldest=True)
+    db_session.flush()
+    db_session.expire_all()
+
+    mine = {r.id for r in service.list_roadmaps(db_session, owner_id=owner)}
+    assert len(mine) == service.MAX_SAVED_ROADMAPS
+    assert saved[0].id not in mine and draft.id in mine and saved[1].id in mine
+    assert len(service.list_roadmaps(db_session, owner_id=other)) == 1  # 남의 저장본은 그대로
+
+
+def test_save_under_limit_needs_no_confirm(db_session):
+    owner = _user(db_session)
+    rm = _save(db_session, owner, [_gap("ulz", "U")])
+    service.update_roadmap(db_session, roadmap_id=rm.id, owner_id=owner, save=True)
+    db_session.flush()
+    db_session.refresh(rm)
+    assert rm.saved_at is not None
