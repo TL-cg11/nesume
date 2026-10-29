@@ -55,17 +55,21 @@ function UserBlock() {
   }
   return (
     <div className="app-user">
-      <span className="app-user-av">
-        <Icon name="user" />
-      </span>
-      <span className="app-user-info">
-        <span className="app-user-name" title={email ?? ''}>
-          {email ?? me?.username ?? ''}
+      <div className="app-user-id">
+        <span className="app-user-av">
+          <Icon name="user" />
         </span>
-        <span className="app-user-role">{me ? ROLE_LABEL[me.role] ?? me.role : ''}</span>
-      </span>
-      <button type="button" className="secondary" onClick={logout} title="로그아웃" aria-label="로그아웃">
+        <span className="app-user-info">
+          <span className="app-user-name" title={email ?? ''}>
+            {email ?? me?.username ?? ''}
+          </span>
+          <span className="app-user-role">{me ? ROLE_LABEL[me.role] ?? me.role : ''}</span>
+        </span>
+      </div>
+      {/* 이메일을 가리지 않도록 사용자 정보 아래 줄에 작게 둔다(모바일 상단 바에서는 옆에 아이콘만) */}
+      <button type="button" className="secondary app-user-logout" onClick={logout} title="로그아웃" aria-label="로그아웃">
         <Icon name="logout" />
+        <span className="app-user-logout-label">로그아웃</span>
       </button>
     </div>
   )
