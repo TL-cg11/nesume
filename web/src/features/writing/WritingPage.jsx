@@ -3,6 +3,7 @@
 //     검사·교정  맞춤법(A7)과 STAR 구성을 **따로** 검사한다. 둘 다 AI를 거친다 —
 //                STAR 는 낱말 단서로는 "있다/없다" 밖에 못 보고, "결과는 있는데 숫자가 없다"
 //                같은 부족함은 뜻을 읽어야 안다 (features/writing/star_review.py).
+//                빠진 요소는 팝업에서 요소마다 AI 작성/빼기를 골라 보완한다 (star_complete.py).
 //     다시 쓰기  내가 평소 쓴 글(말투 샘플)을 넣으면 본문을 그 말투로 다시 쓴다 (A6).
 //
 // ★ 글이 바뀌면 결과를 버린다. 제안에는 위치(start/end)가 들어 있어 글이 바뀌면 맞지 않는다.
@@ -37,6 +38,10 @@ export default function WritingPage() {
   const [tab, setTab] = useState('review')
   const [spelling, setSpelling] = useState(null)
   const [star, setStar] = useState(null)
+  // AI가 STAR 요소를 써 넣은 글. 글이 바뀌면 버린다
+  const [starFill, setStarFill] = useState(null)
+  // 사용자가 "빼기" 로 고른 STAR 요소. 글을 고쳐도 남긴다 — 그 사람의 선택이다
+  const [starOmit, setStarOmit] = useState(() => new Set())
   const [rewrite, setRewrite] = useState(null)
   // 말투 샘플은 탭을 오가도 남긴다. 저장하지는 않는다
   const [sample, setSample] = useState('')
@@ -53,6 +58,7 @@ export default function WritingPage() {
   const clearResults = () => {
     setSpelling(null)
     setStar(null)
+    setStarFill(null)
     setRewrite(null)
     setError(null)
   }
@@ -151,6 +157,10 @@ export default function WritingPage() {
               setSpelling={setSpelling}
               star={star}
               setStar={setStar}
+              starFill={starFill}
+              setStarFill={setStarFill}
+              starOmit={starOmit}
+              setStarOmit={setStarOmit}
             />
           )}
           {tab === 'rewrite' && (

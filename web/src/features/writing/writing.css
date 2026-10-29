@@ -84,3 +84,27 @@
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
   white-space: pre-wrap; font-family: inherit; font-size: var(--text-sm); line-height: var(--leading);
 }
+
+/* 맞춤법 제안 — 바뀐 낱말만 표시하고 나머지는 보통 글씨 */
+.wr-diff .wr-from, .wr-diff .wr-to { padding: 0 1px; }
+
+/* STAR 보완 팝업 (브라우저 기본 <dialog>) */
+.wr-dialog {
+  width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 64px);
+  padding: var(--space-4) var(--space-5); border: 1px solid var(--border);
+  border-radius: var(--radius-md); background: var(--surface); color: var(--fg);
+  box-shadow: var(--shadow-md);
+}
+.wr-dialog::backdrop { background: rgb(0 0 0 / 45%); }
+.wr-dialog h2 { margin: 0; font-size: var(--text-lg); }
+.wr-dialog .stack { margin-top: 0; }
+.wr-fill-row p { margin: var(--space-1) 0 0; }
+.wr-choice { display: inline-flex; gap: var(--space-1); align-items: center; cursor: pointer; margin-right: var(--space-3); }
+.wr-hint { width: 100%; }
+.wr-small { padding: 0 var(--space-2); font-size: var(--text-sm); }
+
+/* AI가 써 넣거나 고친 부분 — 색만으로 구분하지 않도록 밑줄도 준다 (가이드 10절) */
+.wr-ai {
+  background: var(--accent-soft); color: var(--fg); border-radius: 3px;
+  padding: 0 2px; text-decoration: underline dotted var(--accent);
+}
