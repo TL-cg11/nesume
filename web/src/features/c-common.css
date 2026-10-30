@@ -127,7 +127,7 @@
 
 .c-roadmap-progress span { font-size:9px; }
 
-.c-selected-skills-line { display:flex; align-items:center; flex-wrap:wrap; gap:7px; margin:-2px 0 14px; color:var(--muted); font-size:10px; }
+.c-selected-skills-line { display:flex; align-items:center; flex-wrap:wrap; gap:7px; margin:28px 0 14px; color:var(--muted); font-size:10px; }
 
 .c-selected-skill { display:inline-flex; align-items:center; gap:5px; border-radius:999px; background:var(--accent-soft); padding:5px 8px; color:var(--accent-text); font-weight:700; }
 
