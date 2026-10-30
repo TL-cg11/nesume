@@ -45,6 +45,8 @@ class PostingBrief(BaseModel):
     region_name: str | None
     closes_on: date | None
     is_active: bool
+    #: 원문 주소(`source_url`, 서울시 공고는 없음). 화면은 http/https만 연다(safeUrl).
+    url: str | None = Field(None, validation_alias="source_url")
 
 
 class ApplicationOut(BaseModel):

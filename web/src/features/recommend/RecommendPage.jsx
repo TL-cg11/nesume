@@ -80,11 +80,8 @@ export default function RecommendPage({ resumeId = null, embedded = false }) {
     setApplyingId(it.posting_id)
     setError(null)
     try {
-      await applicationsApi.create({
-        status: 'applied',
-        job_posting_id: it.posting_id,
-        memo: it.posting?.title ?? null,
-      })
+      // 공고가 연결되면 카드가 공고 제목을 보여 주므로 메모는 비워 둔다(같은 글이 두 번 보이던 문제)
+      await applicationsApi.create({ status: 'applied', job_posting_id: it.posting_id })
       setAppliedIds((s) => new Set(s).add(it.posting_id))
     } catch (err) {
       setError(err instanceof ApiError ? err.message : '지원 등록에 실패했습니다.')
