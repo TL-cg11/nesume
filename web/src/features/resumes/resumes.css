@@ -205,3 +205,9 @@
   box-shadow: var(--shadow-md); font-size: var(--text-sm); white-space: nowrap;
 }
 .share-summary:hover .share-pop, .share-summary:focus-visible .share-pop { display: flex; }
+
+/* B12 PDF 내보내기(10/30) */
+.pdf-export { margin-top: var(--space-3); }
+.pdf-export h2 { margin: 0; }
+.pdf-contact { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.pdf-contact input { flex: 1 1 10rem; min-width: 0; color: var(--fg); }

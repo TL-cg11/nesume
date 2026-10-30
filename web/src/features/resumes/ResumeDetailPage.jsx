@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router'
 import { resumesApi } from './api.js'
 import RecommendPage from '../recommend/RecommendPage.jsx'
+import PdfExport from './PdfExport.jsx'
 import PolishTab from './PolishTab.jsx'
 import QuestionEditor from './QuestionEditor.jsx'
 import SharePanel from './SharePanel.jsx'
@@ -47,6 +48,7 @@ export default function ResumeDetailPage() {
   const [selectedId, setSelectedId] = useState(null)
   const [newQuestion, setNewQuestion] = useState({ title: '', char_limit: String(DEFAULT_LIMIT) })
   const [adding, setAdding] = useState(false) // 문항 추가: 버튼을 눌러야 입력칸이 열린다(10/29)
+  const [exporting, setExporting] = useState(false) // B12 PDF 내보내기 칸
   const [error, setError] = useState(null)
   const [shareRev, setShareRev] = useState(0) // 공유가 바뀌면 버전 태그를 다시 불러온다
 
@@ -130,10 +132,12 @@ export default function ResumeDetailPage() {
             </option>
           ))}
         </select>
+        <button className="secondary" onClick={() => setExporting((v) => !v)}>PDF로 내보내기</button>
         <button className="danger" onClick={removeResume}>
           삭제
         </button>
       </div>
+      {exporting && <PdfExport resumeId={resumeId} onClose={() => setExporting(false)} />}
       {error && <p className="error">{error}</p>}
 
       <div className="resume-tabs" role="tablist" aria-label="자소서 기능" ref={tabsRef}>
