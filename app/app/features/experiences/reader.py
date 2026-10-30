@@ -5,6 +5,8 @@ B 내부 repository·service를 직접 조합하지 않고 이 모듈만 쓴다.
 - 값은 원문으로 복원해서 준다. DB 값은 문서 단위 토큰이라 여러 건을 합치면 번호가 겹친다.
   LLM에 보낼 때는 A8을 거쳐 A1이 한 번에 다시 토큰화한다.
 """
+import uuid
+
 from sqlalchemy.orm import Session
 
 from app.features.experiences import repository as repo
@@ -18,6 +20,17 @@ def list_owner_experiences(db: Session, owner_id: str, *, limit: int = 50, offse
     if not 1 <= limit <= MAX_LIMIT or offset < 0:
         raise ValueError("limit은 1~100, offset은 0 이상")
     rows = repo.list_experiences(db, owner_id, [], limit, offset)
+    return [service.to_owner_view(db, owner_id, owner_id, e) for e in rows]
+
+
+def linked_experiences_for_resume(db: Session, owner_id: str, resume_id: uuid.UUID) -> list[dict]:
+    """자소서 id → 그 자소서 문항에 끌어온 경험 목록(원문, C 요청 10/30).
+
+    본인 소유만, 자소서·문항·경험 중 하나라도 삭제됐으면 제외. 같은 경험이 여러 문항에 연결돼도 한 번.
+    순서는 문항 순서 → 연결한 순서. 자소서가 없거나 남의 것이면 빈 목록.
+    형식은 list_owner_experiences와 같다(id 포함).
+    """
+    rows = repo.linked_experiences_for_resume(db, owner_id, resume_id)
     return [service.to_owner_view(db, owner_id, owner_id, e) for e in rows]
 
 
