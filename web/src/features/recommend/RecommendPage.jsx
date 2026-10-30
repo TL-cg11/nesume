@@ -169,7 +169,7 @@ export default function RecommendPage({ resumeId = null, embedded = false }) {
           <div>
             <h3>추천 공고</h3>
             {/* [B 10/29] 자소서 탭 안에서는 개발용 설명을 숨긴다 */}
-            {!embedded && <p>POST /recommendations · 점수 = 0.5 벡터 + 0.5 키워드율</p>}
+            {!embedded && <p>POST /recommendations · 점수 = 0.5 벡터 + 0.5 키워드율 (키워드 정보 없으면 벡터만)</p>}
           </div>
           {result && !result.cold_start && (
             <span className="c-tiny-label">{result.items.length}건</span>
@@ -220,7 +220,7 @@ export default function RecommendPage({ resumeId = null, embedded = false }) {
                   <span className="rec-chip rec-chip-vec">벡터 {pct(it.vector_score)}</span>
                   {it.keyword_available === false ? (
                     // 공고에 비교할 기술 키워드가 없음 — 0%(안 맞음)와 구분
-                    <span className="rec-chip rec-chip-kw" title="공고에서 비교할 기술 키워드를 찾지 못해 문맥(벡터) 점수로만 추천했어요">
+                    <span className="rec-chip rec-chip-kw" title="공고에서 비교할 기술 키워드를 찾지 못해 문맥(벡터) 점수만으로 점수를 매겼어요">
                       키워드 정보 없음
                     </span>
                   ) : (

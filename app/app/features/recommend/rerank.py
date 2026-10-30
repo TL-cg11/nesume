@@ -104,12 +104,17 @@ def rerank(
 ) -> list[Recommendation]:
     """하이브리드 재정렬 → 상위 top_k. `최종 = w_v·벡터 + w_k·키워드율`.
 
-    키워드 매칭이 없는 공고는 0으로(벡터 점수만 반영). 동점이면 벡터 점수가 높은 쪽 먼저.
+    공고에 비교할 기술 키워드가 없으면(`available=False`) **벡터 점수만으로** 최종 점수를 낸다
+    (사용자 결정 2026-10-30 — 키워드 0으로 계산하면 비교 불가 공고가 반점수로 밀렸다, docs/C8.md).
+    동점이면 벡터 점수가 높은 쪽 먼저.
     """
     recs: list[Recommendation] = []
     for c in candidates:
         km = keyword_by_posting.get(c.posting_id, KeywordMatch(0.0, (), available=False))
-        final = vector_weight * c.vector_score + keyword_weight * km.rate
+        if km.available:
+            final = vector_weight * c.vector_score + keyword_weight * km.rate
+        else:
+            final = c.vector_score  # 키워드 정보 없음 → 벡터만
         recs.append(
             Recommendation(
                 posting_id=c.posting_id,

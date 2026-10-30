@@ -50,7 +50,7 @@ class RecommendationOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     posting_id: uuid.UUID
-    #: 최종 점수 = 0.5 벡터 + 0.5 키워드율(docs/C8.md 결정2).
+    #: 최종 점수 = 0.5 벡터 + 0.5 키워드율(docs/C8.md 결정2). 키워드 정보 없으면 벡터 점수만.
     score: float
     vector_score: float
     keyword_score: float
