@@ -50,7 +50,7 @@ const FIELD_LABEL = {
   title: '공고 제목',
   job_name: '직무명',
   job_content: '직무 내용',
-  certificates: '자격증',
+  certificates: '자격·우대', // 고용24 sptCertEtc엔 자격증과 전공·우대가 섞여 온다
   preferred: '우대사항',
   major: '전공',
   computer_skills: '컴퓨터 활용',

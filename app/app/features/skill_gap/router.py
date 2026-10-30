@@ -96,7 +96,8 @@ def learning_gaps_for(payload: LearningGapsRequest, user: AuthenticatedUser, db:
 
     # 요건마다 종류(기술/직무/조건/잡음)를 붙인다 — from_coverage와 report.matches는 같은 순서
     flat = from_coverage(report.matches)
-    kinds = [kind_of(m.keyword.text, m.keyword.category) for m in report.matches]
+    # 원문 줄 문맥(전공 목록)은 좁힌 분야 글로 본다
+    kinds = [kind_of(m.keyword.text, m.keyword.category, fields) for m in report.matches]
     by_kind = {SKILL: [], DOMAIN: []}
     conditions, covered = [], []
     for m, f, (kind, cond) in zip(report.matches, flat, kinds, strict=True):
