@@ -30,6 +30,8 @@ class Candidate:
 
     posting_id: uuid.UUID
     vector_score: float
+    #: 가장 가까웠던 청크 번호. 모집분야가 여럿인 공고면 = 자소서에 가장 맞는 분야 순번
+    best_chunk: int = 0
 
 
 @dataclass(frozen=True)
@@ -53,6 +55,10 @@ class Recommendation:
     matched_keywords: tuple[str, ...] = field(default_factory=tuple)
     #: False = 공고에 비교할 사전 기술이 없어 키워드율이 의미 없음(화면은 "키워드 정보 없음")
     keyword_available: bool = True
+    #: 가장 가까웠던 청크 번호(모집분야 여럿이면 분야 순번)
+    best_chunk: int = 0
+    #: 자소서에 가장 맞는 모집분야 순번(분야가 여럿이고 분야별 색인이 된 공고만, 아니면 None)
+    field_index: int | None = None
 
 
 def similarity_from_distance(distance: float) -> float:
@@ -64,18 +70,21 @@ def similarity_from_distance(distance: float) -> float:
     return max(0.0, min(1.0, 1.0 - distance))
 
 
-def aggregate_candidates(rows: Iterable[tuple[uuid.UUID, float]]) -> list[Candidate]:
+def aggregate_candidates(rows: Iterable[tuple]) -> list[Candidate]:
     """멀티벡터 검색 결과(여러 쿼리 × 여러 청크)를 **공고 id로 묶어 최고 유사도**만 남긴다.
 
-    `rows` = (source_id=공고 id, distance) 들. 같은 공고가 여러 청크·여러 쿼리로 나와도 **한 번**,
-    가장 가까운(최고 유사도) 점수를 공고 점수로 삼는다(docs/C8.md 공고 단위 집계).
+    `rows` = (source_id=공고 id, distance[, chunk_index]) 들. 같은 공고가 여러 청크·여러 쿼리로 나와도
+    **한 번**, 가장 가까운(최고 유사도) 점수를 공고 점수로 삼고 그 청크 번호를 남긴다
+    (docs/C8.md 공고 단위 집계).
     """
-    best: dict[uuid.UUID, float] = {}
-    for source_id, distance in rows:
+    best: dict[uuid.UUID, tuple[float, int]] = {}
+    for row in rows:
+        source_id, distance = row[0], row[1]
+        chunk = row[2] if len(row) > 2 else 0
         sim = similarity_from_distance(distance)
-        if source_id not in best or sim > best[source_id]:
-            best[source_id] = sim
-    return [Candidate(pid, sim) for pid, sim in best.items()]
+        if source_id not in best or sim > best[source_id][0]:
+            best[source_id] = (sim, chunk)
+    return [Candidate(pid, sim, chunk) for pid, (sim, chunk) in best.items()]
 
 
 def keyword_match_rate(
@@ -123,6 +132,7 @@ def rerank(
                 final_score=final,
                 matched_keywords=km.matched,
                 keyword_available=km.available,
+                best_chunk=c.best_chunk,
             )
         )
     recs.sort(key=lambda r: (r.final_score, r.vector_score), reverse=True)

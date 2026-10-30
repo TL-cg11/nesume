@@ -15,7 +15,7 @@ from dataclasses import replace
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from app.auth import AuthenticatedUser
@@ -27,7 +27,7 @@ from app.features.matching.vocab import squash
 from app.features.skill_gap.classify import CONDITION, DOMAIN, SKILL, kind_of, tidy
 from app.features.skill_gap.evidence import gather_evidence
 from app.features.skill_gap.gap import from_coverage, learning_gaps
-from app.postings.read import get_posting_fields
+from app.postings.read import get_posting_fields, get_recruit_fields, narrow_to_field
 
 router = APIRouter(prefix="/learning-gaps", tags=["learning-gaps"])
 Db = Annotated[Session, Depends(get_db)]
@@ -37,6 +37,8 @@ class LearningGapsRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     resume_id: uuid.UUID
     posting_id: uuid.UUID
+    #: 모집분야가 여럿인 공고에서 **그 분야 글로만** 분석(추천이 준 "맞는 분야" 순번). 없으면 공고 전체
+    field_index: int | None = Field(default=None, ge=0, le=50)
 
 
 class GapOut(BaseModel):
@@ -86,6 +88,9 @@ def learning_gaps_for(payload: LearningGapsRequest, user: AuthenticatedUser, db:
     fields = get_posting_fields(db, payload.posting_id, user_id=user.sub)
     if evidence is None or fields is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "자소서 또는 공고를 찾을 수 없습니다")
+    if payload.field_index is not None:
+        recruit = get_recruit_fields(db, payload.posting_id, user_id=user.sub)
+        fields = narrow_to_field(fields, recruit, payload.field_index)
     prepared = prepare_posting(PostingFields(**fields))
     report = compare(tuple(extract(prepared.fields)), evidence)
 

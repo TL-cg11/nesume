@@ -22,7 +22,7 @@ from app.features.recommend.schemas import (
     RecommendRequest,
     RecommendResponse,
 )
-from app.postings.read import get_posting_fields, get_posting_link
+from app.postings.read import get_posting_fields, get_posting_link, get_recruit_fields
 
 router = APIRouter(prefix="/recommendations", tags=["recommendations"])
 Db = Annotated[Session, Depends(get_db)]
@@ -65,6 +65,10 @@ def recommend(payload: RecommendRequest, user: AuthenticatedUser, db: Db):
                 company_name=link["company_name"] if link else None,
                 source=link["source"] if link else None,
                 url=link["source_url"] if link else None,
+                field_names=[
+                    f.get("name") or f"분야 {i + 1}"
+                    for i, f in enumerate(get_recruit_fields(db, r.posting_id, user_id=user.sub))
+                ],
             )
             if fields
             else None
@@ -77,6 +81,7 @@ def recommend(payload: RecommendRequest, user: AuthenticatedUser, db: Db):
                 keyword_score=r.keyword_score,
                 matched_keywords=list(r.matched_keywords),
                 keyword_available=r.keyword_available,
+                field_index=r.field_index,
                 posting=brief,
             )
         )

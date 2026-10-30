@@ -123,3 +123,30 @@ def get_posting_detail(session: Session, posting_id: uuid.UUID, *, user_id: str)
         "url": posting.source_url,
         "is_active": posting.is_active,
     }
+
+
+def get_recruit_fields(session: Session, posting_id: uuid.UUID, *, user_id: str) -> list[dict]:
+    """모집분야 목록(2개 이상일 때만, 아니면 빈 목록). 권한 규칙은 `get_posting_fields`와 같다."""
+    posting = session.get(JobPosting, posting_id)
+    if posting is None or (posting.owner_user_id is not None and posting.owner_user_id != user_id):
+        return []
+    rf = posting.recruit_fields or []
+    return rf if len(rf) >= 2 else []
+
+
+def narrow_to_field(
+    fields: dict[str, str | None], recruit: list[dict], index: int | None
+) -> dict[str, str | None]:
+    """A11용 공고 필드를 **모집분야 하나로 좁힌다** — 직무내용·자격증을 그 분야 것으로(나머지 공통 필드 유지).
+
+    분야가 하나뿐이거나 번호가 범위 밖이면 그대로 돌려준다(합본 분석, 기존 동작).
+    """
+    if index is None or not (0 <= index < len(recruit)):
+        return fields
+    f = recruit[index]
+    body = "\n".join(v for v in (f.get("name"), f.get("job_content")) if v)
+    return {
+        **fields,
+        "job_content": body or fields.get("job_content"),
+        "certificates": f.get("certificates") or fields.get("certificates"),
+    }

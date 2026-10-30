@@ -213,6 +213,10 @@ export default function RecommendPage({ resumeId = null, embedded = false }) {
                   {it.posting?.company_name && ' · '}
                   {it.posting?.job_name ?? '직무 미상'}
                 </p>
+                {it.field_index != null && it.posting?.field_names?.[it.field_index] && (
+                  // 모집분야가 여럿인 공고 — 자소서와 가장 가까운 분야
+                  <p className="rec-item-field">맞는 분야: {it.posting.field_names[it.field_index]}</p>
+                )}
                 {SOURCE_LABEL[it.posting?.source] && (
                   <p className="rec-item-source">출처: {SOURCE_LABEL[it.posting.source]}</p>
                 )}

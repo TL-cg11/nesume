@@ -56,7 +56,10 @@ def search_public(
     """
     dist = JobPostingEmbedding.embedding.cosine_distance(query_embedding)
     stmt = (
-        select(JobPostingEmbedding.id, JobPostingEmbedding.source_id, dist.label("distance"))
+        select(
+            JobPostingEmbedding.id, JobPostingEmbedding.source_id,
+            JobPostingEmbedding.chunk_index, dist.label("distance"),
+        )
         .join(JobPosting, JobPosting.id == JobPostingEmbedding.source_id)
         .where(JobPosting.is_active.is_(True), JobPosting.needs_review.is_(False))
         # 마감일이 지난 공고 제외(당일까지 노출, 마감일 없는 상시채용은 유지). 수집 배치의 비활성화는
