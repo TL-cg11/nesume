@@ -16,7 +16,7 @@ import uuid
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import replace
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.features.recommend.rerank import (
@@ -53,7 +53,8 @@ def gather_query_vectors(
 ) -> list[list[float]]:
     """멀티벡터 쿼리 소스 = 사용자 본인 자소서·경험 임베딩(삭제·버전 제외).
 
-    `resume_id`를 주면 **그 자소서의 청크만**(본인 소유 조건은 그대로) — 맞춤 학습의 자소서별 추천.
+    `resume_id`를 주면 **그 자소서 + 그 자소서 문항에 끌어온 경험**의 청크만(본인 소유 조건은 그대로) —
+    자소서별 추천. 끌어온 경험이 없으면 자소서만(2026-10-30 결정, 키워드 근거와 같은 범위).
     """
     stmt = (
         select(UserProfileEmbedding.embedding)
@@ -62,8 +63,15 @@ def gather_query_vectors(
         .where(UserProfileEmbedding.model_version == MODEL_VERSION)
     )
     if resume_id is not None:
+        from app.features.experiences.reader import linked_experiences_for_resume
+
+        exp_ids = [e["id"] for e in linked_experiences_for_resume(session, user_id, resume_id)]
+        kind, sid = UserProfileEmbedding.source_type, UserProfileEmbedding.source_id
         stmt = stmt.where(
-            UserProfileEmbedding.source_type == "resume", UserProfileEmbedding.source_id == resume_id
+            or_(
+                and_(kind == "resume", sid == resume_id),
+                and_(kind == "experience", sid.in_(exp_ids)),
+            )
         )
     rows = session.execute(stmt).all()
     return [row[0] for row in rows]

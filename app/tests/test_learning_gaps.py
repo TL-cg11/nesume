@@ -154,6 +154,42 @@ def test_query_vectors_filtered_by_resume(db_session):
     assert len(only) == 1 and list(only[0])[0] == 1.0  # 내 r1만(남의 같은 id·경험 제외)
 
 
+def test_resume_scope_uses_only_linked_experiences(db_session, monkeypatch):
+    """자소서 기준이면 그 자소서 문항에 끌어온 경험만 — 벡터·키워드 근거 둘 다(끌어오지 않은 경험은 제외)."""
+    from app.features.experiences import index_hooks
+    from app.features.experiences import service as exp_service
+    from app.features.resumes import service as resume_service
+    from app.features.skill_gap.evidence import gather_evidence
+    from app.models import Question, Resume
+
+    monkeypatch.setattr(index_hooks, "index_experience", lambda *a, **k: None)
+    me = _user(db_session)
+    r = Resume(owner_id=me, title="t")
+    db_session.add(r)
+    db_session.flush()
+    q = Question(resume_id=r.id, owner_id=me, title="문항", position=0)
+    db_session.add(q)
+    db_session.flush()
+    resume_service.create_version(db_session, me, r.id, q.id, "AWS로 인프라를 운영했습니다.", "manual")
+    linked = exp_service.create_experience(db_session, me, {"title": "보안 프로젝트", "type": "프로젝트",
+                                                           "tech_stack": ["Docker"]})
+    unlinked = exp_service.create_experience(db_session, me, {"title": "카페 아르바이트", "type": "기타",
+                                                             "tech_stack": ["Excel"]})
+    exp_service.link(db_session, me, q.id, linked.id)
+    sources = [("resume", r.id), ("experience", linked.id), ("experience", unlinked.id)]
+    for i, (kind, sid) in enumerate(sources):
+        db_session.add(UserProfileEmbedding(owner_id=me, source_type=kind, source_id=sid, content="x",
+                                            model_version=MODEL_VERSION, embedding=_vec(i)))
+    db_session.flush()
+
+    vecs = gather_query_vectors(db_session, me, r.id)
+    assert sorted(list(v).index(1.0) for v in vecs) == [0, 1]  # 자소서 + 끌어온 경험만
+    ev = gather_evidence(db_session, owner_id=me, resume_id=r.id)
+    assert [e.label for e in ev.experiences] == ["보안 프로젝트"]
+    keys = set(held_keys_of(ev))
+    assert "docker" in keys and "excel" not in keys
+
+
 def test_posting_detail_fields_and_owner_rule(db_session):
     owner = _user(db_session)
     pub = JobPosting(source="work24_open", link_key=str(uuid.uuid4()), content_hash="h1", title="공개",
