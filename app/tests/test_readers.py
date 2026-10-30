@@ -6,7 +6,7 @@ import pytest
 
 from app.features.experiences import index_hooks
 from app.features.experiences import service as exp_service
-from app.features.experiences.reader import list_owner_experiences
+from app.features.experiences.reader import linked_experiences_for_resume, list_owner_experiences
 from app.features.resumes import service as resume_service
 from app.features.resumes.reader import resume_bodies
 from app.models import Question, Resume, User
@@ -77,3 +77,33 @@ def test_list_owner_experiences_restored_and_scoped(db_session):
 def test_list_owner_experiences_bounds(db_session, limit, offset):
     with pytest.raises(ValueError):
         list_owner_experiences(db_session, "x", limit=limit, offset=offset)
+
+
+# --- 자소서 → 끌어온 경험(C 요청 10/30) ---------------------------------------------
+
+def test_linked_experiences_for_resume_order_dedupe_and_scope(db_session):
+    owner, other = _user(db_session), _user(db_session)
+    r, (q0, q1, q2) = _resume_with(db_session, owner, [[], [], []])
+    e1 = exp_service.create_experience(db_session, owner, {"title": f"경험1 {PII}", "type": "프로젝트"})
+    e2 = exp_service.create_experience(db_session, owner, {"title": "경험2", "type": "활동"})
+    gone = exp_service.create_experience(db_session, owner, {"title": "삭제 경험", "type": "기타"})
+    on_deleted_q = exp_service.create_experience(
+        db_session, owner, {"title": "삭제 문항의 경험", "type": "기타"})
+    exp_service.link(db_session, owner, q1.id, e2.id)
+    exp_service.link(db_session, owner, q0.id, e1.id)
+    exp_service.link(db_session, owner, q1.id, e1.id)          # 같은 경험이 두 문항에 → 한 번
+    exp_service.link(db_session, owner, q0.id, gone.id)
+    exp_service.link(db_session, owner, q2.id, on_deleted_q.id)
+    exp_service.soft_delete_experience(db_session, gone)
+    q2.deleted_at = datetime.now(UTC)
+    db_session.flush()
+
+    got = linked_experiences_for_resume(db_session, owner, r.id)
+    assert [x["id"] for x in got] == [e1.id, e2.id], "문항 순서(q0→q1), 중복·삭제 제외"
+    assert got[0]["title"] == f"경험1 {PII}", "원문으로 복원"
+    assert linked_experiences_for_resume(db_session, other, r.id) == [], "남의 자소서"
+    assert linked_experiences_for_resume(db_session, owner, uuid.uuid4()) == [], "없는 자소서"
+    r.deleted_at = datetime.now(UTC)
+    db_session.flush()
+    assert linked_experiences_for_resume(db_session, owner, r.id) == [], "삭제된 자소서"
+
