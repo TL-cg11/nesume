@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Experience, QuestionExperience
+from app.models import Experience, Question, QuestionExperience, Resume
 
 
 def get_experience(db: Session, owner_id: str, experience_id: uuid.UUID) -> Experience | None:
@@ -40,6 +40,30 @@ def get_link(db: Session, owner_id: str, question_id: uuid.UUID, experience_id: 
             QuestionExperience.owner_id == owner_id,
         )
     )
+
+
+def linked_experiences_for_resume(db: Session, owner_id: str, resume_id: uuid.UUID) -> list[Experience]:
+    """자소서의 문항들에 끌어온 경험(본인·자소서/문항/경험 모두 삭제 제외).
+
+    문항 순서 → 연결 순서, 같은 경험은 한 번.
+    """
+    rows = db.scalars(
+        select(Experience)
+        .join(QuestionExperience, QuestionExperience.experience_id == Experience.id)
+        .join(Question, Question.id == QuestionExperience.question_id)
+        .join(Resume, Resume.id == Question.resume_id)
+        .where(
+            Resume.id == resume_id,
+            Resume.owner_id == owner_id,
+            QuestionExperience.owner_id == owner_id,
+            Experience.owner_id == owner_id,
+            Resume.deleted_at.is_(None),
+            Question.deleted_at.is_(None),
+            Experience.deleted_at.is_(None),
+        )
+        .order_by(Question.position, QuestionExperience.created_at)
+    ).all()
+    return list(dict.fromkeys(rows))
 
 
 def linked_experiences(db: Session, owner_id: str, question_id: uuid.UUID) -> Sequence[Experience]:
