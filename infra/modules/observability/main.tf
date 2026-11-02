@@ -12,7 +12,8 @@ locals {
   ns   = "${var.project}/${var.env}"
   name = "${var.project}-${var.env}"
   # 접근 로그 1줄(request_id.py http_request). 평가 러너(is_test=true)는 지표에서 뺀다.
-  not_test   = "($.is_test NOT EXISTS || $.is_test IS FALSE)"
+  # 접근 로그는 is_test 키를 항상 넣고 비로그인·프로브 요청은 null 이다 → IS NULL 도 통과시켜야 한다(11-02 실측)
+  not_test   = "($.is_test NOT EXISTS || $.is_test IS NULL || $.is_test IS FALSE)"
   access_log = "{ $.msg = \"http_request\" && ${local.not_test} }"
 }
 
