@@ -230,6 +230,9 @@ def run_collection(
         seen.append(lk)
         if fields.get("job_content"):  # 공개 등급 PII 마스킹(연락처 혼입 대비)
             fields["job_content"] = mask(fields["job_content"])
+        for rf in fields.get("recruit_fields") or ():  # 분야별 직무내용도 같은 기준
+            if rf.get("job_content"):
+                rf["job_content"] = mask(rf["job_content"])
         _row, action = upsert_posting(session, source=source, fields=fields)
         counts[action] += 1
 

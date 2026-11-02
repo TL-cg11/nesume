@@ -32,7 +32,7 @@ _KST = ZoneInfo("Asia/Seoul")
 
 
 #: 무변경 공고에도 비어 있으면 채우는 **표시 전용** 컬럼(content_hash에 안 들어감). 새 컬럼 추가 시 여기에.
-_BACKFILL_IF_EMPTY = ("career_text", "edu_text")
+_BACKFILL_IF_EMPTY = ("career_text", "edu_text", "recruit_fields")
 
 
 def _kst_now() -> datetime:

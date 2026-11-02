@@ -81,6 +81,13 @@ def test_parse_detail_maps_real_fields():
     assert "[지원 자격]" in f["job_content"]
 
 
+def test_parse_detail_keeps_recruit_fields_separately():
+    """모집분야가 여럿이면 분야별로 따로 남긴다(합본 job_content는 그대로)."""
+    rf = parse_detail(parse_xml(_detail()))["recruit_fields"]
+    assert [f["name"] for f in rf] == ["일반행정(본사)", "AI"]
+    assert rf[1]["job_content"] == "AI 서비스 기획"
+
+
 def test_parse_detail_drops_contact_logo_and_selfintro():
     """문의처(연락처)·로고·자소서 문항은 어디에도 실리지 않는다(화이트리스트)."""
     dumped = repr(parse_detail(parse_xml(_detail())))
@@ -211,6 +218,22 @@ def test_run_collection_stores_link_and_masks(db_session):
     assert p.source_key == "183000"
     assert p.source_url == "https://kpf.plusrecruit.co.kr/#/recruitment/detail/46"
     assert "010-1234-5678" not in (p.job_content or "")  # A1 mask
+
+
+def test_run_collection_masks_recruit_fields_and_backfills(db_session):
+    """분야별 직무내용도 같은 기준으로 mask. 분야 목록이 없던 기존 공고는 무변경 수집 때 채운다."""
+    rows = _rows(1)
+    rows[0]["recruit_fields"][1]["job_content"] += " 문의 010-1234-5678"
+    run_collection(db_session, rows, source=SOURCE_WORK24_OPEN, parse=dict, recent=[])
+    db_session.flush()
+    (p,) = _postings(db_session)
+    assert "010-1234-5678" not in repr(p.recruit_fields)
+
+    p.recruit_fields = None  # 0022 이전에 저장된 공고처럼
+    db_session.flush()
+    run_collection(db_session, _rows(1), source=SOURCE_WORK24_OPEN, parse=dict, recent=[])
+    db_session.flush()
+    assert [f["name"] for f in p.recruit_fields] == ["일반행정(본사)", "AI"]
 
 
 def test_run_collection_keeps_posting_seen_by_native_id(db_session):

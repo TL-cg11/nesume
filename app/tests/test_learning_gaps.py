@@ -154,6 +154,42 @@ def test_query_vectors_filtered_by_resume(db_session):
     assert len(only) == 1 and list(only[0])[0] == 1.0  # 내 r1만(남의 같은 id·경험 제외)
 
 
+def test_resume_scope_uses_only_linked_experiences(db_session, monkeypatch):
+    """자소서 기준이면 그 자소서 문항에 끌어온 경험만 — 벡터·키워드 근거 둘 다(끌어오지 않은 경험은 제외)."""
+    from app.features.experiences import index_hooks
+    from app.features.experiences import service as exp_service
+    from app.features.resumes import service as resume_service
+    from app.features.skill_gap.evidence import gather_evidence
+    from app.models import Question, Resume
+
+    monkeypatch.setattr(index_hooks, "index_experience", lambda *a, **k: None)
+    me = _user(db_session)
+    r = Resume(owner_id=me, title="t")
+    db_session.add(r)
+    db_session.flush()
+    q = Question(resume_id=r.id, owner_id=me, title="문항", position=0)
+    db_session.add(q)
+    db_session.flush()
+    resume_service.create_version(db_session, me, r.id, q.id, "AWS로 인프라를 운영했습니다.", "manual")
+    linked = exp_service.create_experience(db_session, me, {"title": "보안 프로젝트", "type": "프로젝트",
+                                                           "tech_stack": ["Docker"]})
+    unlinked = exp_service.create_experience(db_session, me, {"title": "카페 아르바이트", "type": "기타",
+                                                             "tech_stack": ["Excel"]})
+    exp_service.link(db_session, me, q.id, linked.id)
+    sources = [("resume", r.id), ("experience", linked.id), ("experience", unlinked.id)]
+    for i, (kind, sid) in enumerate(sources):
+        db_session.add(UserProfileEmbedding(owner_id=me, source_type=kind, source_id=sid, content="x",
+                                            model_version=MODEL_VERSION, embedding=_vec(i)))
+    db_session.flush()
+
+    vecs = gather_query_vectors(db_session, me, r.id)
+    assert sorted(list(v).index(1.0) for v in vecs) == [0, 1]  # 자소서 + 끌어온 경험만
+    ev = gather_evidence(db_session, owner_id=me, resume_id=r.id)
+    assert [e.label for e in ev.experiences] == ["보안 프로젝트"]
+    keys = set(held_keys_of(ev))
+    assert "docker" in keys and "excel" not in keys
+
+
 def test_posting_detail_fields_and_owner_rule(db_session):
     owner = _user(db_session)
     pub = JobPosting(source="work24_open", link_key=str(uuid.uuid4()), content_hash="h1", title="공개",
@@ -281,9 +317,9 @@ def test_cut_fragments_are_noise(text):
     [
         ("수업(온라인 포함", "수업"),
         ("서비스 기획(자사몰", "서비스 기획"),
-        ("외부감사인)와의 협업 경험 보유자", "협업 경험 보유자"),
+        ("외부감사인)와의 협업 경험 보유자", "협업 경험"),
         ("VBA 등", "VBA"),
-        ("7. 영어 커뮤니케이션 가능자 (해외 공장", "영어 커뮤니케이션 가능자"),
+        ("7. 영어 커뮤니케이션 가능자 (해외 공장", "영어 커뮤니케이션"),
         ("원활한 커뮤니케이션", "커뮤니케이션"),
         ("관련 자격증 보유자(소방)", "관련 자격증 보유자(소방)"),  # 짝 맞으면 그대로
         ("데이터 리터러시", "데이터 리터러시"),
@@ -329,6 +365,79 @@ def test_vocab_terms_always_skill():
     from app.features.skill_gap.classify import SKILL, kind_of
 
     assert kind_of("Python", "language") == (SKILL, None)
+
+
+# --- 2026-10-30: 학과 목록·사람 끝말·어학 점수(docs/C10.md 실측 사례) ---------------------
+
+_NONGSHIM = {"certificates": "- 관련전공 : 자동화시스템과, 메카트로닉스과, 전기과"}
+_VACCINE = {"certificates": "2. 컴퓨터·정보통신·소프트웨어·정보보안 관련 전공지식을 보유하신 분"}
+
+
+@pytest.mark.parametrize(
+    ("text", "fields"),
+    [("메카트로닉스과", _NONGSHIM), ("전기과", _NONGSHIM), ("2. 컴퓨터", _VACCINE), ("정보통신", _VACCINE)],
+)
+def test_major_list_items_are_conditions_by_source_line(text, fields):
+    from app.features.skill_gap.classify import CONDITION, kind_of
+
+    assert kind_of(text, "other", fields) == (CONDITION, "전공")
+
+
+def test_major_line_context_needs_the_line():
+    from app.features.skill_gap.classify import DOMAIN, kind_of
+
+    other = {"job_content": "- 설비 점검계획 수립 및 교체이력 관리"}
+    assert kind_of("교체이력 관리", "other", other) == (DOMAIN, None)  # 전공 줄이 아님
+    assert kind_of("PLC", "other", {"certificates": "관련 전공, PLC"}) == (DOMAIN, None)  # 영문 기술명은 아님
+
+
+@pytest.mark.parametrize(
+    ("text", "category"),
+    [("ESPT 601점 이상", "other"), ("TOEIC 700점 이상", "other"), ("토익", "cert"), ("오픽", "cert")],
+)
+def test_language_scores_are_conditions_even_vocab(text, category):
+    from app.features.skill_gap.classify import CONDITION, kind_of
+
+    assert kind_of(text, category) == (CONDITION, "어학")
+
+
+@pytest.mark.parametrize(
+    ("text", "kind"),
+    [
+        ("경력 ​: ​무관", "경력"),
+        ("경력 : AI", "경력"),
+        ("자차 소지자", "근무조건"),
+        ("미보유자 지원불가함", "결격"),
+    ],
+)
+def test_conditions_added_2026_10_30(text, kind):
+    from app.features.skill_gap.classify import CONDITION, kind_of
+
+    assert kind_of(text, "other") == (CONDITION, kind)
+
+
+@pytest.mark.parametrize(
+    ("text", "tidied"),
+    [
+        ("커뮤니케이션 역량이 뛰어나신 분", "커뮤니케이션 역량"),
+        ("협력업체와 원활하게 소통할 수 있는 분", "협력업체와 소통"),
+        ("생산현장 조율 가능자", "생산현장 조율"),
+        ("자동화 프로젝트 리딩 업무 경험자", "자동화 프로젝트 리딩 업무 경험"),
+        ("전문 약사 자격증 보유자", "전문 약사 자격증"),
+        ("원활한 데이터 분석 역량을 보유하신 분", "데이터 분석 역량"),
+    ],
+)
+def test_person_endings_stripped(text, tidied):
+    from app.features.skill_gap.classify import DOMAIN, kind_of, tidy
+
+    assert tidy(text) == tidied
+    assert kind_of(text, "other")[0] == DOMAIN
+
+
+def test_clause_cut_is_noise():
+    from app.features.skill_gap.classify import NOISE, kind_of
+
+    assert kind_of("업무시스템의 기본 구조를 이해하고", "other")[0] == NOISE
 
 
 def test_gaps_split_skill_domain_conditions_covered(monkeypatch):

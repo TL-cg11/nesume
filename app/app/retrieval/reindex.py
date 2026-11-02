@@ -45,6 +45,32 @@ def posting_text(p: JobPosting) -> str:
     return "\n".join(parts)[:MAX_CHARS]
 
 
+def multi_fields(p: JobPosting) -> list[dict]:
+    """모집분야가 2개 이상이면 그 목록, 아니면 빈 목록(분야 나눌 필요 없음)."""
+    rf = p.recruit_fields or []
+    return rf if len(rf) >= 2 else []
+
+
+def field_text(p: JobPosting, f: dict) -> str:
+    """모집분야 1개 → 임베딩 원문. 공고 공통(제목·회사·업종·우대·전공·컴퓨터) + 그 분야 내용만."""
+    vals = (
+        p.title, p.company_name, f.get("name"), p.industry_name, f.get("job_content"),
+        f.get("certificates") or p.certificates, p.preferred, p.major, p.computer_skills,
+        f.get("career"), f.get("edu"),
+    )
+    return "\n".join(str(v).strip() for v in vals if v and str(v).strip())[:MAX_CHARS]
+
+
+def posting_texts(p: JobPosting) -> list[str]:
+    """공고 → 청크 원문 목록. 분야가 여럿이면 **분야마다 1청크**(chunk_index = 분야 순번),
+    아니면 합본 1청크."""
+    fields = multi_fields(p)
+    if fields:
+        return [field_text(p, f) for f in fields]
+    raw = posting_text(p)
+    return [raw] if raw else []
+
+
 def _stored(session: Session, model, source_ids: Iterable[uuid.UUID]) -> dict[uuid.UUID, str]:
     """source_id → 저장된 0번 청크 content(같은 모델 버전만)."""
     ids = list(source_ids)
@@ -58,23 +84,43 @@ def _stored(session: Session, model, source_ids: Iterable[uuid.UUID]) -> dict[uu
     return {sid: content for sid, content in rows}
 
 
+def _stored_chunks(session: Session, source_ids: Iterable[uuid.UUID]) -> dict[uuid.UUID, list[str]]:
+    """공고 id → 저장된 청크 content 목록(chunk_index 순, 같은 모델 버전만)."""
+    ids = list(source_ids)
+    if not ids:
+        return {}
+    rows = session.execute(
+        select(JobPostingEmbedding.source_id, JobPostingEmbedding.content)
+        .where(JobPostingEmbedding.source_id.in_(ids), JobPostingEmbedding.model_version == MODEL_VERSION)
+        .order_by(JobPostingEmbedding.source_id, JobPostingEmbedding.chunk_index)
+    )
+    out: dict[uuid.UUID, list[str]] = {}
+    for sid, content in rows:
+        out.setdefault(sid, []).append(content)
+    return out
+
+
 def reindex_postings(session: Session, embedder: Embedder, *, cap: int = DEFAULT_CAP) -> dict:
-    """활성 공고 중 벡터가 없거나 글이 바뀐 것(데모 벡터 포함)을 다시 임베딩."""
+    """활성 공고 중 벡터가 없거나 글이 바뀐 것(데모 벡터 포함)을 다시 임베딩.
+
+    모집분야가 여럿인 공고는 분야마다 청크를 따로 만든다 — 추천이 "자소서에 맞는 분야"를 고를 수 있게.
+    """
     postings = session.execute(select(JobPosting).where(JobPosting.is_active.is_(True))).scalars().all()
-    stored = _stored(session, JobPostingEmbedding, (p.id for p in postings))
+    stored = _stored_chunks(session, (p.id for p in postings))
     done = unchanged = empty = 0
     for p in postings:
-        raw = posting_text(p)
-        if not raw:
+        raws = posting_texts(p)
+        if not raws:
             empty += 1
             continue
-        if stored.get(p.id) == clean_posting_text(raw):
+        if stored.get(p.id) == [clean_posting_text(r) for r in raws]:
             unchanged += 1
             continue
         if done >= cap:
             continue
         session.execute(delete(JobPostingEmbedding).where(JobPostingEmbedding.source_id == p.id))
-        index_posting(session, embedder, source_id=p.id, raw_text=raw)
+        for i, raw in enumerate(raws):
+            index_posting(session, embedder, source_id=p.id, raw_text=raw, chunk_index=i)
         done += 1
     pending = len(postings) - done - unchanged - empty
     return {"embedded": done, "unchanged": unchanged, "empty": empty, "pending": pending}

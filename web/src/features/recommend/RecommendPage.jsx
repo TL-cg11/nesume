@@ -80,11 +80,8 @@ export default function RecommendPage({ resumeId = null, embedded = false }) {
     setApplyingId(it.posting_id)
     setError(null)
     try {
-      await applicationsApi.create({
-        status: 'applied',
-        job_posting_id: it.posting_id,
-        memo: it.posting?.title ?? null,
-      })
+      // 공고가 연결되면 카드가 공고 제목을 보여 주므로 메모는 비워 둔다(같은 글이 두 번 보이던 문제)
+      await applicationsApi.create({ status: 'applied', job_posting_id: it.posting_id })
       setAppliedIds((s) => new Set(s).add(it.posting_id))
     } catch (err) {
       setError(err instanceof ApiError ? err.message : '지원 등록에 실패했습니다.')
@@ -169,7 +166,7 @@ export default function RecommendPage({ resumeId = null, embedded = false }) {
           <div>
             <h3>추천 공고</h3>
             {/* [B 10/29] 자소서 탭 안에서는 개발용 설명을 숨긴다 */}
-            {!embedded && <p>POST /recommendations · 점수 = 0.5 벡터 + 0.5 키워드율</p>}
+            {!embedded && <p>POST /recommendations · 점수 = 0.5 벡터 + 0.5 키워드율 (키워드 정보 없으면 벡터만)</p>}
           </div>
           {result && !result.cold_start && (
             <span className="c-tiny-label">{result.items.length}건</span>
@@ -213,6 +210,10 @@ export default function RecommendPage({ resumeId = null, embedded = false }) {
                   {it.posting?.company_name && ' · '}
                   {it.posting?.job_name ?? '직무 미상'}
                 </p>
+                {it.field_index != null && it.posting?.field_names?.[it.field_index] && (
+                  // 모집분야가 여럿인 공고 — 자소서와 가장 가까운 분야
+                  <p className="rec-item-field">맞는 분야: {it.posting.field_names[it.field_index]}</p>
+                )}
                 {SOURCE_LABEL[it.posting?.source] && (
                   <p className="rec-item-source">출처: {SOURCE_LABEL[it.posting.source]}</p>
                 )}
@@ -220,7 +221,7 @@ export default function RecommendPage({ resumeId = null, embedded = false }) {
                   <span className="rec-chip rec-chip-vec">벡터 {pct(it.vector_score)}</span>
                   {it.keyword_available === false ? (
                     // 공고에 비교할 기술 키워드가 없음 — 0%(안 맞음)와 구분
-                    <span className="rec-chip rec-chip-kw" title="공고에서 비교할 기술 키워드를 찾지 못해 문맥(벡터) 점수로만 추천했어요">
+                    <span className="rec-chip rec-chip-kw" title="공고에서 비교할 기술 키워드를 찾지 못해 문맥(벡터) 점수만으로 점수를 매겼어요">
                       키워드 정보 없음
                     </span>
                   ) : (

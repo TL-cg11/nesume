@@ -44,13 +44,15 @@ class PostingBrief(BaseModel):
     source: str | None = None
     #: 원문 링크(공채속보만, 기업별 외부 도메인·http/https만 저장). 서울시는 None → 화면은 접수방법 안내.
     url: str | None = None
+    #: 모집분야 이름들(분야가 2개 이상일 때만, 아니면 빈 목록). 화면의 "맞는 분야"·분야 바꿔 보기용
+    field_names: list[str] = Field(default_factory=list)
 
 
 class RecommendationOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     posting_id: uuid.UUID
-    #: 최종 점수 = 0.5 벡터 + 0.5 키워드율(docs/C8.md 결정2).
+    #: 최종 점수 = 0.5 벡터 + 0.5 키워드율(docs/C8.md 결정2). 키워드 정보 없으면 벡터 점수만.
     score: float
     vector_score: float
     keyword_score: float
@@ -58,6 +60,8 @@ class RecommendationOut(BaseModel):
     matched_keywords: list[str]
     #: False = 공고에 비교할 사전 기술이 없음 → 키워드 0은 "안 맞음"이 아니라 "정보 없음"(점수 공식은 그대로)
     keyword_available: bool = True
+    #: 자소서에 가장 맞는 모집분야 순번(`posting.field_names` 인덱스). 분야 하나뿐이거나 모르면 None
+    field_index: int | None = None
     posting: PostingBrief | None = None
 
 
