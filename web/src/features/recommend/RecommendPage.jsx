@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { recommendApi } from './api.js'
 import { applicationsApi } from '../applications/api.js'
 import { ApiError } from '../../app/api/client.js'
-import { safeUrl } from '../safeUrl.js'
+import { safeUrl, work24SearchUrl } from '../safeUrl.js'
 import '../c-common.css'
 import './recommend.css'
 
@@ -36,7 +36,8 @@ function PostingDetail({ posting }) {
       )}
       {(refOnly || !posting.job_content) && (
         <p className="rec-detail-note">
-          상세 모집요강은 기업 채용 페이지(원문)에서 확인해 주세요{safeUrl(posting.url) ? ' — 아래 "지원하기 ↗"' : ''}.
+          상세 모집요강은 기업 채용 페이지(원문)에서 확인해 주세요
+          {safeUrl(posting.url) ? ' — 아래 "지원하기 ↗"' : work24SearchUrl(posting.company_name) ? ' — 아래 "고용24에서 검색 ↗"' : ''}.
         </p>
       )}
     </div>
@@ -260,6 +261,17 @@ export default function RecommendPage({ resumeId = null, embedded = false }) {
                       title="기업 채용 페이지(외부 사이트)로 이동합니다"
                     >
                       지원하기 ↗ <span className="rec-link-ext">외부 사이트</span>
+                    </a>
+                  ) : work24SearchUrl(it.posting?.company_name) ? (
+                    // 원문 주소가 없는 공고(서울시) — 원문이 아니라 고용24 검색 결과임을 이름에서 드러낸다
+                    <a
+                      className="c-btn-primary rec-apply-btn rec-link-btn"
+                      href={work24SearchUrl(it.posting.company_name)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="원문 링크가 없어 고용24에서 회사명으로 검색합니다(외부 사이트)"
+                    >
+                      고용24에서 검색 ↗
                     </a>
                   ) : (
                     <button className="c-btn-primary rec-apply-btn" disabled title="이 공고는 원문 링크가 없습니다">

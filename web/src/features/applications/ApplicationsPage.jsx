@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { applicationsApi } from './api.js'
-import { safeUrl } from '../safeUrl.js'
+import { safeUrl, work24SearchUrl } from '../safeUrl.js'
 import '../c-common.css'
 import './applications.css'
 
@@ -128,8 +128,9 @@ export default function ApplicationsPage() {
   ).length
 
   const card = (app, idx) => {
-    // 카드 칸을 누르면 원문(새 탭). 드래그로 옮길 땐 브라우저가 click을 내지 않는다
-    const href = safeUrl(app.posting?.url)
+    // 카드 칸을 누르면 원문(새 탭). 원문이 없으면(서울시 공고) 고용24에서 회사명 검색. 드래그로 옮길 땐 브라우저가 click을 내지 않는다
+    const original = safeUrl(app.posting?.url)
+    const href = original || work24SearchUrl(app.posting?.company_name)
     const open = () => href && window.open(href, '_blank', 'noopener,noreferrer')
     return (
     <article
@@ -143,7 +144,7 @@ export default function ApplicationsPage() {
       onKeyDown={(e) => {
         if (e.key === 'Enter' && e.target === e.currentTarget) open()
       }}
-      {...(href ? { role: 'link', tabIndex: 0, title: '공고 원문 열기' } : {})}
+      {...(href ? { role: 'link', tabIndex: 0, title: original ? '공고 원문 열기' : '고용24에서 회사명으로 검색' } : {})}
       onDragOver={(e) => {
         // 카드 위쪽 절반이면 그 앞, 아래쪽 절반이면 그 뒤
         const r = e.currentTarget.getBoundingClientRect()
