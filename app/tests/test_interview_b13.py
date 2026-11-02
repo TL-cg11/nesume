@@ -76,6 +76,22 @@ def test_parse_questions_and_feedback():
                   "일관성": "자소서와 맞습니다.", "제안": "결과를 수치로."}
 
 
+def test_parse_feedback_markdown_and_multiline():
+    """dev 모델이 마크다운으로 답해 '제안: ### 평가 결과'만 보이던 문제(11/2)."""
+    md = ("### 평가 결과\n\n**구조:** 결론이 먼저 나옵니다.\n- **구체성**: 수치가 있습니다.\n"
+          "  다만 기간이 없습니다.\n3. **일관성(자소서)** — 자소서와 맞습니다.\n"
+          "**개선 제안:** 목표를 줄이세요.")
+    assert service.parse_feedback(md) == {
+        "구조": "결론이 먼저 나옵니다.", "구체성": "수치가 있습니다.\n다만 기간이 없습니다.",
+        "일관성": "자소서와 맞습니다.", "제안": "목표를 줄이세요."}
+    # 이미 저장된 기록(형식을 못 읽어 응답 전체를 '제안'에 넣은 것)도 다시 읽으면 칸이 나뉜다
+    legacy = "구조: \n구체성: \n일관성: \n제안: " + md
+    assert service.parse_feedback(legacy)["구조"] == "결론이 먼저 나옵니다."
+    assert service.parse_feedback(legacy)["제안"] == "목표를 줄이세요."
+    got = service.parse_questions("1. **팀 갈등은?**\n- 2. `장애` 대응은?", 5)
+    assert got == ["팀 갈등은?", "장애 대응은?"]
+
+
 # --- 질문 생성 -------------------------------------------------------------------
 
 def test_generate_uses_only_own_resume_and_linked_experience_through_guardrail():
