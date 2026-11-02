@@ -19,3 +19,12 @@ variable "embedding_capacity_type" {
   type        = string
   default     = "ON_DEMAND"
 }
+variable "fluent_bit_chart_version" {
+  description = "D14 helm search repo eks/aws-for-fluent-bit"
+  type        = string
+}
+variable "alert_email" {
+  description = "D14 알람 SNS 토픽 이메일 구독(비우면 구독 없음. 확인 메일의 링크를 눌러야 활성). Slack 웹훅 구독은 D16"
+  type        = string
+  default     = ""
+}
