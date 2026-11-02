@@ -5,6 +5,7 @@ A8은 안 건드리고 그 앞뒤에 얇게 붙는다. `now`는 호출측 주입
 
 - 비용 쿼터: `check_request`(요청/분) · `check_tokens`/`record_tokens`(토큰/일, 선체크·후기록).
 - 탈취 세션 제한: `check_session`(차단 중인가) · `record_violation`(A8 판정=block[exfil]일 때).
+- 탈취 사용자 제한: `check_user`·`record_user_violation` — 세션을 바꿔 가며 우회하는 경우의 방어선.
 """
 from __future__ import annotations
 
@@ -58,3 +59,18 @@ class RateLimiter:
         """A8 판정이 탈취(block, exfiltration)일 때 세션 위반 1 증가."""
         lim = self.limits.exfil_per_session
         self.store.add(f"exfil:{session_id}", 1, window_seconds=lim.window_seconds, now=now)
+
+    # --- 탈취 사용자 제한 (세션 우회 방어선) --------------------------------
+
+    def check_user(self, user_id: str, *, now: float) -> Decision:
+        """사용자가 탈취 누적으로 차단 중인지. 세션 기준보다 한도가 느슨하다(정상 사용자 오탐 대비)."""
+        lim = self.limits.exfil_per_user
+        count, elapsed = self.store.get(
+            f"exfil_user:{user_id}", window_seconds=lim.window_seconds, now=now
+        )
+        return evaluate(lim, count=count, elapsed=elapsed)
+
+    def record_user_violation(self, user_id: str, *, now: float) -> None:
+        """A8 판정이 탈취(block, exfiltration)일 때 사용자 위반 1 증가."""
+        lim = self.limits.exfil_per_user
+        self.store.add(f"exfil_user:{user_id}", 1, window_seconds=lim.window_seconds, now=now)
