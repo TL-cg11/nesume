@@ -18,7 +18,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import Literal
 
-from sqlalchemy import delete, event, select
+from sqlalchemy import delete, event
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
@@ -119,16 +119,15 @@ def _plan(db: Session, source_type: SourceType, source_id: uuid.UUID):
     from app.features.experiences.reader import tokenized_experience_doc
     from app.features.resumes.reader import tokenized_resume_doc
     from app.models.embedding import UserProfileEmbedding
-    from app.retrieval.reindex import MAX_CHARS
+    from app.retrieval.reindex import MAX_CHARS, _stored
 
     build = tokenized_resume_doc if source_type == "resume" else tokenized_experience_doc
     doc = build(db, source_id)
     if doc is None:  # 삭제됨 — 검색 제외는 C3 mark_personal_deleted, 물리 삭제는 B20이 맡는다
         return "gone", None, None
     text = doc["text"][:MAX_CHARS]
-    stored = db.scalars(
-        select(UserProfileEmbedding.content).where(UserProfileEmbedding.source_id == source_id)
-    ).first()
+    # 배치와 같은 기준(0번 청크·같은 모델 버전)
+    stored = _stored(db, UserProfileEmbedding, [source_id]).get(source_id)
     if not text.strip():  # 내용을 다 지웠다 — 예전 벡터가 남아 엉뚱한 추천이 나오지 않게 지운다
         return "empty", doc, text
     if stored == text:
