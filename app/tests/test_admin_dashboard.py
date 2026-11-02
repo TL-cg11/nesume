@@ -116,9 +116,22 @@ def _log(user_id: str, decision: str, *, minutes_ago: int = 5, flags=(), is_test
 
 @pytest.fixture
 def setup(rsa_key, db_session):
+    """다른 테스트(B11 sink 등)가 커밋해 둔 감사 로그가 남아 있을 수 있다.
+
+    넣기 전 값을 기준선으로 잡고 증분을 본다.
+    """
     verifier = TokenVerifier(ISSUER, CLIENT_ID, key_resolver=lambda _t: rsa_key.public_key())
     app.dependency_overrides[get_token_verifier] = lambda: verifier
     app.dependency_overrides[get_db] = lambda: db_session
+    client = TestClient(app)
+    operator = _token(rsa_key, str(uuid.uuid4()), ["operator", "test"])
+    headers = {"Authorization": f"Bearer {operator}"}
+    baseline = {
+        inc: client.get(f"/admin/dashboard/summary?hours=24&include_test={inc}", headers=headers).json()[
+            "totals"
+        ]
+        for inc in ("false", "true")
+    }
     attacker, normal = f"u-{uuid.uuid4().hex[:8]}", f"u-{uuid.uuid4().hex[:8]}"
     db_session.add_all(
         [
@@ -136,11 +149,12 @@ def setup(rsa_key, db_session):
     db_session.flush()
     try:
         yield {
-            "client": TestClient(app),
-            "operator": _token(rsa_key, str(uuid.uuid4()), ["operator", "test"]),
+            "client": client,
+            "operator": operator,
             "user": _token(rsa_key, str(uuid.uuid4()), ["test"]),
             "attacker": attacker,
             "normal": normal,
+            "baseline": baseline,
         }
     finally:
         app.dependency_overrides.clear()
@@ -150,30 +164,42 @@ def _get(ctx, path, token):
     return ctx["client"].get(path, headers={"Authorization": f"Bearer {token}"})
 
 
+def _delta(body, base, key):
+    return body["totals"][key] - base[key]
+
+
 def test_summary_excludes_test_traffic_by_default(setup):
     r = _get(setup, "/admin/dashboard/summary?hours=24", setup["operator"])
     assert r.status_code == 200, r.text
     body = r.json()
+    base = setup["baseline"]["false"]
+    keys = ("requests", "allow", "mask", "block", "flagged", "canary_hits")
+    assert [_delta(body, base, k) for k in keys] == [5, 3, 1, 1, 2, 1]
     t = body["totals"]
-    assert (t["requests"], t["allow"], t["mask"], t["block"]) == (5, 3, 1, 1)
-    assert t["flagged"] == 2 and t["canary_hits"] == 1
-    assert t["block_rate"] == 0.2 and t["flag_rate"] == 0.4
-    assert {c["key"]: c["requests"] for c in body["by_decision"]} == {"allow": 3, "block": 1, "mask": 1}
-    assert {c["key"] for c in body["by_feature"]} == {"rewrite", "interview"}
-    assert body["by_stage"][0]["key"] in ("classifier", "output_guard", "(없음)")
-    assert body["top_users"][0]["user_id"] == setup["attacker"]
-    assert body["top_users"][0]["flag_rate"] == round(2 / 3, 4)
-    assert all(u["user_id"] != setup["normal"] for u in body["top_users"])  # flag 없음 → 목록에 없음
-    assert len(body["recent_events"]) == 3  # block + mask + canary
+    assert t["block_rate"] == round(t["block"] / t["requests"], 4)
+    assert t["flag_rate"] == round(t["flagged"] / t["requests"], 4)
+    by_decision = {c["key"]: c["requests"] for c in body["by_decision"]}
+    assert (by_decision.get("allow", 0), by_decision.get("mask", 0), by_decision.get("block", 0)) == (
+        t["allow"], t["mask"], t["block"]
+    )
+    assert {"rewrite", "interview"} <= {c["key"] for c in body["by_feature"]}
+    assert {"classifier", "output_guard"} <= {c["key"] for c in body["by_stage"]}
+    top = {u["user_id"]: u for u in body["top_users"]}
+    assert top[setup["attacker"]]["flag_rate"] == round(2 / 3, 4)
+    assert top[setup["attacker"]]["canary_hits"] == 1
+    assert setup["normal"] not in top  # flag 없음 → 목록에 없음
+    mine = [e for e in body["recent_events"] if e["user_id"] == setup["attacker"]]
+    assert {e["decision"] for e in mine} == {"block", "mask", "allow"}  # allow 는 카나리 때문에 포함
     assert "query_masked" not in body["recent_events"][0]
-    assert sum(p["allow"] + p["mask"] + p["block"] for p in body["series"]) == 5
+    assert sum(p["allow"] + p["mask"] + p["block"] for p in body["series"]) == t["requests"]
     assert len(body["series"]) == 24 and body["step_minutes"] == 60
-    assert body["previous"] == {"requests": 0, "block": 0, "flagged": 0}
+    assert set(body["previous"]) == {"requests", "block", "flagged"}
 
 
 def test_summary_include_test(setup):
     body = _get(setup, "/admin/dashboard/summary?hours=24&include_test=true", setup["operator"]).json()
-    assert body["totals"]["requests"] == 6 and body["totals"]["block"] == 2
+    base = setup["baseline"]["true"]
+    assert _delta(body, base, "requests") == 6 and _delta(body, base, "block") == 2
 
 
 def test_summary_short_window_has_fine_steps(setup):
