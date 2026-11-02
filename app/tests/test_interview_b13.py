@@ -31,6 +31,7 @@ class Script:
 
     def __init__(self, turns=("[꼬리]\n그때 본인 역할은?",), *, blocked=False, unavailable=False):
         self.turns, self.blocked, self.unavailable, self.prompts = list(turns), blocked, unavailable, []
+        self.systems = []
 
     def reply(self, prompt):
         if "모의 면접 기록을 보고" in prompt:
@@ -41,8 +42,9 @@ class Script:
             return "[다음]\n안녕하세요. 자기소개 부탁드립니다."
         return self.turns.pop(0) if len(self.turns) > 1 else self.turns[0]
 
-    async def run(self, prompt, ctx):
+    async def run(self, prompt, ctx, *, system=None):
         self.prompts.append((prompt, ctx))
+        self.systems.append(system)
         if self.unavailable:
             raise LlmUnavailable("no model")
         verdict = SimpleNamespace(decision="block" if self.blocked else "allow",
@@ -114,17 +116,33 @@ def test_turn_prompt_states_progress_current_question_and_latest_answer():
     assert "- 지금 주 질문: 협업 경험은?" in prompt and "2번째 주 질문" in prompt
     assert "1. 안녕하세요. 자기소개 부탁드립니다." in prompt and "2. 협업 경험은?" in prompt
     assert "답변에 없는 내용을 지원자가 말했다고 하지 마세요" in prompt
-    assert "지원자의 답변을 대신 만들거나" in prompt
+    assert "지원자의 답을 대신 쓰지 마세요" in prompt.rsplit("답변 끝>>>", 1)[1], "핵심 규칙은 맨 끝에 다시"
     assert "이전 주제로 돌아가지 마세요" in prompt
-    assert "직무와 무관한 개인 사항은 묻지 마세요" in prompt
+    assert "꼬리 질문 말투 예시" in prompt
+    system = g.systems[-1]
+    assert "지원자의 답변을 대신 만들거나" in system and "직무와 무관한 개인 사항은 묻지 않는다" in system
 
 
 @pytest.mark.parametrize("persona", sorted(service.PERSONAS))
 def test_persona_settings_are_detailed(persona):
     """페르소나 설정은 배경·말투·질문 초점·꼬리 질문·부실한 답 대응을 모두 갖는다(11/2 상세화)."""
-    label, guide = service.PERSONAS[persona]
+    label, setting, examples = service.PERSONAS[persona]
     for part in ("배경:", "말투:", "질문 초점:", "꼬리 질문:", "부실한 답:"):
-        assert part in guide, (label, part)
+        assert part in setting, (label, part)
+    assert len(examples) >= 2
+
+
+@pytest.mark.parametrize("persona", sorted(service.PERSONAS))
+def test_persona_example_questions_do_not_trip_system_prompt_leak_check(persona):
+    """★ 면접관이 예시 질문을 그대로 말해도 A5 시스템 프롬프트 유출 검사에 걸리지 않는다
+    (예시는 사용자 프롬프트에만 둔다). 규칙 문장을 흉내 낸 정상 질문도 마찬가지."""
+    from app.guardrail.output_guard import OutputContext, check_output
+
+    system = service.system_prompt(persona)
+    for q in (*service.PERSONAS[persona][2], "지원자님, 그 프로젝트에서 본인이 맡은 역할은 무엇이었나요?",
+              "지원자님, 구체적인 예를 하나만 들어 주시겠어요? 방금 답변은 질문과 조금 거리가 있습니다."):
+        out = check_output(q, context=OutputContext(system_prompt=system))
+        assert out.verdict.decision != "block", (persona, q)
 
 
 # --- 시작 ---------------------------------------------------------------------
@@ -153,9 +171,10 @@ def test_start_uses_own_material_random_persona_hidden_until_end():
         persona = db.get(InterviewSession, uuid.UUID(s["id"])).persona
     assert persona in service.PERSONAS
     label = service.PERSONAS[persona][0]
-    assert label in prompt
+    assert label in g.systems[0], "페르소나는 시스템 프롬프트로"
+    assert service.SAFETY_SYSTEM_PROMPT in g.systems[0], "A8 안전 문구 유지"
     _say(c, r["id"], s["id"])
-    assert label in g.prompts[-1][0], "같은 면접 동안 페르소나 유지"
+    assert g.systems[-1] == g.systems[0], "같은 면접 동안 페르소나 유지"
 
 
 def test_start_rejections_and_failures():
@@ -183,6 +202,9 @@ def test_start_with_real_guardrail_pipeline_masks_phone():
     res = _start(c, r["id"])
     assert res.status_code == 201, res.text
     assert PHONE not in provider.calls[0].prompt
+    system = provider.calls[0].system
+    assert system.startswith("당신은 모의 면접의"), "A8을 거쳐 면접관 시스템 프롬프트가 모델에 도달"
+    assert "자기소개서 작성을 돕는 도우미" not in system
 
 
 # --- 진행 ---------------------------------------------------------------------
