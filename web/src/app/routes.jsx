@@ -3,8 +3,7 @@
 //
 // A: writing / B: resumes·share·pdf·interview·experiences(GitHub 소개 포함, 10/28)
 // C: jobs·recommend·learning·applications / D: auth(로그인·MFA), admin
-import Layout from './RoleNavLayout.jsx' // 역할 전용 메뉴를 거른 뒤 D의 Layout으로 넘긴다
-import Home from './pages/Home.jsx'
+import Layout, { RoleHome } from './RoleNavLayout.jsx' // 역할 전용 메뉴를 거른 뒤 D의 Layout으로 넘긴다. 홈도 역할별(멘토 → /mentor)
 import NotFound from './pages/NotFound.jsx'
 import ResumesPage from '../features/resumes/ResumesPage.jsx'
 import ResumeDetailPage from '../features/resumes/ResumeDetailPage.jsx'
@@ -68,7 +67,7 @@ export const routes = [
       </AuthProvider>
     ),
     children: [
-      { index: true, element: <Home /> },
+      { index: true, element: <RoleHome /> },
       ...featureRoutes.map(({ path, element }) => ({ path, element })),
       { path: '*', element: <NotFound /> },
     ],

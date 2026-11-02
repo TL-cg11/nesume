@@ -68,3 +68,24 @@ def tokenized_resume_docs(db: Session) -> list[dict]:
         }
         for r in resumes
     ]
+
+
+def tokenized_resume_doc(db: Session, resume_id) -> dict | None:
+    """저장 즉시 색인용(B5, 11/2) — 자소서 **하나**의 토큰화 본문. 형식은 `tokenized_resume_docs`와 같다
+    (배치가 다시 봐도 '변경 없음'으로 건너뛰게). 삭제됐거나 없으면 None."""
+    from sqlalchemy import select
+
+    from app.models.resume import Question, Resume
+
+    r = db.get(Resume, resume_id)
+    if r is None or r.deleted_at is not None:
+        return None
+    questions = db.scalars(
+        select(Question)
+        .where(Question.resume_id == r.id, Question.deleted_at.is_(None))
+        .order_by(Question.resume_id, Question.position, Question.id)
+    ).all()
+    latest = repo.latest_versions(db, [q.id for q in questions])
+    bodies = [latest[q.id].body for q in questions if q.id in latest and latest[q.id].body]
+    return {"id": r.id, "owner_id": r.owner_id, "grade": r.grade,
+            "shared_with": list(r.shared_with or []), "text": "\n\n".join(bodies)}

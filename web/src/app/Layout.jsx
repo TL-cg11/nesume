@@ -75,7 +75,8 @@ function UserBlock() {
   )
 }
 
-export default function Layout({ navItems }) {
+// home: 로고·대시보드가 가리키는 곳. '/' 가 아니면(멘토 → /mentor) 대시보드 링크를 숨긴다(RoleNavLayout)
+export default function Layout({ navItems, home = '/' }) {
   const location = useLocation()
   const [navOpen, setNavOpen] = useState(false)
   const groups = groupNav(navItems)
@@ -94,7 +95,7 @@ export default function Layout({ navItems }) {
         >
           <Icon name="menu" />
         </button>
-        <Link to="/" className="app-brand" onClick={closeNav}>
+        <Link to={home} className="app-brand" onClick={closeNav}>
           <span className="app-brand-mark">
             <Icon name="file" />
           </span>
@@ -105,11 +106,13 @@ export default function Layout({ navItems }) {
         </Link>
 
         <nav className="app-nav">
-          <div className="app-nav-group">
-            <NavLink to="/" end onClick={closeNav}>
-              <Icon name="home" /> 대시보드
-            </NavLink>
-          </div>
+          {home === '/' && (
+            <div className="app-nav-group">
+              <NavLink to="/" end onClick={closeNav}>
+                <Icon name="home" /> 대시보드
+              </NavLink>
+            </div>
+          )}
           {groups.map((group) => (
             <div className="app-nav-group" key={group.label}>
               <span className="app-nav-label">{group.label}</span>

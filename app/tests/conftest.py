@@ -43,6 +43,18 @@ def test_database():
     admin.dispose()
 
 
+@pytest.fixture(autouse=True)
+def _no_background_personal_index(monkeypatch):
+    """저장 즉시 색인(B5)의 백그라운드 스레드를 테스트에서 끈다.
+
+    로컬 .env의 EMBEDDING_URL을 테스트도 읽기 때문에, 끄지 않으면 저장마다 실제 임베더를 부른다.
+    색인 동작 자체는 test_personal_index_b5가 대역으로 검사한다.
+    """
+    from app.features import personal_index
+
+    monkeypatch.setattr(personal_index, "submit", lambda items: None)
+
+
 @pytest.fixture
 def db_session():
     """테스트마다 트랜잭션을 열고 끝나면 롤백한다. 테스트 안의 commit은 SAVEPOINT로 처리된다."""

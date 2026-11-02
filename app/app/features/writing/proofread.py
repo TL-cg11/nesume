@@ -44,6 +44,13 @@ _PARTICLE_RE = re.compile(r"([가-힣])(은|는|을|를|으로|로)(?=[\s,.)])")
 #:   "지은 보고서" 의 '지은'(짓다)을 "지+은" 으로 읽어 '지는' 을 제안할 수 있다.
 #:   형태소 분석 없이는 해결되지 않아, 조사 제안은 **medium 신뢰도**로 표시하고
 #:   글쓴이가 거절할 수 있게 둔다. 알려진 오탐 사례는 테스트에 적어 두었다.
+#:
+#:   다만 '는' 쪽은 한 가지 예외를 둔다. 받침 있는 글자 + '는' 은 조사 오류("학생는")
+#:   보다 동사·형용사 어간 + 관형사형 어미("있는 회사", "없는 경우")인 경우가 압도적으로
+#:   많다. 자소서에 흔한 어간만 좁게 적어 두고, 그 뒤의 '는' 은 조사로 보지 않는다.
+_VERB_STEMS_BEFORE_NEUN: frozenset[str] = frozenset(
+    "있없않겠맞먹읽찾받믿듣묻싶잇짓웃앉쌓넣갖닫맡밝삼"
+)
 
 #: 이중피동. '되어지다·불려지다' 처럼 피동이 두 번 들어간 형태.
 #: 고치는 방향이 분명해 오탐이 거의 없다.
@@ -113,6 +120,8 @@ def check_particles(text: str) -> list[Suggestion]:
     out: list[Suggestion] = []
     for m in _PARTICLE_RE.finditer(text):
         last_char, particle = m.group(1), m.group(2)
+        if particle == "는" and last_char in _VERB_STEMS_BEFORE_NEUN:
+            continue  # 관형사형 어미 — 조사가 아니다
         correct = _correct_particle(last_char, particle)
         if correct is None:
             continue

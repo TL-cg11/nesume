@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
+from app.features import personal_index
 from app.features.resumes import pii_hooks
 from app.features.resumes import repository as repo
 from app.models import Question, Resume, User, Version
@@ -87,6 +88,7 @@ def update_question(db: Session, question: Question, **fields) -> Question:
 def soft_delete_question(db: Session, question: Question) -> None:
     question.deleted_at = datetime.now(UTC)
     db.flush()
+    personal_index.mark(db, "resume", question.resume_id)  # 자소서 글이 바뀜 → 커밋 뒤 다시 색인(B5)
 
 
 def create_version(
@@ -128,6 +130,7 @@ def create_version(
     db.add(version)
     db.flush()
     db.refresh(version)
+    personal_index.mark(db, "resume", question.resume_id)  # 새 버전 → 커밋 뒤 자소서 다시 색인(B5)
     return version, False
 
 
@@ -155,9 +158,11 @@ def delete_version(db: Session, owner_id: str, version: Version) -> None:
     if repo.version_used_by_active_share(db, owner_id, version.id):
         raise VersionInUse("share")
     vault = version.vault_id
+    resume_id = db.get(Question, version.question_id).resume_id
     db.delete(version)
     db.flush()
     pii_hooks.discard_vault(db, vault)
+    personal_index.mark(db, "resume", resume_id)  # 최신 버전이 바뀌었을 수 있다(B5)
 
 
 def restore_body(db: Session, owner_id: str, requester_id: str, version: Version) -> str:
