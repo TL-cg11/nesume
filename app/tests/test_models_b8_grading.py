@@ -16,7 +16,7 @@ def test_grade_table_matches_spec():
     by_table = {m.__tablename__: g for m, g in GRADE_BY_MODEL.items()}
     assert by_table == {**EXPECTED_DEFAULT, "pii_vaults": Grade.SENSITIVE, "writing_profiles": Grade.PERSONAL,
                         "share_comments": Grade.PERSONAL,
-                        "interview_questions": Grade.PERSONAL, "practice_answers": Grade.PERSONAL}  # B13
+                        "interview_sessions": Grade.PERSONAL, "interview_messages": Grade.PERSONAL}  # B13
 
 
 @pytest.mark.parametrize("table", sorted(EXPECTED_DEFAULT))

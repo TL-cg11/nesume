@@ -6,6 +6,7 @@
 """
 from fastapi import Depends, FastAPI
 
+from app.auth.admin_dashboard import router as admin_dashboard_router
 from app.auth.admin_router import router as admin_router
 from app.auth.dependencies import operator_mfa_gate
 from app.auth.router import router as auth_router
@@ -70,6 +71,7 @@ def create_app() -> FastAPI:
     application.include_router(writing_router)  # A7 글 다듬기
     application.include_router(auth_router)  # D7 /auth/me
     application.include_router(admin_router)  # D6 운영자 역할 변경
+    application.include_router(admin_dashboard_router)  # D14·D15 운영자 대시보드(차단 현황·트래픽)
     application.include_router(templates_router)  # B9 프롬프트 템플릿
     application.include_router(share_owner_router)  # B10 멘토 공유(작성자)
     application.include_router(share_mentor_router)  # B17 멘토 공유(멘토)
