@@ -29,7 +29,8 @@ from app.config import get_settings
 from app.core.errors import NotFoundError
 from app.core.storage import objects
 from app.features.share import service as share_service
-from app.models import AuditLog, Experience, Question, Resume, Share, ShareComment, User, Version
+from app.models import (AuditLog, Experience, InterviewQuestion, PracticeAnswer, Question, Resume, Share,
+                        ShareComment, User, Version)
 from app.pii import envelope
 from app.pii.pg_vault_store import delete_in
 from app.retrieval import indexing
@@ -109,9 +110,13 @@ def purge_resume(db: Session, r: Resume) -> None:
     version_vaults = db.scalars(select(Version.vault_id).join(Question).where(Question.resume_id == r.id)).all()
     comment_vaults = db.scalars(
         select(ShareComment.vault_id).join(Share).where(Share.resume_id == r.id)).all()
+    interview_vaults = db.scalars(  # B13 면접 질문·답변
+        select(InterviewQuestion.vault_id).where(InterviewQuestion.resume_id == r.id)
+        .union_all(select(PracticeAnswer.vault_id).join(InterviewQuestion)
+                   .where(InterviewQuestion.resume_id == r.id))).all()
     indexing.delete_personal(db, source_id=r.id)
     db.delete(r)
-    _drop_vaults(db, _vaults(version_vaults, comment_vaults))
+    _drop_vaults(db, _vaults(version_vaults, comment_vaults, interview_vaults))
 
 
 def purge_question(db: Session, q: Question) -> None:
