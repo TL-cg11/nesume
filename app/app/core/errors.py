@@ -33,6 +33,7 @@ class AppError(Exception):
         code: str | None = None,
         status_code: int | None = None,
         errors: list | dict | None = None,
+        headers: dict[str, str] | None = None,
     ) -> None:
         super().__init__(message)
         self.message = message
@@ -41,6 +42,8 @@ class AppError(Exception):
         if status_code:
             self.status_code = status_code
         self.errors = errors
+        #: 응답 헤더(예: 429의 Retry-After, C7)
+        self.headers = headers
 
 
 class UnauthorizedError(AppError):
@@ -93,7 +96,7 @@ def _sanitize_validation_errors(errors: list[dict[str, Any]]) -> list[dict[str, 
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def _app_error(_: Request, exc: AppError) -> JSONResponse:
-        return error_response(exc.status_code, exc.code, exc.message, exc.errors)
+        return error_response(exc.status_code, exc.code, exc.message, exc.errors, headers=exc.headers)
 
     @app.exception_handler(RequestValidationError)
     async def _validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:

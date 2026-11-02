@@ -47,9 +47,17 @@ def _shared() -> Guardrail:
     return Guardrail(llm=llm, audit=DbAuditSink(), history=InMemoryTurnStore())
 
 
+@lru_cache(maxsize=1)
+def _limited() -> Guardrail:
+    """C7 레이트리밋 래퍼를 씌운 것. LLM 엔드포인트는 모두 이 의존성으로 받아 한도를 피할 수 없다."""
+    from app.features.ratelimit.guard import RateLimitedGuardrail
+
+    return RateLimitedGuardrail(_shared())  # type: ignore[return-value]  # run·run_split 같은 모양
+
+
 def get_guardrail() -> Guardrail:
     """테스트에서 갈아끼울 수 있게 의존성으로 뺀다."""
-    return _shared()
+    return _limited()
 
 
 def _as_uuid(value: str) -> uuid.UUID:
