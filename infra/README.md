@@ -8,7 +8,7 @@
 infra/
 ├─ bootstrap/            tfstate 버킷·ECR 2개. 로컬 state(백업: s3://nesume-tfstate-852138520969/bootstrap/)
 ├─ envs/dev/base/        한 번 올리고 안 내린다
-├─ envs/dev/compute/     평일 낮만. 매일 내린다
+├─ envs/dev/compute/     상시 가동(2026-11-02~). 필요할 때만 내린다
 ├─ modules/              network storage secrets logs iam cognito | eks rds addons
 └─ scripts/              up.ps1 down.ps1
 ```
@@ -18,7 +18,7 @@ infra/
 | 들어가는 것 | VPC·서브넷·라우트 테이블(NAT 경로 없음)·S3 게이트웨이 엔드포인트, S3 문서 버킷, KMS 키, Secrets Manager 껍데기 2개, CloudWatch 로그 그룹 2개, GitHub OIDC 공급자, IAM 역할 7개, Cognito | NAT+EIP+프라이빗 기본 경로, EKS 1.36(STANDARD), 관리형 애드온 5개, arm64 스팟 노드 2대, 액세스 엔트리, Pod Identity 연결 4개, RDS PostgreSQL 16, Helm(ALB 컨트롤러·External Secrets), `dev` 네임스페이스 |
 | state | `s3://nesume-tfstate-852138520969/envs/dev/base.tfstate` | `.../envs/dev/compute.tfstate` |
 | 수명 | 상시 (월 5달러 미만) | 올리기 15~20분, 내리기 10분. 켜 두면 시간당 약 0.3달러 |
-| 누가 | D (로컬) | Actions `infra` 워크플로(`up` 수동, `down` 매일 00:00 KST 자동) 또는 D (로컬 `up.ps1`/`down.ps1`) |
+| 누가 | D (로컬) | Actions `infra` 워크플로(`up` / `down` 수동) 또는 D (로컬 `up.ps1`/`down.ps1`) |
 
 의존은 compute → base 한 방향. compute는 `terraform_remote_state`로 base 출력을 읽는다. IAM 역할이 전부 base에 있는 이유: EKS Pod Identity는 신뢰 정책이 `pods.eks.amazonaws.com` 고정이라 클러스터 OIDC id가 필요 없고, 클러스터를 매일 새로 만들어도 역할 ARN이 안 바뀐다.
 
@@ -45,7 +45,7 @@ $env:AWS_PROFILE = "nesume"; .\infra\scripts\down.ps1   # 10분
 
 `down.ps1`: `helm uninstall --wait` → Ingress finalizer 삭제 대기 → ALB 소멸 대기 → `terraform destroy` → NAT·EIP·EKS·RDS·ALB 잔존 확인. 마지막 다섯 줄이 전부 `none`이어야 끝난 것이다.
 
-같은 일을 GitHub Actions 에서도 한다(`.github/workflows/infra.yml`, D11). 저장소 **Actions → infra → Run workflow → `up` / `down`**. `down` 은 매일 00:00 KST 에 자동으로 돈다(GitHub 스케줄은 수십 분 늦을 수 있다). 러너는 OIDC 로 `nesume-github-ci` 역할을 받으므로 로컬 자격 증명이 필요 없고, 저장소 write 권한이 있는 팀원도 버튼을 누를 수 있다. 끝나면 run 의 Summary 에 ALB 주소(`up`)나 잔존 리소스 점검표(`down`)가 남는다. 로컬 스크립트와 Actions 를 동시에 돌리지 않는다(state lock 에 걸려 기다리게만 된다). 순서·재시도 규칙(apply 3회, 실패한 ESO 릴리스 제거, ALB 소멸 대기, 잔존 확인)은 스크립트와 같다.
+같은 일을 GitHub Actions 에서도 한다(`.github/workflows/infra.yml`, D11). 저장소 **Actions → infra → Run workflow → `up` / `down`**. 자동 종료 스케줄은 없다(dev 는 상시 가동, 2026-11-02 결정). 러너는 OIDC 로 `nesume-github-ci` 역할을 받으므로 로컬 자격 증명이 필요 없고, 저장소 write 권한이 있는 팀원도 버튼을 누를 수 있다. 끝나면 run 의 Summary 에 ALB 주소(`up`)나 잔존 리소스 점검표(`down`)가 남는다. 로컬 스크립트와 Actions 를 동시에 돌리지 않는다(state lock 에 걸려 기다리게만 된다). 순서·재시도 규칙(apply 3회, 실패한 ESO 릴리스 제거, ALB 소멸 대기, 잔존 확인)은 스크립트와 같다.
 
 둘 다 `AWS_PROFILE`이 비어 있거나 계정이 다르면 바로 중단한다. 긴 apply 중 콘솔 창을 클릭하면 QuickEdit 선택 모드가 출력을 막는다. Esc 또는 Enter. 절대 Ctrl+C 하지 않는다.
 
@@ -108,7 +108,7 @@ terraform -chdir="infra/envs/dev/base" plan      # No changes
 
 ## 6. 다른 팀에 알릴 것
 
-- dev 클러스터는 평일 낮에만 켜져 있고 매일 00:00 KST 에 Actions `infra`(`down`)가 종료한다. 필요하면 Actions `infra` → `up`(15~20분) 또는 D에게 요청.
+- dev 클러스터는 상시 가동이다(2026-11-02~). 내려가 있으면 Actions `infra` → `up`(15~20분) 또는 D에게 요청. 코드 배포는 main 머지로 자동.
 - ALB 주소는 올릴 때마다 바뀐다. 공지 채널 고정 메시지를 갱신한다.
 - dev DB는 내릴 때 새로 만든다. 테스트 데이터는 시드 스크립트(D6)로 재생성 가능해야 한다.
 - 콘솔·CLI로 EKS·RDS를 직접 만들거나 지우지 않는다(Terraform state 밖이 된다).
