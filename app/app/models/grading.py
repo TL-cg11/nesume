@@ -17,7 +17,7 @@ from app.models._common import Grade
 from app.models.application import Application
 from app.models.audit import AuditLog
 from app.models.experience import Experience
-from app.models.interview import InterviewQuestion, PracticeAnswer
+from app.models.interview import InterviewMessage, InterviewSession
 from app.models.pii import PiiVault
 from app.models.resume import Question, Resume, Version
 from app.models.share_comment import ShareComment
@@ -36,8 +36,8 @@ GRADE_BY_MODEL: dict[type, Grade] = {
     AuditLog: Grade.SENSITIVE,
     WritingProfile: Grade.PERSONAL,  # A14 말투 프로필
     ShareComment: Grade.PERSONAL,  # B17 멘토 코멘트(자소서에 딸린 데이터)
-    InterviewQuestion: Grade.PERSONAL,  # B13 면접 연습(spec 6.4)
-    PracticeAnswer: Grade.PERSONAL,
+    InterviewSession: Grade.PERSONAL,  # B13 모의 면접(spec 6.4)
+    InterviewMessage: Grade.PERSONAL,
 }
 
 
