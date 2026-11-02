@@ -116,6 +116,15 @@ def test_turn_prompt_states_progress_current_question_and_latest_answer():
     assert "답변에 없는 내용을 지원자가 말했다고 하지 마세요" in prompt
     assert "지원자의 답변을 대신 만들거나" in prompt
     assert "이전 주제로 돌아가지 마세요" in prompt
+    assert "직무와 무관한 개인 사항은 묻지 마세요" in prompt
+
+
+@pytest.mark.parametrize("persona", sorted(service.PERSONAS))
+def test_persona_settings_are_detailed(persona):
+    """페르소나 설정은 배경·말투·질문 초점·꼬리 질문·부실한 답 대응을 모두 갖는다(11/2 상세화)."""
+    label, guide = service.PERSONAS[persona]
+    for part in ("배경:", "말투:", "질문 초점:", "꼬리 질문:", "부실한 답:"):
+        assert part in guide, (label, part)
 
 
 # --- 시작 ---------------------------------------------------------------------
