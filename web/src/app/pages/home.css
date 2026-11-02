@@ -43,7 +43,27 @@
 .home-badge.review { color: var(--violet); background: var(--violet-soft); }
 .home-badge.done { color: var(--success); background: var(--success-soft); }
 
+/* 주요 기능(10/30 시안): 왼쪽·오른쪽 2열, 아이콘 칸 + 번호 + 제목 + 설명, 줄 사이 옅은 구분선 */
+.home-feat-eyebrow { font-size: var(--text-sm); font-weight: 700; letter-spacing: .06em; color: var(--accent-text); }
+.home-feat-list {
+  list-style: none; margin: var(--space-3) 0 0; padding: 0;
+  display: grid; grid-template-columns: 1fr 1fr; column-gap: var(--space-4);
+}
+.home-feat { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-4) 0; }
+/* 첫 줄(1·2번) 밑부터 줄마다 선 — 2열이라 "앞 두 칸 제외" */
+.home-feat:nth-child(n + 3) { border-top: 1px solid var(--border); }
+.home-feat-icon {
+  display: grid; place-items: center; flex: none; width: 40px; height: 40px;
+  border-radius: var(--radius-md); background: var(--accent-soft); color: var(--accent-text);
+}
+.home-feat-icon svg { width: 20px; height: 20px; }
+/* 좁은 칸 2열이라 한글이 글자 단위로 끊기지 않게 어절 단위 줄바꿈 */
+.home-feat p, .home-feat .home-quick-title { word-break: keep-all; overflow-wrap: anywhere; }
+.home-feat-no { display: block; font-size: var(--text-sm); font-weight: 700; color: color-mix(in srgb, var(--accent-text) 55%, transparent); }
+
 @media (max-width: 720px) {
   .home-stats { grid-template-columns: repeat(2, 1fr); }
   .home-grid { grid-template-columns: 1fr; }
+  .home-feat-list { grid-template-columns: 1fr; }
+  .home-feat:nth-child(2) { border-top: 1px solid var(--border); }
 }

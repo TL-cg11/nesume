@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { resumesApi } from '../../features/resumes/api.js'
 import { shortDate } from '../../features/resumes/ShareTags.jsx'
+import Icon from '../Icons.jsx'
 import './home.css'
 
 // 홈 대시보드(사용자용) — 발표 시안 화면 1(sprint2/index.html), part2_guide 4.54
@@ -12,14 +13,15 @@ const fmt = (iso) =>
   new Date(iso).toLocaleString('ko-KR', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 
 // 주요 기능 정리(10/29): 이 서비스가 제공하는 기능을 한 줄씩. 소개만 하고 바로가기는 두지 않는다(메뉴로 이동)
+// 10/30: 아이콘·번호·구분선(시안 이미지)
 const QUICK = [
-  { title: '자기소개서', desc: '문항별 작성 · 버전 관리와 비교 · 멘토 공유' },
-  { title: '경험', desc: '프로젝트·활동·수상·GitHub 경험 기록, 문항에 연결' },
-  { title: '글 다듬기', desc: '맞춤법·STAR 점검, AI 리라이팅' },
-  { title: '공고 추천', desc: '내 자소서·경험과 맞는 공고' },
-  { title: '학습 로드맵', desc: '부족한 역량을 채울 강좌 추천' },
-  { title: '지원 현황', desc: '지원한 공고 진행 단계 관리' },
-  { title: '면접 연습', desc: '자소서 기반 예상 질문과 답변 연습', soon: true }, // B13
+  { icon: 'file', title: '자기소개서', desc: '문항별 작성 · 버전 관리와 비교 · 멘토 공유' },
+  { icon: 'folder', title: '경험', desc: '프로젝트 · 활동 · 수상 · GitHub 경험 기록, 문항에 연결' },
+  { icon: 'pencil', title: '글 다듬기', desc: '맞춤법 · STAR 점검 · AI 리라이팅' },
+  { icon: 'search', title: '공고 추천', desc: '내 자기소개서와 경험에 맞는 채용 공고 추천' },
+  { icon: 'grad', title: '학습 로드맵', desc: '부족한 역량을 채울 강좌 추천' },
+  { icon: 'chart', title: '지원 현황', desc: '지원한 공고의 진행 단계 관리' },
+  { icon: 'user', title: '면접 연습', desc: '자기소개서 기반 예상 질문과 답변 연습' }, // B13
 ]
 
 function Stat({ label, value, caption }) {
@@ -126,16 +128,20 @@ export default function Home() {
 
             <div className="home-side">
               <div className="card">
+                <span className="home-feat-eyebrow">FEATURES</span>
                 <h2>주요 기능</h2>
                 <p className="muted">nesume에서 할 수 있는 일</p>
-                <ul className="list">
-                  {QUICK.map((q) => (
-                    <li key={q.title}>
-                      <span className="home-quick-title">
-                        {q.title}
-                        {q.soon && <span className="muted"> (준비 중)</span>}
+                <ul className="home-feat-list">
+                  {QUICK.map((q, i) => (
+                    <li key={q.title} className="home-feat">
+                      <span className="home-feat-icon">
+                        <Icon name={q.icon} />
                       </span>
-                      <p className="muted">{q.desc}</p>
+                      <div>
+                        <span className="home-feat-no">{String(i + 1).padStart(2, '0')}</span>
+                        <span className="home-quick-title">{q.title}</span>
+                        <p className="muted">{q.desc}</p>
+                      </div>
                     </li>
                   ))}
                 </ul>
