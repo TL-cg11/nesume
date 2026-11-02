@@ -56,7 +56,15 @@ def _limited() -> Guardrail:
 
 
 def get_guardrail() -> Guardrail:
-    """테스트에서 갈아끼울 수 있게 의존성으로 뺀다."""
+    """테스트에서 갈아끼울 수 있게 의존성으로 뺀다.
+
+    C13 ②: A5 응답 검사가 볼 카나리 토큰을 매 요청 직전에 채운다. 토큰은 DB에만 있고(C12 시드),
+    5분 캐시라 DB를 매번 읽지 않는다. 시드 Job이 앱보다 늦게 돌아도(post-upgrade) 5분 안에 켜진다.
+    C7: 돌려주는 것은 레이트리밋 래퍼다(같은 `_shared()` 가드레일을 감싼다).
+    """
+    from app.retrieval import canary
+
+    _shared().canaries = canary.tokens.get()
     return _limited()
 
 
