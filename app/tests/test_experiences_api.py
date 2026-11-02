@@ -149,7 +149,7 @@ def test_sensitive_input_blocked_and_not_saved(alice):
 
 def test_index_hook_called_on_create_and_update_only(alice, monkeypatch):
     calls = []
-    monkeypatch.setattr(index_hooks, "index_experience", lambda owner, eid: calls.append(str(eid)))
+    monkeypatch.setattr(index_hooks, "index_experience", lambda db, owner, eid: calls.append(str(eid)))
     e = _exp(alice)
     alice.patch(f"/experiences/{e['id']}", json={"title": "수정"})
     alice.delete(f"/experiences/{e['id']}")
