@@ -1,6 +1,6 @@
-infra/**              @TL-cg11
-deploy/**             @TL-cg11
-.github/**            @TL-cg11
+infra/**              @TL-cg11 @yysong1249
+deploy/**             @TL-cg11 @yysong1249
+.github/**            @TL-cg11 @yysong1249
 scripts/**            @TL-cg11
 app/app/core/**       @TL-cg11
 app/app/auth/**       @TL-cg11
