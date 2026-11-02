@@ -7,6 +7,8 @@
 }
 .chip:hover:not(:disabled) { background: var(--surface); filter: none; }
 .chip.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+/* 선택된 칩은 마우스를 올려도 강조색 유지(위 hover가 배경을 흰색으로 덮어 글자가 안 보이던 문제, 11/2) */
+.chip.on:hover:not(:disabled) { background: var(--accent); filter: brightness(1.08); }
 
 /* 경험 목록 — 자소서 목록과 같은 양식(10/28): 카드 안 행마다 이름(왼쪽)·기간(오른쪽) */
 .exp-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
