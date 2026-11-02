@@ -167,3 +167,37 @@ def test_rule_only_request_leaves_no_audit_row() -> None:
 
     assert r.status_code == 200
     assert sink.rows == [], "지금은 남지 않는다 — 바뀌면 이 시험이 먼저 알려 준다"
+
+
+# ---------------------------------------------------------------- C6 검색 주입
+
+def test_shared_guardrail_wires_the_retriever_when_an_embedder_is_configured(monkeypatch) -> None:
+    """★ C 요청(2026-11-02) — 사용자 요청 경로에서 개인 검색이 실제로 돈다.
+
+    주입이 빠져 있으면 `retriever=None` 이라 C6 가 한 번도 불리지 않고,
+    카나리(C12·C13) 탐지도 실제 경로에서는 돌지 않는다.
+    """
+    from app.guardrail import fastapi as adapter
+
+    sentinel = object()
+    monkeypatch.setattr("app.retrieval.embedder.get_embedder", lambda: sentinel)
+    monkeypatch.setattr("app.retrieval.search.build_retriever", lambda e: ("retriever", e))
+    adapter._shared.cache_clear()
+
+    try:
+        assert adapter._shared().retriever == ("retriever", sentinel)
+    finally:
+        adapter._shared.cache_clear()
+
+
+def test_shared_guardrail_leaves_the_retriever_off_without_an_embedder(monkeypatch) -> None:
+    """EMBEDDING_URL 이 없으면 `get_embedder()` 가 None → 검색 단계 생략(기존 동작)."""
+    from app.guardrail import fastapi as adapter
+
+    monkeypatch.setattr("app.retrieval.embedder.get_embedder", lambda: None)
+    adapter._shared.cache_clear()
+
+    try:
+        assert adapter._shared().retriever is None
+    finally:
+        adapter._shared.cache_clear()
