@@ -20,3 +20,13 @@ export const errorText = (e) => {
   if (e.status === 403) return '운영자만 사용할 수 있습니다.'
   return e.message
 }
+
+// D14·D15 운영자 대시보드. hours 1~336, is_test(평가 러너) 트래픽은 기본 제외. 트래픽은 응답한 파드 기준(core/metrics.py)
+export const dashboardApi = {
+  summary: ({ hours, includeTest }, signal) =>
+    api.get(`/admin/dashboard/summary?hours=${hours}&include_test=${includeTest ? 'true' : 'false'}`, { signal }),
+  traffic: (minutes, signal) => api.get(`/admin/dashboard/traffic?minutes=${minutes}`, { signal }),
+  // 사용자 ID → 이메일(B11). 못 찾은 ID(익명화·삭제)는 빠진다
+  emails: (ids) =>
+    ids.length ? api.get(`/audit-logs/emails?${ids.map((id) => `user_id=${encodeURIComponent(id)}`).join('&')}`) : Promise.resolve({}),
+}
