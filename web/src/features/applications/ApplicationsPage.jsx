@@ -185,7 +185,7 @@ export default function ApplicationsPage() {
       </div>
       <div className="app-card-meta">
         {app.posting?.region_name && <span>{app.posting.region_name}</span>}
-        {app.applied_at && <span>지원일 {app.applied_at}</span>}
+        {app.applied_at && <span>지원 날짜 {app.applied_at}</span>}
         {dueIds.has(app.id) && <span className="app-due">마감 임박</span>}
         {app.days_until != null && (
           <span>
@@ -238,10 +238,12 @@ export default function ApplicationsPage() {
                 <option key={v} value={v}>{l}</option>
               ))}
             </select>
-            <label className="c-field-label" htmlFor="new-date">지원일</label>
+            <label className="c-field-label" htmlFor="new-date">지원 날짜</label>
             <input
               id="new-date"
               type="date"
+              // max가 없으면 브라우저가 연도를 6자리까지 받는다(서버는 4자리만 파싱 → 422)
+              max="9999-12-31"
               className="field"
               value={form.applied_at}
               onChange={(e) => setForm((f) => ({ ...f, applied_at: e.target.value }))}
