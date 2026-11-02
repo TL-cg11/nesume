@@ -50,7 +50,7 @@ const FIELD_LABEL = {
   title: '공고 제목',
   job_name: '직무명',
   job_content: '직무 내용',
-  certificates: '자격증',
+  certificates: '자격·우대', // 고용24 sptCertEtc엔 자격증과 전공·우대가 섞여 온다
   preferred: '우대사항',
   major: '전공',
   computer_skills: '컴퓨터 활용',
@@ -141,6 +141,7 @@ export default function LearningPage() {
   const [appliedIds, setAppliedIds] = useState(() => new Set()) // 지원 현황에 있는 공고
   const [filter, setFilter] = useState('all') // all | applied | not
   const [postingId, setPostingId] = useState(null)
+  const [fieldIdx, setFieldIdx] = useState(null) // 모집분야 순번(여럿인 공고만). null = 공고 전체
   const [gapInfo, setGapInfo] = useState(null) // /learning-gaps 응답(gaps·domain_gaps·conditions·covered·counts)
   const [gapsLoading, setGapsLoading] = useState(false)
 
@@ -210,14 +211,16 @@ export default function LearningPage() {
     }
   }
 
-  const pickPosting = async (pid) => {
+  // 공고 선택 → 역량 갭. 모집분야가 여럿이면 추천이 찾은 "자소서에 맞는 분야"로 분석(바꿔 볼 수 있음)
+  const pickPosting = async (pid, idx = postings?.find((p) => p.posting_id === pid)?.field_index ?? null) => {
     setPostingId(pid)
+    setFieldIdx(idx)
     setGaps([])
     setGapInfo(null)
     setGapsLoading(true)
     setError(null)
     try {
-      const res = await learningGapsApi.forPosting(resumeId, pid)
+      const res = await learningGapsApi.forPosting(resumeId, pid, idx)
       setGaps(res.gaps) // 기술 역량은 기본 포함, 직무 역량은 사용자가 고르면
       setGapInfo(res)
     } catch (e) {
@@ -493,6 +496,9 @@ export default function LearningPage() {
                       >
                         <span className="lp-posting-title">
                           {p.posting?.company_name && <b>{p.posting.company_name}</b>} {p.posting?.title ?? '(제목 없음)'}
+                          {p.field_index != null && p.posting?.field_names?.[p.field_index] && (
+                            <span className="lp-posting-field">맞는 분야: {p.posting.field_names[p.field_index]}</span>
+                          )}
                         </span>
                         <span className={`lp-badge ${applied ? 'applied' : ''}`}>{applied ? '지원함' : '미지원'}</span>
                       </button>
@@ -519,6 +525,25 @@ export default function LearningPage() {
                   )
                 })()}
               </div>
+              {(() => {
+                // 모집분야가 여럿인 공고: 자소서에 맞는 분야로 분석(기본), 다른 분야로 바꿔 보기
+                const names = postings?.find((p) => p.posting_id === postingId)?.posting?.field_names ?? []
+                if (names.length < 2) return null
+                return (
+                  <label className="lp-field-pick">
+                    모집분야
+                    <select
+                      value={fieldIdx ?? ''}
+                      onChange={(e) => pickPosting(postingId, e.target.value === '' ? null : Number(e.target.value))}
+                    >
+                      <option value="">공고 전체</option>
+                      {names.map((n, i) => (
+                        <option key={i} value={i}>{n}</option>
+                      ))}
+                    </select>
+                  </label>
+                )
+              })()}
               {gapsLoading && <p className="c-roadmap-muted">자소서·경험과 공고를 비교하는 중…</p>}
 
               {gapInfo && (

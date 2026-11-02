@@ -278,6 +278,9 @@ async def test_pipeline_blocks_slicing_with_history() -> None:
     assert "MT_SLICING" in result.verdict.flags
     assert result.text == ""
     assert len(provider.calls) == 1, "차단된 턴은 모델을 부르지 않는다"
+    # ★ 감사 로그에 남는 값이다. A3 가 이 턴만 보고 내린 normal 에 덮이면
+    #   로그가 막은 이유를 틀리게 적는다 (B16 러너가 이 값으로 판정한다)
+    assert result.verdict.query_type == "exfiltration"
 
 
 @pytest.mark.anyio

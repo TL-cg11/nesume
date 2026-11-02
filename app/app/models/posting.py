@@ -30,6 +30,7 @@ from sqlalchemy import (
     func,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -116,6 +117,10 @@ class JobPosting(Base):
 
     # --- 본문·요건 (갭 분석·임베딩 재료) ---
     job_content: Mapped[str | None] = mapped_column(Text)         # JOB_CONT (연락처 섞임 가능 → mask)
+    # 모집분야별 내용(공채속보 empRecrListInfo). [{name, job_content, career, edu, certificates}].
+    # 한 공고에 분야가 여럿이면 분야별로 임베딩·역량 갭을 따로 본다(docs/C4.md).
+    # job_content는 전체 합본 그대로.
+    recruit_fields: Mapped[list[dict] | None] = mapped_column(JSONB)
     certificates: Mapped[str | None] = mapped_column(Text)        # CERTIFICATE
     preferred: Mapped[str | None] = mapped_column(Text)           # PF_COND
     major: Mapped[str | None] = mapped_column(Text)               # MAJOR

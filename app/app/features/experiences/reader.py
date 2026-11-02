@@ -56,3 +56,17 @@ def tokenized_experience_docs(db: Session) -> list[dict]:
             "text": "\n".join(p for p in parts if p),
         })
     return out
+
+
+def tokenized_experience_doc(db: Session, experience_id) -> dict | None:
+    """저장 즉시 색인용(B5, 11/2) — 경험 **하나**의 토큰화 글. 형식은 `tokenized_experience_docs`와 같다.
+    삭제됐거나 없으면 None."""
+    from app.models.experience import Experience
+
+    e = db.get(Experience, experience_id)
+    if e is None or e.deleted_at is not None:
+        return None
+    lists = (" ".join(e.tech_stack or []), " ".join(e.tags or []))
+    parts = [e.title, e.type, e.role, e.outcome, e.detail, *lists]
+    return {"id": e.id, "owner_id": e.owner_id, "grade": e.grade, "shared_with": [],
+            "text": "\n".join(p for p in parts if p)}

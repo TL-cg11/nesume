@@ -21,6 +21,8 @@
 
 .app-card { position: relative; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); padding: 13px 30px 13px 13px; margin-bottom: 10px; cursor: grab; }
 .app-card:active { cursor: grabbing; }
+.app-card-link { cursor: pointer; }
+.app-card-link:hover { border-color: var(--accent); }
 .app-card.dragging { opacity: .45; }
 .app-card.saving { opacity: .7; }
 .app-card-x { position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: 16px; line-height: 1; cursor: pointer; }
@@ -29,8 +31,11 @@
 .app-col-over { box-shadow: inset 0 0 0 2px var(--accent); background: var(--accent-soft); }
 .app-card:last-child { margin-bottom: 0; }
 .app-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.app-card-top > div { min-width: 0; }
+/* 한글이 글자 단위로 끊기지 않게 어절 단위로 줄바꿈(너무 긴 어절만 강제로 끊음) */
+.app-card-title, .app-card-sub, .app-card-memo { word-break: keep-all; overflow-wrap: anywhere; }
 .app-card-title { color: var(--fg); font-size: 13px; font-weight: 800; }
-.app-card-sub { margin-top: 3px; color: var(--muted); font-size: 11px; }
+.app-card-sub { margin-top: 3px; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .app-card-meta { display: flex; flex-wrap: wrap; gap: 6px 10px; margin-top: 8px; color: var(--muted); font-size: 11px; }
 .app-card-memo { margin-top: 8px; color: var(--muted); font-size: 11px; line-height: 1.6; white-space: pre-wrap; }
 .app-card-actions { display: flex; align-items: center; gap: 6px; margin-top: 10px; }

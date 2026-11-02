@@ -191,7 +191,7 @@ jobs:
       id-token: write   # OIDC 로 nesume-github-ci 역할을 받는다. 저장소에 AWS 키 없음
       contents: read
     concurrency:
-      group: infra        # infra-up/down 과 같은 그룹. 동시에 클러스터를 만지지 않는다
+      group: infra        # infra.yml(up/down) 과 같은 그룹. 동시에 클러스터를 만지지 않는다
       cancel-in-progress: false
     env:
       AWS_REGION: ${{ vars.AWS_REGION }}

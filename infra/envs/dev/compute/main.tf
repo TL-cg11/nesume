@@ -1,4 +1,4 @@
-# dev compute: 쓸 때만 올리고 매일 내린다. base 출력은 remote_state로 읽는다. base가 compute를 읽는 일은 없다.
+# dev compute: 올리고 내리는 단위(상시 가동, 필요할 때만 내린다). base 출력은 remote_state로 읽는다. base가 compute를 읽는 일은 없다.
 locals {
   name   = "nesume-dev"
   region = "ap-northeast-2"
@@ -86,4 +86,23 @@ module "addons" {
   external_secrets_chart_version = var.external_secrets_chart_version
 
   depends_on = [module.eks] # 노드그룹·애드온·Pod Identity 연결이 전부 끝난 뒤
+}
+
+# ---------- D14 로그·모니터링: Fluent Bit → CloudWatch Logs(app/audit 분리), Container Insights, 알람·SNS, 대시보드 ----------
+# base 출력 fluent_bit_role_arn·cloudwatch_agent_role_arn 이 필요하다(base 를 먼저 apply).
+module "observability" {
+  source                    = "../../../modules/observability"
+  project                   = "nesume"
+  env                       = "dev"
+  region                    = local.region
+  cluster_name              = module.eks.cluster_name
+  app_log_group             = local.base.app_log_group
+  audit_log_group           = local.base.audit_log_group
+  fluent_bit_role_arn       = local.base.fluent_bit_role_arn
+  cloudwatch_agent_role_arn = local.base.cloudwatch_agent_role_arn
+  fluent_bit_chart_version  = var.fluent_bit_chart_version
+  rds_identifier            = local.name
+  alert_email               = var.alert_email
+
+  depends_on = [module.eks]
 }

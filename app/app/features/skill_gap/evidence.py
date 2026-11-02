@@ -2,7 +2,10 @@
 
 맞춤 학습(`/learning-gaps`)과 자소서별 공고 추천(`/recommendations` resume_id)이 같이 쓴다.
 B가 연 읽기 창구만 쓴다 — `resumes.reader.resume_bodies`(소유자 확인·원문 복원),
-`experiences.reader.list_owner_experiences`. 본문은 서버 안에서만 쓰고 응답·로그에 싣지 않는다.
+`experiences.reader.linked_experiences_for_resume`. 본문은 서버 안에서만 쓰고 응답·로그에 싣지 않는다.
+
+경험은 **그 자소서 문항에 끌어온 것만** 쓴다(2026-10-30 사용자 결정 a — 다른 직무 경험이 "보유"로 잡히지
+않게). 끌어온 경험이 없으면 자소서 본문만.
 """
 from __future__ import annotations
 
@@ -25,7 +28,7 @@ def _as_terms(value: object) -> tuple[str, ...]:
 
 def gather_evidence(session: Session, *, owner_id: str, resume_id: uuid.UUID) -> UserEvidence | None:
     """자소서가 없거나 남의 것이면 None(호출측이 404). 버전 없는 문항은 건너뛴다."""
-    from app.features.experiences.reader import list_owner_experiences
+    from app.features.experiences.reader import linked_experiences_for_resume
     from app.features.resumes.reader import resume_bodies
 
     bodies = resume_bodies(session, owner_id, resume_id)
@@ -38,7 +41,7 @@ def gather_evidence(session: Session, *, owner_id: str, resume_id: uuid.UUID) ->
             text=" ".join(str(e.get(k) or "") for k in ("role", "outcome", "detail")).strip(),
             terms=_as_terms(e.get("tech_stack")) + _as_terms(e.get("tags")),
         )
-        for e in list_owner_experiences(session, owner_id, limit=MAX_EXPERIENCES)
+        for e in linked_experiences_for_resume(session, owner_id, resume_id)[:MAX_EXPERIENCES]
     )
     return UserEvidence(resume_text=resume_text, experiences=experiences)
 

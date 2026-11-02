@@ -3,8 +3,7 @@
 //
 // A: writing / B: resumes·share·pdf·interview·experiences(GitHub 소개 포함, 10/28)
 // C: jobs·recommend·learning·applications / D: auth(로그인·MFA), admin
-import Layout from './RoleNavLayout.jsx' // 역할 전용 메뉴를 거른 뒤 D의 Layout으로 넘긴다
-import Home from './pages/Home.jsx'
+import Layout, { RoleHome } from './RoleNavLayout.jsx' // 역할 전용 메뉴를 거른 뒤 D의 Layout으로 넘긴다. 홈도 역할별(멘토 → /mentor)
 import NotFound from './pages/NotFound.jsx'
 import ResumesPage from '../features/resumes/ResumesPage.jsx'
 import ResumeDetailPage from '../features/resumes/ResumeDetailPage.jsx'
@@ -25,6 +24,7 @@ import MentorSharePage from '../features/share/MentorSharePage.jsx'
 import AuditLogsPage from '../features/audit/AuditLogsPage.jsx'
 import RequireAuth from '../features/auth/RequireAuth.jsx'
 import AdminUsersPage from '../features/admin/AdminUsersPage.jsx'
+import AdminDashboardPage from '../features/admin/AdminDashboardPage.jsx'
 // C: 공고 추천(C8)·학습 로드맵(C14)·지원 현황(C15) — nesumeC에서 이식(docs C-frontend-wiring.md 6절)
 import LearningPage from '../features/learning/LearningPage.jsx'
 import ApplicationsPage from '../features/applications/ApplicationsPage.jsx'
@@ -54,6 +54,8 @@ export const featureRoutes = [
   { path: 'mentor/:shareId', element: <MentorSharePage /> },
   // B11 AI 사용 기록(운영자 MFA 전용, 10/29). 프롬프트 템플릿 화면은 메뉴에서 뺌 — 템플릿 API는 A6가 쓰므로 서버에 유지
   { path: 'ai-logs', element: <AuditLogsPage />, nav: 'AI 사용 기록', roles: ['operator'] },
+  // D14·D15 운영 대시보드(운영자 전용): 차단 현황·트래픽. 운영자의 홈(/)도 여기로 온다(RoleNavLayout)
+  { path: 'admin/dashboard', element: <RequireAuth roles={['operator']}><AdminDashboardPage /></RequireAuth>, nav: '운영 대시보드', roles: ['operator'] },
   // D6 역할 관리(운영자 전용). 운영자 부여·회수
   { path: 'admin/users', element: <RequireAuth roles={['operator']}><AdminUsersPage /></RequireAuth>, nav: '역할 관리', roles: ['operator'] },
 ]
@@ -68,7 +70,7 @@ export const routes = [
       </AuthProvider>
     ),
     children: [
-      { index: true, element: <Home /> },
+      { index: true, element: <RoleHome /> },
       ...featureRoutes.map(({ path, element }) => ({ path, element })),
       { path: '*', element: <NotFound /> },
     ],

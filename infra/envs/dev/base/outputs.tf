@@ -16,6 +16,7 @@ output "seed_secret_arn" { value = module.secrets.seed_secret_arn }
 
 output "app_log_group" { value = module.logs.app_log_group }
 output "audit_log_group" { value = module.logs.audit_log_group }
+output "audit_kms_key_arn" { value = module.logs.audit_kms_key_arn }
 
 output "ci_role_arn" { value = module.iam.ci_role_arn }
 output "eks_cluster_role_arn" { value = module.iam.eks_cluster_role_arn }
@@ -24,6 +25,8 @@ output "app_role_arn" { value = module.iam.app_role_arn }
 output "batch_role_arn" { value = module.iam.batch_role_arn }
 output "alb_controller_role_arn" { value = module.iam.alb_controller_role_arn }
 output "external_secrets_role_arn" { value = module.iam.external_secrets_role_arn }
+output "fluent_bit_role_arn" { value = module.iam.fluent_bit_role_arn }             # D14
+output "cloudwatch_agent_role_arn" { value = module.iam.cloudwatch_agent_role_arn } # D14
 
 output "cognito_user_pool_id" { value = module.cognito.user_pool_id }
 output "cognito_client_ids" { value = module.cognito.client_ids }

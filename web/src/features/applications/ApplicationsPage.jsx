@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { applicationsApi } from './api.js'
+import { safeUrl } from '../safeUrl.js'
 import '../c-common.css'
 import './applications.css'
 
@@ -13,6 +14,9 @@ const STATUS = [
 const EMPTY_FORM = { status: 'applied', applied_at: '', memo: '' }
 
 const byPosition = (a, b) => (a.position ?? 0) - (b.position ?? 0)
+
+// '2026-11-02' → '11/02' (마감일 옆 정확한 날짜)
+const shortDate = (iso) => iso.slice(5).replace('-', '/')
 
 export default function ApplicationsPage() {
   const [items, setItems] = useState(null) // null = 불러오는 중
@@ -123,12 +127,23 @@ export default function ApplicationsPage() {
     ['applied', 'document_passed', 'interview'].includes(a.status),
   ).length
 
-  const card = (app, idx) => (
+  const card = (app, idx) => {
+    // 카드 칸을 누르면 원문(새 탭). 드래그로 옮길 땐 브라우저가 click을 내지 않는다
+    const href = safeUrl(app.posting?.url)
+    const open = () => href && window.open(href, '_blank', 'noopener,noreferrer')
+    return (
     <article
       key={app.id}
-      className={`app-card${dragId === app.id ? ' dragging' : ''}${savingId === app.id ? ' saving' : ''}${
+      className={`app-card${href ? ' app-card-link' : ''}${dragId === app.id ? ' dragging' : ''}${
+        savingId === app.id ? ' saving' : ''
+      }${
         dropAt && dropAt.status === app.status && dropAt.index === idx ? ' drop-before' : ''
       }${dropAt && dropAt.status === app.status && dropAt.index === idx + 1 && dropAt.last ? ' drop-after' : ''}`}
+      onClick={open}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' && e.target === e.currentTarget) open()
+      }}
+      {...(href ? { role: 'link', tabIndex: 0, title: '공고 원문 열기' } : {})}
       onDragOver={(e) => {
         // 카드 위쪽 절반이면 그 앞, 아래쪽 절반이면 그 뒤
         const r = e.currentTarget.getBoundingClientRect()
@@ -150,7 +165,16 @@ export default function ApplicationsPage() {
         setDropAt(null)
       }}
     >
-      <button className="app-card-x" onClick={() => remove(app)} aria-label="지원 기록 삭제" title="삭제">
+      <button
+        className="app-card-x"
+        onClick={(e) => {
+          e.stopPropagation()
+          remove(app)
+        }}
+        onKeyDown={(e) => e.stopPropagation()}
+        aria-label="지원 기록 삭제"
+        title="삭제"
+      >
         ×
       </button>
       <div className="app-card-top">
@@ -158,17 +182,24 @@ export default function ApplicationsPage() {
           <div className="app-card-title">{app.posting?.company_name || '공고 미연결'}</div>
           {app.posting?.title && <div className="app-card-sub">{app.posting.title}</div>}
         </div>
-        {dueIds.has(app.id) && <span className="app-due">마감 임박</span>}
       </div>
       <div className="app-card-meta">
-        {app.applied_at && <span>지원일 {app.applied_at}</span>}
-        {app.days_until != null && <span>마감 D-{app.days_until}</span>}
         {app.posting?.region_name && <span>{app.posting.region_name}</span>}
+        {app.applied_at && <span>지원 날짜 {app.applied_at}</span>}
+        {dueIds.has(app.id) && <span className="app-due">마감 임박</span>}
+        {app.days_until != null && (
+          <span>
+            마감 D-{app.days_until}
+            {app.posting?.closes_on && ` (${shortDate(app.posting.closes_on)})`}
+          </span>
+        )}
         {app.posting && app.posting.is_active === false && <span>마감된 공고</span>}
       </div>
-      {app.memo && <p className="app-card-memo">{app.memo}</p>}
+      {/* 예전 기록은 메모에 공고 제목이 그대로 들어 있다 → 제목과 같으면 숨김 */}
+      {app.memo && app.memo !== app.posting?.title && <p className="app-card-memo">{app.memo}</p>}
     </article>
-  )
+    )
+  }
 
   return (
     <div className="app-page">
@@ -207,10 +238,12 @@ export default function ApplicationsPage() {
                 <option key={v} value={v}>{l}</option>
               ))}
             </select>
-            <label className="c-field-label" htmlFor="new-date">지원일</label>
+            <label className="c-field-label" htmlFor="new-date">지원 날짜</label>
             <input
               id="new-date"
               type="date"
+              // max가 없으면 브라우저가 연도를 6자리까지 받는다(서버는 4자리만 파싱 → 422)
+              max="9999-12-31"
               className="field"
               value={form.applied_at}
               onChange={(e) => setForm((f) => ({ ...f, applied_at: e.target.value }))}

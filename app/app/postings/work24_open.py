@@ -132,6 +132,25 @@ def _recruit_lines(root: ET.Element) -> str | None:
     return "\n".join(lines) or None
 
 
+def _recruit_fields(root: ET.Element) -> list[dict[str, str | None]] | None:
+    """모집분야별 내용(분야명·직무내용·경력·학력·자격증). 분야가 없으면 None.
+
+    공고 하나에 분야가 여럿이면 `job_content`는 합본이라 역량 갭·추천이 분야를 섞는다 → 분야별로 따로 둔다.
+    """
+    out = []
+    for info in root.iter("empRecrListInfo"):
+        item = {
+            "name": _text(info, "empRecrNm"),
+            "job_content": _text(info, "jobCont"),
+            "career": _text(info, "empWantedCareerNm"),
+            "edu": _text(info, "empWantedEduNm"),
+            "certificates": _text(info, "sptCertEtc"),
+        }
+        if item["name"] or item["job_content"]:
+            out.append(item)
+    return out or None
+
+
 def parse_detail(root: ET.Element) -> dict[str, Any]:
     """상세 → `JobPosting` 필드 dict(순수). 읽는 태그는 아래뿐(화이트리스트)."""
     node = root if root.find("empSeqno") is not None else root.find(".//dhsOpenEmpInfoDetailRoot")
@@ -156,6 +175,7 @@ def parse_detail(root: ET.Element) -> dict[str, Any]:
             _text(node, "recrCommCont"),
             _text(node, "empnRecrSummaryCont"),
         ),
+        "recruit_fields": _recruit_fields(root),
         "certificates": _text(recr, "sptCertEtc") or _text(node, "sptCertEtc"),
         "apply_method": _text(node, "empRcptMthdCont"),
         "required_docs": _text(node, "empSubmitDocCont"),

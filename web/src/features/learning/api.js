@@ -29,7 +29,12 @@ export const roadmapsApi = {
 }
 
 // C10 맞춤 학습 갭: 자소서 + 공고 → 배워야 할 역량(필수·우대, 중요도순). 자소서 원문은 서버 안에서만 쓴다.
+// fieldIndex: 모집분야가 여럿인 공고에서 그 분야 글로만 분석(없으면 공고 전체)
 export const learningGapsApi = {
-  forPosting: (resumeId, postingId, opts) =>
-    api.post('/learning-gaps', { resume_id: resumeId, posting_id: postingId }, opts),
+  forPosting: (resumeId, postingId, fieldIndex = null, opts) =>
+    api.post(
+      '/learning-gaps',
+      { resume_id: resumeId, posting_id: postingId, ...(fieldIndex != null ? { field_index: fieldIndex } : {}) },
+      opts,
+    ),
 }

@@ -128,3 +128,8 @@
 .lp-gap-st.have { background: var(--success-soft); color: var(--success); }
 .lp-gap-st.need { background: var(--danger-soft); color: var(--danger); }
 .lp-gap-st.nice { background: var(--warning-soft); color: var(--warning); }
+
+/* 모집분야가 여럿인 공고 — 추천이 찾은 맞는 분야, ③에서 분야 바꿔 보기 */
+.lp-posting-field { display: block; margin-top: 2px; font-size: 11px; font-weight: 600; color: var(--accent-text); }
+.lp-field-pick { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: 11px; color: var(--muted); }
+.lp-field-pick select { flex: 1; min-width: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--fg); padding: 5px 8px; font-size: 12px; }

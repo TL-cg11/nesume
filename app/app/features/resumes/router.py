@@ -267,3 +267,8 @@ def restore_version(
 from app.features.pdf.router import router as _pdf_router  # noqa: E402
 
 router.include_router(_pdf_router)
+
+# B13 모의 면접(/resumes/{id}/interviews/...). PDF와 같은 방식으로 붙인다.
+from app.features.interview.router import router as _interview_router  # noqa: E402
+
+router.include_router(_interview_router)
