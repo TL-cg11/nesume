@@ -35,3 +35,12 @@ variable "bedrock_model_prefixes" {
   type        = list(string)
   default     = ["anthropic.", "amazon."]
 }
+# D14 로그 전송 역할
+variable "log_group_arns" {
+  description = "Fluent Bit 이 쓸 CloudWatch 로그 그룹 ARN(app·audit)"
+  type        = list(string)
+}
+variable "audit_kms_key_arn" {
+  description = "감사 로그 그룹 KMS 키 ARN"
+  type        = string
+}

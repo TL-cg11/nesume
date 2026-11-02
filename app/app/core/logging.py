@@ -2,7 +2,11 @@
 
 - json(기본, 운영): 한 줄 JSON. CloudWatch Logs(D14)에서 필드로 조회 가능.
 - text(로컬): 사람이 읽기 쉬운 형식.
-모든 줄에 request_id가 붙는다. 로거는 logging.getLogger("nesume.<모듈>") 규칙을 쓴다.
+모든 줄에 request_id와 log_type이 붙는다. log_type 은 app|audit — Fluent Bit(D14)가 이 값으로
+감사 로그를 /nesume/<env>/audit 로그 그룹으로 분리한다.
+감사 성격의 줄은 "nesume.audit.<모듈>" 로거로 남긴다(예: 역할 변경).
+B11 감사 로그 기록 함수가 로그 스트림에도 남기기로 하면 같은 로거를 쓰면 된다.
+로거는 logging.getLogger("nesume.<모듈>") 규칙을 쓴다.
 추가 필드는 extra={"fields": {...}}로 넘긴다. 질의 원문·PII는 로그에 넣지 않는다.
 """
 import json
@@ -11,6 +15,13 @@ import sys
 from datetime import UTC, datetime
 
 from app.core.context import get_request_id
+
+AUDIT_LOGGER_PREFIX = "nesume.audit"
+
+
+def log_type_of(logger_name: str) -> str:
+    is_audit = logger_name == AUDIT_LOGGER_PREFIX or logger_name.startswith(AUDIT_LOGGER_PREFIX + ".")
+    return "audit" if is_audit else "app"
 
 
 class JsonFormatter(logging.Formatter):
@@ -21,6 +32,7 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
             "msg": record.getMessage(),
             "request_id": get_request_id(),
+            "log_type": log_type_of(record.name),
         }
         fields = getattr(record, "fields", None)
         if isinstance(fields, dict):

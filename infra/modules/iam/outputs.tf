@@ -5,3 +5,5 @@ output "app_role_arn" { value = aws_iam_role.pod["app"].arn }
 output "batch_role_arn" { value = aws_iam_role.pod["batch"].arn }
 output "alb_controller_role_arn" { value = aws_iam_role.pod["alb-controller"].arn }
 output "external_secrets_role_arn" { value = aws_iam_role.pod["external-secrets"].arn }
+output "fluent_bit_role_arn" { value = aws_iam_role.pod["fluent-bit"].arn }
+output "cloudwatch_agent_role_arn" { value = aws_iam_role.pod["cloudwatch-agent"].arn }

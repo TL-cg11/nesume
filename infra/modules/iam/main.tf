@@ -100,9 +100,9 @@ resource "aws_iam_role_policy_attachment" "eks_node" {
   policy_arn = each.value
 }
 
-# ---------- Pod Identity 역할 4개 ----------
+# ---------- Pod Identity 역할 6개 (app·batch·ALB·ESO + D14 fluent-bit·cloudwatch-agent) ----------
 resource "aws_iam_role" "pod" {
-  for_each           = toset(["app", "batch", "alb-controller", "external-secrets"])
+  for_each           = toset(["app", "batch", "alb-controller", "external-secrets", "fluent-bit", "cloudwatch-agent"])
   name               = "${var.name}-${each.key}"
   assume_role_policy = local.pod_identity_trust
 }
@@ -157,6 +157,31 @@ resource "aws_iam_policy" "alb_controller" {
 resource "aws_iam_role_policy_attachment" "alb_controller" {
   role       = aws_iam_role.pod["alb-controller"].name
   policy_arn = aws_iam_policy.alb_controller.arn
+}
+
+# D14 Fluent Bit: base 의 로그 그룹 2개에만 쓴다. 그룹은 Terraform 이 만들므로 CreateLogGroup 은 주지 않는다.
+resource "aws_iam_role_policy" "fluent_bit" {
+  name = "fluent-bit"
+  role = aws_iam_role.pod["fluent-bit"].id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["logs:CreateLogStream", "logs:PutLogEvents", "logs:DescribeLogStreams"]
+        Resource = [for arn in var.log_group_arns : "${arn}:*"]
+      },
+      { Effect = "Allow", Action = ["logs:DescribeLogGroups"], Resource = "*" },
+      # 감사 로그 그룹 KMS 키(logs 서비스가 대신 쓰지만 PutLogEvents 호출자에게도 GenerateDataKey 가 필요할 수 있다)
+      { Effect = "Allow", Action = ["kms:GenerateDataKey*", "kms:Encrypt", "kms:Describe*"], Resource = var.audit_kms_key_arn },
+    ]
+  })
+}
+
+# D14 Container Insights(amazon-cloudwatch-observability 애드온의 cloudwatch-agent). AWS 관리형 정책 그대로.
+resource "aws_iam_role_policy_attachment" "cloudwatch_agent" {
+  role       = aws_iam_role.pod["cloudwatch-agent"].name
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
 }
 
 resource "aws_iam_role_policy" "external_secrets" {
