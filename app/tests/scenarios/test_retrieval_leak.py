@@ -305,3 +305,42 @@ def test_build_retriever_without_embedder_is_none():
     """임베더 미설정 → None(가드레일 검색 단계 생략, 현행 동작 유지)."""
     assert build_retriever() is None
     assert isinstance(build_retriever(_FakeEmbedder()), PersonalRetriever)
+
+
+# ---- 임베더·DB 장애 시 검색 생략 (11-02, docs/C6.md) ----------------------------
+
+
+class _BrokenEmbedder:
+    def embed(self, texts):
+        raise ConnectionError("embedder down http://embedder:8080/")
+
+
+def test_retriever_skips_search_when_embedder_fails(db_session, caplog, monkeypatch):
+    """임베더가 죽어도 예외를 올리지 않고 빈 결과 + 경고. 주소 등 예외 메시지는 로그에 안 남는다."""
+    import logging
+
+    from app.retrieval import search as search_mod
+
+    monkeypatch.setattr(search_mod.log, "disabled", False)  # 시험 준비의 alembic 로깅 설정이 끈다
+    a = _user(db_session)
+    with caplog.at_level(logging.WARNING, logger="nesume.retrieval"):
+        got = _search(_retriever(db_session, _BrokenEmbedder()), role="user", user_id=a)
+
+    msg = " ".join(r.getMessage() for r in caplog.records)
+    assert got == []
+    assert "personal search unavailable" in msg and "ConnectionError" in msg
+    assert "embedder:8080" not in msg
+
+
+def test_retriever_skips_search_when_db_fails(db_session):
+    def broken_session():
+        raise RuntimeError("db down")
+
+    retriever = PersonalRetriever(_FakeEmbedder(), session_factory=broken_session)
+    assert _search(retriever, role="user", user_id="u1") == []
+
+
+def test_missing_role_still_raises_before_search(db_session):
+    """필터 없는 경로 차단(ValueError)은 장애 처리와 별개로 그대로 올린다."""
+    with pytest.raises(ValueError):
+        _search(_retriever(db_session, _BrokenEmbedder()), role="", user_id="u1")
