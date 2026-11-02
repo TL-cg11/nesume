@@ -67,7 +67,7 @@ def create_experience(db: Session, owner_id: str, fields: dict) -> Experience:
     db.add(e)
     db.flush()
     db.refresh(e)
-    index_hooks.index_experience(owner_id, e.id)
+    index_hooks.index_experience(db, owner_id, e.id)
     return e
 
 
@@ -80,7 +80,7 @@ def update_experience(db: Session, owner_id: str, e: Experience, fields: dict) -
     db.flush()
     pii_hooks.discard_vault(db, old_vault)
     db.refresh(e)
-    index_hooks.index_experience(owner_id, e.id)
+    index_hooks.index_experience(db, owner_id, e.id)
     return e
 
 
