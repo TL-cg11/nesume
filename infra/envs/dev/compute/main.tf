@@ -1,4 +1,4 @@
-# dev compute: 쓸 때만 올리고 매일 내린다. base 출력은 remote_state로 읽는다. base가 compute를 읽는 일은 없다.
+# dev compute: 올리고 내리는 단위(상시 가동, 필요할 때만 내린다). base 출력은 remote_state로 읽는다. base가 compute를 읽는 일은 없다.
 locals {
   name   = "nesume-dev"
   region = "ap-northeast-2"

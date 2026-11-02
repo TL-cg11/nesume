@@ -1,9 +1,9 @@
 # D11 CD: dev compute(EKS·RDS·NAT) 를 Actions 에서 올리고 내린다. infra/scripts/up.ps1·down.ps1 과 같은 순서를 러너에서 돈다.
 #   up   : 수동(Run workflow → up). compute apply(최대 3회) → 애드온 대기 → ECR 태그 결정 → helm → ALB /api/health. 15~20분
-#   down : 매일 00:00 KST(= 15:00 UTC) 자동 + 수동(Run workflow → down). helm uninstall → ALB 소멸 대기 → compute destroy → 과금 잔존 확인. 10분
+#   down : 수동(Run workflow → down). helm uninstall → ALB 소멸 대기 → compute destroy → 과금 잔존 확인. 10분
 # 켜진 뒤의 코드 배포는 ci.yml build-deploy 가 main 푸시마다 한다(클러스터가 켜져 있을 때). 둘은 concurrency 그룹 infra 를 공유해 동시에 클러스터를 만지지 않는다.
 # AWS 권한은 OIDC 로 nesume-github-ci 역할(신뢰 조건 ref=refs/heads/main → 이 워크플로는 main 에서만 실행 가능). 저장소에 AWS 키 없음.
-# 스케줄은 GitHub 부하에 따라 수십 분 늦게 돌 수 있다. 실패하면 GitHub 가 워크플로 작성자에게 메일을 보낸다 → 아침에 콘솔에서 NAT·EKS·RDS 잔존 확인.
+# 2026-11-02 결정: dev 는 상시 가동. 매일 00:00 KST 자동 down 스케줄은 뺐다(다시 필요하면 on.schedule cron "0 15 * * *" + down 의 if 에 schedule 추가).
 name: infra
 
 on:
@@ -15,8 +15,6 @@ on:
         required: true
         default: up
         options: [up, down]
-  schedule:
-    - cron: "0 15 * * *"   # 00:00 KST. 야간 과금 방지(infra/README.md 1절)
 
 permissions:
   contents: read
@@ -160,7 +158,7 @@ jobs:
           echo "/api/health is not 200 at http://$alb"; kubectl -n dev get pods; exit 1
 
   down:
-    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.action == 'down')
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'down'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
