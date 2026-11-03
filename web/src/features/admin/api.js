@@ -30,3 +30,13 @@ export const dashboardApi = {
   emails: (ids) =>
     ids.length ? api.get(`/audit-logs/emails?${ids.map((id) => `user_id=${encodeURIComponent(id)}`).join('&')}`) : Promise.resolve({}),
 }
+
+// D16 세션 차단(운영자 MFA). 자동 차단(카나리·탈취 임계치)과 수동 차단이 같은 목록이다
+export const sessionsApi = {
+  blocked: (active = true, signal) => api.get(`/admin/sessions/blocked?active=${active ? 'true' : 'false'}`, { signal }),
+  block: (sessionId, { note, minutes } = {}) =>
+    api.post(`/admin/sessions/${encodeURIComponent(sessionId)}/block`, { note: note || null, minutes: minutes || null }),
+  release: (sessionId) => api.delete(`/admin/sessions/${encodeURIComponent(sessionId)}/block`),
+}
+
+export const BLOCK_REASON_LABEL = { canary_hit: '카나리 적중(자동)', exfil_threshold: '탈취 임계치(자동)', operator: '운영자 수동' }

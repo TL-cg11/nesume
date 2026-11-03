@@ -1,6 +1,7 @@
 """ORM 모델 (B 소유, 모델 추가는 B가 취합). Alembic autogenerate가 이 패키지를 import한다."""
 from app.models.application import Application
 from app.models.audit import AuditLog
+from app.models.blocked_session import BlockedSession  # D16 [B 리뷰 요청]
 from app.models.download import DownloadToken
 from app.models.embedding import JobPostingEmbedding, LearningContentEmbedding, UserProfileEmbedding
 from app.models.experience import Experience, QuestionExperience
@@ -22,6 +23,7 @@ from app.models import grading  # noqa: E402,F401
 __all__ = [
     "Application",
     "AuditLog",
+    "BlockedSession",
     "CollectionRun",
     "DownloadToken",
     "Experience",
