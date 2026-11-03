@@ -92,5 +92,6 @@ def test_rail_runs_without_llm_or_downloads(tmp_path, monkeypatch):
     example = _colang_examples()[0]  # 예시 문장 그 자체는 유사도 1 → 그 의도
     got = rail.check_many([example, "전혀 관계없는 문장입니다"])
     assert got[0].intent == "authz"
+    assert got[0].nearest == "authz" and got[0].score == 1.0  # 예시 문장 그 자체 → 점수 1
     assert got[1].intent == "normal"  # 임계값 아래 → fallback
     assert not cache.exists() or not any(cache.rglob("*"))  # 기본 FastEmbed 모델을 받지 않았다
