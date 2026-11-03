@@ -43,7 +43,11 @@ resource "kubernetes_namespace" "dev" {
   metadata {
     name = "dev"
     labels = {
-      "pod-security.kubernetes.io/warn" = "restricted" # enforce는 D17
+      # D17: restricted 를 강제한다. 차트 파드는 _helpers.tpl securityContext 로 충족(docs/D17.md 2.4).
+      "pod-security.kubernetes.io/enforce"         = "restricted"
+      "pod-security.kubernetes.io/enforce-version" = "latest"
+      "pod-security.kubernetes.io/audit"           = "restricted"
+      "pod-security.kubernetes.io/warn"            = "restricted"
     }
   }
 }

@@ -37,6 +37,9 @@ ingress:
   enabled: true
   host: ""                           # dev.<domain>
   certificateArn: ""
+  annotations:
+    # D17 WAF(base output waf_web_acl_arn). Count/Block 은 infra/modules/waf mode 로 바꾼다(주석 그대로)
+    alb.ingress.kubernetes.io/wafv2-acl-arn: arn:aws:wafv2:ap-northeast-2:852138520969:regional/webacl/nesume-dev-alb/b48bda0a-6917-4a19-9d2c-6642227822c8
 
 serviceAccount:
   app:
@@ -56,6 +59,9 @@ cronjobs:
 
 embedder:
   enabled: true                      # up.ps1/deploy.ps1 이 ECR nesume/embedder 최신 태그를 --set-string image.embedder.tag 로 넘긴다. 저장소가 비면 false 로 배포
+
+networkPolicy:
+  enabled: true                      # D17. CIDR 은 values.yaml 기본값(= infra/modules/network 기본값)
 
 pdb:
   enabled: true                      # minAvailable 1(기본값). replicas 1 로 내리면 drain 이 막히니 같이 끈다

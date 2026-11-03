@@ -176,3 +176,40 @@ initContainer that waits for the in-chart Postgres (kind only)
     limits: { cpu: 50m, memory: 32Mi }
 {{- end }}
 {{- end }}
+
+{{/*
+D17 NetworkPolicy 이그레스 조각 (templates/networkpolicy.yaml). 들여쓰기는 호출하는 쪽 nindent.
+*/}}
+{{- define "nesume.np.dbEgress" -}}
+# DB(RDS, 프라이빗 서브넷). 파드도 같은 서브넷 IP 를 쓰지만 5432 로 듣는 파드는 없다
+- to:
+    {{- range .Values.networkPolicy.dbCidrs }}
+    - ipBlock: { cidr: {{ . | quote }} }
+    {{- end }}
+  ports:
+    - { protocol: TCP, port: {{ .Values.networkPolicy.dbPort }} }
+{{- end }}
+
+{{- define "nesume.np.embedderEgress" -}}
+- to:
+    - podSelector:
+        matchLabels:
+          {{- include "nesume.selectorLabels" (dict "root" . "component" "embedder") | nindent 10 }}
+  ports:
+    - { protocol: TCP, port: {{ .Values.embedder.containerPort }} }
+{{- end }}
+
+{{- define "nesume.np.awsEgress" -}}
+# 밖으로 HTTPS(Bedrock·Cognito JWKS·S3·STS·Secrets Manager). VPC 안 443 은 막는다(VPC 엔드포인트가 생기면 그 CIDR 로 좁힌다)
+- to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except: [{{ .Values.networkPolicy.vpcCidr | quote }}]
+  ports:
+    - { protocol: TCP, port: 443 }
+# EKS Pod Identity 에이전트(노드 링크 로컬). IMDS(169.254.169.254)는 열지 않는다
+- to:
+    - ipBlock: { cidr: 169.254.170.23/32 }
+  ports:
+    - { protocol: TCP, port: 80 }
+{{- end }}

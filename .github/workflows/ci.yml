@@ -264,6 +264,15 @@ jobs:
           ignore-unfixed: true
           exit-code: "1"
 
+      # D17: web 도 같은 게이트(11-02 확인 전에는 빌드·푸시만 하고 스캔하지 않았다)
+      - name: trivy image scan (web)
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          image-ref: ${{ steps.ecr.outputs.registry }}/nesume/web:${{ steps.tag.outputs.sha }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
       - name: cluster up?
         id: cluster
         run: |

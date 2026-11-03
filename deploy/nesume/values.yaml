@@ -185,8 +185,13 @@ pdb:
   enabled: true
   minAvailable: 1
 
-networkPolicy:                       # D17. 규칙은 그때 작성
+networkPolicy:                       # D17. 기본 거부 + 필요한 길만(templates/networkpolicy.yaml). EKS 는 vpc-cni 집행이 켜져 있어야 함
   enabled: false
+  vpcCidr: 10.20.0.0/16              # infra/modules/network 기본값
+  albCidrs: [10.20.0.0/24, 10.20.1.0/24]   # 퍼블릭 서브넷(ALB → web)
+  dbCidrs: [10.20.10.0/24, 10.20.11.0/24]  # 프라이빗 서브넷(RDS)
+  dbPort: 5432
+  seoulApiPort: 8088                 # 서울시 열린데이터(http) — 수집 배치만
 
 postgres:                            # kind 전용 내장 DB
   enabled: false

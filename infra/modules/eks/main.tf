@@ -35,6 +35,9 @@ resource "aws_eks_addon" "pre_node" {
   addon_name                  = each.key
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = "OVERWRITE"
+
+  # D17: vpc-cni 가 NetworkPolicy 를 집행하게 한다(없으면 정책이 무시된다). 모드는 기본(standard) — 정책이 없는 파드는 그대로 통신
+  configuration_values = each.key == "vpc-cni" ? jsonencode({ enableNetworkPolicy = "true" }) : null
 }
 
 resource "aws_eks_node_group" "default" {
