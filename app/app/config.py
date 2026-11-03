@@ -62,11 +62,11 @@ class Settings(BaseSettings):
     # 2장 #15
     llama_guard_fail_open: bool = True
 
-    # D16 알림. 비우면 로그만 남긴다. SNS 토픽(IRSA sns:Publish) 우선, 없으면 Slack 웹훅 직접 POST(로컬·kind).
-    # Slack 웹훅 URL 은 Secrets Manager nesume/<env>/app 의 ALERTS_SLACK_WEBHOOK_URL 키(ExternalSecret 로
+    # D16 알림. 비우면 로그만 남긴다. SNS 토픽(IRSA sns:Publish) 우선, 없으면 웹훅 직접 POST(로컬·kind).
+    # Discord(기본)·Slack 웹훅 URL 은 Secrets Manager nesume/<env>/app 의 ALERTS_WEBHOOK_URL 키(ExternalSecret 로
     # 주입).
     alerts_sns_topic_arn: str = ""
-    alerts_slack_webhook_url: str = ""
+    alerts_webhook_url: str = ""
     alerts_timeout_s: float = 2.0
 
     # D20/C3 임베딩 서비스(TEI + bge-m3). 비우면 임베딩 없음 → C6 리트리버 미주입·추천 빈 결과.

@@ -78,7 +78,7 @@ export default function AdminSessionsPage() {
       <h1>세션 차단</h1>
       <p className="muted">
         카나리 적중·탈취 임계치로 자동 차단된 세션과 운영자가 직접 차단한 세션입니다. 차단 중인 세션의 AI 요청은 거부(429)됩니다.
-        카나리 차단은 만료가 없으니 원인을 확인한 뒤 여기서 풀어 주세요. 알림은 Slack·이메일로도 갑니다(docs/ops/alerts.md).
+        카나리 차단은 만료가 없으니 원인을 확인한 뒤 여기서 풀어 주세요. 알림은 Discord·이메일로도 갑니다(docs/ops/alerts.md).
       </p>
 
       <form className="row adm-block-form adm-search" onSubmit={block}>

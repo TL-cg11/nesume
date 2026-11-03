@@ -4,8 +4,9 @@
 
     1. 감사 로그 스트림: `nesume.audit.alerts` 로거(log_type=audit → CloudWatch /nesume/<env>/audit).
        무엇이 언제 왔는지의 기록. 발송이 실패해도 이 줄은 남는다.
-    2. 발송: SNS 토픽 Publish(ALERTS_SNS_TOPIC_ARN, IRSA sns:Publish) → 이메일 구독 + Slack Lambda
-       (infra/modules/observability). 토픽이 없고 ALERTS_SLACK_WEBHOOK_URL 만 있으면(로컬·kind) 웹훅에
+    2. 발송: SNS 토픽 Publish(ALERTS_SNS_TOPIC_ARN, IRSA sns:Publish) → 이메일 구독 + 웹훅 Lambda
+       (infra/modules/observability, Discord 또는 Slack). 토픽이 없고 ALERTS_WEBHOOK_URL 만 있으면(로컬·kind)
+       웹훅에
        직접 POST.
        둘 다 없으면 1번만 남는다(테스트 기본).
 
@@ -29,6 +30,7 @@ import logging
 import re
 import sys
 import threading
+import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
@@ -89,14 +91,16 @@ class AlertEvent:
         return {k: v for k, v in asdict(self).items() if v not in (None, "")}
 
     def subject(self) -> str:
-        """SNS 제목(100자 제한)·Slack 첫 줄."""
+        """SNS 제목(100자 제한)·채팅 메시지 첫 줄."""
         return f"[nesume{('-' + self.env) if self.env else ''}] {self.severity.upper()} {self.type}"[:100]
 
-    def slack_text(self) -> str:
+    def chat_text(self, *, bold: str = "**") -> str:
+        """Discord(**굵게**)·Slack(*굵게*) 공용 본문. 2000자(Discord 상한) 안."""
         who = " ".join(
             f"{k}={v}" for k, v in (("session", self.session_id), ("user", self.user_id)) if v
         )
-        return f"*{self.subject()}*\n{self.summary}" + (f"\n`{who}`" if who else "") + f"\n{self.ts}"
+        text = f"{bold}{self.subject()}{bold}\n{self.summary}" + (f"\n`{who}`" if who else "")
+        return (text + f"\n{self.ts}")[:1900]
 
 
 # --------------------------------------------------------------------------
@@ -142,33 +146,46 @@ class SnsTransport(Transport):
         )
 
 
-class SlackWebhookTransport(Transport):
-    name = "slack"
+def webhook_kind(url: str) -> str:
+    """URL 호스트로 페이로드 형식을 고른다. Discord `{content}`, Slack `{text}`."""
+    host = urllib.parse.urlparse(url).hostname or ""
+    return "slack" if host.endswith("slack.com") else "discord"
+
+
+def webhook_payload(url: str, event: AlertEvent) -> dict[str, str]:
+    if webhook_kind(url) == "slack":
+        return {"text": event.chat_text(bold="*")}
+    return {"content": event.chat_text(bold="**")}
+
+
+class WebhookTransport(Transport):
+    """Discord(기본) 또는 Slack Incoming Webhook 에 직접 POST. 로컬·kind 처럼 SNS 가 없을 때."""
 
     def __init__(self, url: str, *, timeout_s: float) -> None:
         if not url.startswith("https://"):
-            raise ValueError("Slack 웹훅 URL 은 https 여야 합니다")
+            raise ValueError("웹훅 URL 은 https 여야 합니다")
         self._url = url
         self._timeout = timeout_s
+        self.name = webhook_kind(url)
 
     def send(self, event: AlertEvent) -> None:
-        body = json.dumps({"text": event.slack_text()}).encode("utf-8")
+        body = json.dumps(webhook_payload(self._url, event)).encode("utf-8")
         req = urllib.request.Request(
             self._url, data=body, headers={"Content-Type": "application/json"}, method="POST"
         )
         with urllib.request.urlopen(req, timeout=self._timeout) as resp:  # noqa: S310 - https 만 허용
             if resp.status >= 300:
-                raise RuntimeError(f"Slack webhook HTTP {resp.status}")
+                raise RuntimeError(f"webhook HTTP {resp.status}")
 
 
 def build_transport(settings) -> Transport | None:
-    """설정으로 발송 경로를 고른다. SNS 가 있으면 SNS(Slack 은 토픽 구독 Lambda 가 맡는다), 없으면 웹훅."""
+    """설정으로 발송 경로를 고른다. SNS 가 있으면 SNS(채팅은 토픽 구독 Lambda 가 맡는다), 없으면 웹훅."""
     if settings.alerts_sns_topic_arn:
         return SnsTransport(
             settings.alerts_sns_topic_arn, region=settings.aws_region, timeout_s=settings.alerts_timeout_s
         )
-    if settings.alerts_slack_webhook_url:
-        return SlackWebhookTransport(settings.alerts_slack_webhook_url, timeout_s=settings.alerts_timeout_s)
+    if settings.alerts_webhook_url:
+        return WebhookTransport(settings.alerts_webhook_url, timeout_s=settings.alerts_timeout_s)
     return None
 
 
@@ -273,7 +290,7 @@ class SecurityLogBridge(logging.Handler):
     """`nesume.security` 로거의 `security_event=…` 줄을 알림으로 바꾼다.
 
     C13(`retrieval/canary.report`)은 세션을 모르고 로그만 남긴다. 그 코드를 고치지 않고도 검색 단계 카나리를
-    Slack 으로 받기 위해 로거에 핸들러를 하나 건다. 세션 ID 가 없으므로 자동 차단은 하지 않는다 —
+    Discord 로 받기 위해 로거에 핸들러를 하나 건다. 세션 ID 가 없으므로 자동 차단은 하지 않는다 —
     차단은 응답 단계(세션을 아는 session_block 래퍼)가 맡는다. A8 이 검색 판정을 합치면(블록 정책 11장)
     그쪽도 래퍼가 본다.
     """

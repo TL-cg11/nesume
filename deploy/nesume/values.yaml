@@ -69,7 +69,7 @@ config:
   LLAMA_GUARD_TIMEOUT_S: "3"
   LLAMA_GUARD_SAMPLE_RATE: "1.0"                             # 비용 조정. 0.2 면 20% 만 검사
   LLAMA_GUARD_FAIL_OPEN: "true"                              # 모델 오류 시 통과+표식(block-policy 2장 #15)
-  # D16 알림. 비우면 로그만. 값은 compute 출력 alerts_topic_arn. Slack 웹훅은 Secrets Manager JSON 의 ALERTS_SLACK_WEBHOOK_URL
+  # D16 알림. 비우면 로그만. 값은 compute 출력 alerts_topic_arn. Discord/Slack 웹훅은 Secrets Manager JSON 의 ALERTS_WEBHOOK_URL
   ALERTS_SNS_TOPIC_ARN: ""
   DB_HOST: ""
   DB_PORT: "5432"
@@ -88,7 +88,7 @@ secrets:
   BATCH_USERNAME: ""                 # D6 시스템 계정(배치용)
   BATCH_PASSWORD: ""
   SEED_PASSWORD: ""               # D6 시드 계정 공통 비밀번호(seed.enabled 환경만)
-  ALERTS_SLACK_WEBHOOK_URL: ""    # D16 로컬·kind 전용(SNS 없이 직접 POST). AWS 는 Secrets Manager JSON 필드
+  ALERTS_WEBHOOK_URL: ""          # D16 로컬·kind 전용(Discord/Slack 에 직접 POST). AWS 는 Secrets Manager JSON 필드
 
 externalSecrets:
   enabled: true

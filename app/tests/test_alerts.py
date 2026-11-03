@@ -15,9 +15,9 @@ from app.core.alerts import (
     AlertEvent,
     Alerts,
     SecurityLogBridge,
-    SlackWebhookTransport,
     SnsTransport,
     Transport,
+    WebhookTransport,
     build_transport,
 )
 from app.core.logging import JsonFormatter
@@ -42,7 +42,9 @@ def test_event_schema_and_defaults():
     d = e.to_dict()
     assert d["type"] == "canary_hit" and d["session_id"] == "s" and "env" not in d  # 빈 값은 뺀다
     assert e.subject().startswith("[nesume] CRITICAL canary_hit")
-    assert "session=s user=u" in e.slack_text()
+    assert "session=s user=u" in e.chat_text()
+    assert e.chat_text().startswith("**[nesume] CRITICAL canary_hit**")
+    assert e.chat_text(bold="*").startswith("*[nesume] CRITICAL canary_hit*")
 
 
 def test_unknown_event_type_rejected():
@@ -133,23 +135,36 @@ def test_install_bridge_is_idempotent():
 
 class _S:
     alerts_sns_topic_arn = ""
-    alerts_slack_webhook_url = ""
+    alerts_webhook_url = ""
     alerts_timeout_s = 2.0
     aws_region = "ap-northeast-2"
 
 
-def test_build_transport_prefers_sns_then_slack():
+def test_build_transport_prefers_sns_then_webhook():
     assert build_transport(_S()) is None
     s = _S()
-    s.alerts_slack_webhook_url = "https://hooks.slack.com/services/x"
-    assert isinstance(build_transport(s), SlackWebhookTransport)
+    s.alerts_webhook_url = "https://discord.com/api/webhooks/1/x"
+    assert isinstance(build_transport(s), WebhookTransport)
     s.alerts_sns_topic_arn = "arn:aws:sns:ap-northeast-2:123456789012:nesume-dev-alerts"
     assert isinstance(build_transport(s), SnsTransport)
 
 
-def test_slack_webhook_must_be_https():
+def test_webhook_must_be_https():
     with pytest.raises(ValueError):
-        SlackWebhookTransport("http://hooks.slack.com/x", timeout_s=1)
+        WebhookTransport("http://discord.com/api/webhooks/1/x", timeout_s=1)
+
+
+def test_webhook_payload_by_host():
+    from app.core.alerts import webhook_kind, webhook_payload
+
+    e = AlertEvent(type="alarm", severity="warn", summary="x")
+    discord = "https://discord.com/api/webhooks/1/x"
+    slack = "https://hooks.slack.com/services/x"
+    assert webhook_kind(discord) == "discord" and webhook_kind(slack) == "slack"
+    d = webhook_payload(discord, e)
+    assert set(d) == {"content"} and "**[nesume]" in d["content"]
+    assert set(webhook_payload(slack, e)) == {"text"} and "*[nesume]" in webhook_payload(slack, e)["text"]
+    assert WebhookTransport(discord, timeout_s=1).name == "discord"
 
 
 def test_cli_emits_without_transport(capsys):

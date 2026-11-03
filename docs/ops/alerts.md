@@ -6,8 +6,8 @@
 
 ```
 앱 이벤트 ──emit()──▶ SNS nesume-<env>-alerts ──▶ 이메일 구독(-var alert_email)
-CloudWatch 알람 ──────────────▲                 └─▶ Lambda nesume-<env>-slack-notifier ──▶ Slack 웹훅
-                                                   (-var slack_alerts_enabled=true, URL 은 Secrets Manager)
+CloudWatch 알람 ──────────────▲                 └─▶ Lambda nesume-<env>-webhook-notifier ──▶ Discord 웹훅(또는 Slack)
+                                                   (-var webhook_alerts_enabled=true, URL 은 Secrets Manager)
 앱 이벤트 중 canary_hit · exfil_threshold ──▶ blocked_sessions 테이블 ──▶ 같은 세션의 다음 AI 요청 429
                                                      ▲
                                  운영자 화면 /admin/sessions (목록 · 수동 차단 · 해제)
@@ -19,9 +19,9 @@ CloudWatch 알람 ──────────────▲                 
 | 자동 차단 래퍼 + 차단 목록 저장소 | `app/app/core/session_block.py`, 테이블 `blocked_sessions`(`app/app/models/blocked_session.py`, 마이그레이션 0025) |
 | 운영자 API | `app/app/auth/admin_sessions.py` — `GET /admin/sessions/blocked`, `POST /admin/sessions/{id}/block`, `DELETE …/block` |
 | 운영자 화면 | `/admin/sessions` (`web/src/features/admin/AdminSessionsPage.jsx`) |
-| SNS·Slack Lambda·수집 실패 알람 | `infra/modules/observability/alerts.tf` (+ `files/slack_notifier.py`) |
+| SNS·웹훅 Lambda(Discord/Slack)·수집 실패 알람 | `infra/modules/observability/alerts.tf` (+ `files/webhook_notifier.py`) |
 | IAM(sns:Publish, D19 모델) | `infra/modules/iam/main.tf` app·batch 역할 |
-| 앱 설정 | `ALERTS_SNS_TOPIC_ARN`(Helm `config`), `ALERTS_SLACK_WEBHOOK_URL`(로컬·kind 만, Secret) |
+| 앱 설정 | `ALERTS_SNS_TOPIC_ARN`(Helm `config`), `ALERTS_WEBHOOK_URL`(로컬·kind 만, Secret) |
 
 ## 2. 이벤트 스키마
 
@@ -36,12 +36,12 @@ SNS 메시지 본문(JSON)과 감사 로그 그룹(`/nesume/<env>/audit`)의 `ms
 | `request_id` | 그 요청의 X-Request-ID. Logs Insights "요청 추적" 쿼리에 넣는다 |
 | `ts`, `env` | ISO 시각, `dev`/`production` |
 
-SNS Subject: `[nesume-dev] CRITICAL canary_hit`. Slack 은 같은 내용을 한 메시지로(아이콘 🚨/⚠️/ℹ️).
+SNS Subject: `[nesume-dev] CRITICAL canary_hit`. Discord 는 같은 내용을 한 메시지로(아이콘 🚨/⚠️/ℹ️, `**굵게**`, 2000자 상한). URL 호스트가 `slack.com` 이면 Slack 형식(`{text}`)으로 보내므로 둘 다 된다.
 
 발송 원칙
 - 요청 처리와 **무관**하다. 백그라운드 스레드, 타임아웃 2초, 실패는 `nesume.alerts` 경고 로그로만 남고 요청은 정상 응답한다.
-- `ALERTS_SNS_TOPIC_ARN` 이 있으면 SNS(운영). 없고 `ALERTS_SLACK_WEBHOOK_URL` 만 있으면 웹훅 직접(로컬 compose·kind). 둘 다 없으면 감사 로그 줄만(테스트).
-- CloudWatch 알람도 같은 토픽으로 오므로 Slack 채널 하나에 앱 이벤트와 알람이 함께 온다.
+- `ALERTS_SNS_TOPIC_ARN` 이 있으면 SNS(운영). 없고 `ALERTS_WEBHOOK_URL` 만 있으면 웹훅 직접(로컬 compose·kind). 둘 다 없으면 감사 로그 줄만(테스트).
+- CloudWatch 알람도 같은 토픽으로 오므로 Discord 채널 하나에 앱 이벤트와 알람이 함께 온다.
 
 ## 3. 알림 종류와 대응
 
@@ -67,27 +67,31 @@ SNS Subject: `[nesume-dev] CRITICAL canary_hit`. Slack 은 같은 내용을 한 
    ```bash
    terraform -chdir=infra/envs/dev/base apply
    ```
-2. **Slack 웹훅** — Slack 앱(Incoming Webhooks)에서 URL 을 만든 뒤 앱 시크릿 JSON 에 필드를 추가한다(기존 필드 유지).
+2. **Discord 웹훅** — Discord 서버의 채널 설정 → 연동 → 웹훅 → 새 웹훅 → URL 복사(`https://discord.com/api/webhooks/<id>/<token>`). 앱 시크릿 JSON 에 필드를 추가한다(기존 필드 유지). Slack 이면 Incoming Webhook URL 을 같은 키에 넣는다.
    ```bash
    aws secretsmanager get-secret-value --secret-id nesume/dev/app --query SecretString --output text > current.json
-   # current.json 에 "ALERTS_SLACK_WEBHOOK_URL": "https://hooks.slack.com/services/..." 추가
+   # current.json 에 "ALERTS_WEBHOOK_URL": "https://discord.com/api/webhooks/..." 추가
    aws secretsmanager put-secret-value --secret-id nesume/dev/app --secret-string file://current.json
    ```
    URL 은 저장소·values·로그에 적지 않는다(gitleaks).
 3. **compute apply** — Lambda 구독 + 수집 실패 알람 + 이메일(선택)
    ```bash
-   terraform -chdir=infra/envs/dev/compute apply -var slack_alerts_enabled=true -var alert_email=<주소>
+   terraform -chdir=infra/envs/dev/compute apply -var webhook_alerts_enabled=true -var alert_email=<주소>
    ```
    이메일은 확인 메일 링크를 눌러야 활성.
-4. **앱** — `values-dev.yaml` 의 `ALERTS_SNS_TOPIC_ARN` 은 토픽 이름이 고정이라 이미 들어 있다. 배포(main 머지 → CI `build-deploy`)하면 ExternalSecret 이 1시간 안에 `ALERTS_SLACK_WEBHOOK_URL` 도 주입하지만 SNS 가 있으면 앱은 SNS 만 쓴다.
+4. **앱** — `values-dev.yaml` 의 `ALERTS_SNS_TOPIC_ARN` 은 토픽 이름이 고정이라 이미 들어 있다. 배포(main 머지 → CI `build-deploy`)하면 ExternalSecret 이 1시간 안에 `ALERTS_WEBHOOK_URL` 도 주입하지만 SNS 가 있으면 앱은 SNS 만 쓴다.
 5. **확인**
    ```bash
    aws sns publish --topic-arn $(terraform -chdir=infra/envs/dev/compute output -raw alerts_topic_arn) \
      --subject "[nesume-dev] WARN alarm" --message '{"type":"alarm","severity":"warn","summary":"D16 수동 점검","env":"dev"}'
    ```
-   Slack 에 메시지가 오면 끝. 안 오면 `aws logs tail /aws/lambda/nesume-dev-slack-notifier --since 10m`.
+   Discord 채널에 메시지가 오면 끝. 안 오면 `aws logs tail /aws/lambda/nesume-dev-webhook-notifier --since 10m`.
+   Lambda 를 거치지 않고 웹훅 자체를 먼저 확인하려면:
+   ```bash
+   curl -sS -X POST -H 'Content-Type: application/json' -d '{"content":"nesume 웹훅 점검"}' "$WEBHOOK_URL"
+   ```
 
-로컬 compose 에서 Slack 을 바로 보려면 `.env` 에 `ALERTS_SLACK_WEBHOOK_URL=` 만 넣는다(SNS 미설정 → 직접 POST).
+로컬 compose 에서 Discord 로 바로 받으려면 `.env` 에 `ALERTS_WEBHOOK_URL=` 만 넣는다(SNS 미설정 → 직접 POST).
 
 ## 5. 시연 절차 (완료 기준)
 
@@ -95,10 +99,10 @@ SNS Subject: `[nesume-dev] CRITICAL canary_hit`. Slack 은 같은 내용을 한 
 1. 카나리 토큰: dev DB `user_profile_embeddings` 의 `owner_id='system:canary'` 행에서 `NSM-CANARY-…` 하나를 읽는다(시드 Job `canary-seed`가 심음). 토큰은 로그·채팅에 전체를 적지 않는다.
 2. 운영자 로그인 후 `X-Session-Id: demo-canary-1` 로 글 다듬기 API 를 호출하되 응답에 토큰이 섞이게 한다. 가장 확실한 방법은 **평가 러너가 아니라** 테스트 전용 경로로 A5 를 통과시키는 것인데 운영 환경에서는 모델이 토큰을 그대로 되돌리지 않는다. 그래서 시연은 두 단계로 나눈다:
    - (a) 단위 시연: `app/tests/test_session_block.py::test_canary_hit_blocks_session_and_alerts_once` — 판정 → 차단 → 429 → 알림 1회.
-   - (b) 실환경 시연: 운영자 화면 `/admin/sessions` 에서 `demo-canary-1` 을 수동 차단 → 같은 세션으로 글 다듬기 호출 → 429 → Slack 에 `session_blocked` 도착 → 해제 → 다시 200. 검색 단계 카나리(C13)는 `tests/scenarios/test_canary.py` 가 `nesume.security` 로그를 만들고, 그 로그가 `SecurityLogBridge` 로 `canary_hit` 알림이 되는 것은 `tests/test_alerts.py::test_security_bridge_turns_c13_log_into_alert`.
+   - (b) 실환경 시연: 운영자 화면 `/admin/sessions` 에서 `demo-canary-1` 을 수동 차단 → 같은 세션으로 글 다듬기 호출 → 429 → Discord 에 `session_blocked` 도착 → 해제 → 다시 200. 검색 단계 카나리(C13)는 `tests/scenarios/test_canary.py` 가 `nesume.security` 로그를 만들고, 그 로그가 `SecurityLogBridge` 로 `canary_hit` 알림이 되는 것은 `tests/test_alerts.py::test_security_bridge_turns_c13_log_into_alert`.
 3. 세션 해제는 운영자 MFA 세션(`require_operator_mfa`)에서만 된다. dev 의 `test-operator1` 은 MFA 면제(`MFA_EXEMPT_TEST_OPERATORS`).
 
-**수집 3회 실패 알림**: 알람은 3일이 걸리므로 시연은 `aws cloudwatch set-alarm-state --alarm-name nesume-dev-collector-failed --state-value ALARM --state-reason demo` 로 상태를 강제해 Slack·이메일 수신을 확인하고, 즉시 `--state-value OK` 로 되돌린다. 메트릭 필터 자체는 `aws logs test-metric-filter --filter-pattern '{ $.kubernetes.pod_name = "*jobs-collector*" && $.log = "*FAILED*" }' --log-event-messages '{"log":"seoul: FAILED","kubernetes":{"pod_name":"nesume-jobs-collector-abc"}}'` 로 확인한다.
+**수집 3회 실패 알림**: 알람은 3일이 걸리므로 시연은 `aws cloudwatch set-alarm-state --alarm-name nesume-dev-collector-failed --state-value ALARM --state-reason demo` 로 상태를 강제해 Discord·이메일 수신을 확인하고, 즉시 `--state-value OK` 로 되돌린다. 메트릭 필터 자체는 `aws logs test-metric-filter --filter-pattern '{ $.kubernetes.pod_name = "*jobs-collector*" && $.log = "*FAILED*" }' --log-event-messages '{"log":"seoul: FAILED","kubernetes":{"pod_name":"nesume-jobs-collector-abc"}}'` 로 확인한다.
 
 ## 6. 다른 파트에 요청
 
