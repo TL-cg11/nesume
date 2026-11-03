@@ -137,7 +137,6 @@ export default function Layout({ navItems, home = '/' }) {
         <header className="app-topbar">
           <span className="app-topbar-title">{pageTitle(location.pathname, navItems)}</span>
           <div className="app-topbar-right">
-            <span className="app-env">dev · localhost</span>
             <ThemeToggle />
           </div>
         </header>
