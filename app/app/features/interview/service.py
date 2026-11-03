@@ -572,7 +572,8 @@ async def _run(
     if system:  # 임시: A #18 병합 전까지 사용자 프롬프트 맨 앞에(위 PERSONAS 주석)
         prompt = f"{system}\n\n{prompt}"
     try:
-        out = await guard.run(prompt, ctx)
+        # 검색(C6)은 건너뛴다: 면접은 고른 자소서·연결 경험만 쓴다(B13). 다른 자소서 조각이 섞이면 안 된다
+        out = await guard.run(prompt, ctx, retrieve=False)
     except LlmUnavailable:
         return Outcome(llm_unavailable=True)
     if out.blocked:

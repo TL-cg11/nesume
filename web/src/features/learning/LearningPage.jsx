@@ -45,7 +45,7 @@ function roadmapLabel(r) {
 // 맞는 강좌를 못 찾은 갭 항목(시스템 항목인데 강좌 출처가 없음) — 강좌처럼 보이지 않게 구분
 const noCourse = (item) => item.origin === 'system' && !item.source
 
-// 공고 필드 → 근거 표시 이름(A11 PostingFields). 줄 번호는 A11이 주지 않아 필드까지만.
+// 공고 필드 → 근거 표시 이름(A11 PostingFields). 원문 줄(evidence_line)은 C10이 따로 찾아 준다.
 const FIELD_LABEL = {
   title: '공고 제목',
   job_name: '직무명',
@@ -116,7 +116,14 @@ function GapTable({ info, isOn, onToggle }) {
                   <td>
                     <span className={`lp-gap-st ${required ? 'need' : 'nice'}`}>{required ? `부족 · ${rank}순위` : '부족'}</span>
                   </td>
-                  <td className="lp-gap-why">{fields.length ? `공고 ${fields.join(', ')}` : '공고'}</td>
+                  <td className="lp-gap-why">
+                    {fields.length ? `공고 ${fields.join(', ')}` : '공고'}
+                    {g.evidence_line && (
+                      <span className="lp-gap-line" title={g.evidence_line}>
+                        「{g.evidence_line}」
+                      </span>
+                    )}
+                  </td>
                 </tr>
               )
             })}
@@ -593,7 +600,6 @@ export default function LearningPage() {
             <div>
               <div className="inline-head">
                 <h3>내 로드맵</h3>
-                {resumeId && roadmap && <span className="c-roadmap-edit-label">{roadmap.grade}</span>}
               </div>
               {resumeId && roadmap && (
                 <div className="lp-roadmap-picker">

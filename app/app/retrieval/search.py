@@ -222,4 +222,10 @@ def build_retriever(embedder: Embedder | None = None) -> PersonalRetriever | Non
     """
     if embedder is None:
         return None
+    # 요청 경로다 — 배치용 긴 재시도(최악 ~8분)를 넘겨받아도 여기서 짧게 바꾼다(11-03, docs/C6.md).
+    # 호출부가 어느 함수를 넘기든 안전하도록 C가 정책을 쥔다.
+    from app.retrieval.embedder import HttpEmbedder
+
+    if isinstance(embedder, HttpEmbedder):
+        embedder = embedder.with_query_policy()
     return PersonalRetriever(embedder)
