@@ -164,7 +164,7 @@ TYPE_LABELS: dict[str, str] = {
     "session_blocked": "세션 수동 차단",
     "session_released": "세션 차단 해제",
 }
-DISCORD_USERNAME = "네슘 파수꾼"
+DISCORD_USERNAME = "NESUME RADAR"
 
 
 def discord_embed(event: AlertEvent) -> dict[str, object]:

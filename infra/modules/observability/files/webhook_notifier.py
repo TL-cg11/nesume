@@ -17,7 +17,7 @@ import boto3
 SECRET_ARN = os.environ["SECRET_ARN"]
 SECRET_KEY = os.environ.get("WEBHOOK_SECRET_KEY", "ALERTS_WEBHOOK_URL")
 ENV = os.environ.get("ENV", "")
-USERNAME = os.environ.get("WEBHOOK_USERNAME", "네슘 파수꾼")
+USERNAME = os.environ.get("WEBHOOK_USERNAME", "NESUME RADAR")
 _cache = {}
 
 COLORS = {"critical": 0xE53935, "warn": 0xF59E0B, "info": 0x3B82F6, "ok": 0x22C55E}
@@ -32,7 +32,8 @@ TYPE_LABELS = {
 def webhook_url():
     if "url" not in _cache:
         raw = boto3.client("secretsmanager").get_secret_value(SecretId=SECRET_ARN)["SecretString"]
-        _cache["url"] = (json.loads(raw).get(SECRET_KEY) or "").strip()
+        # PowerShell 의 Set-Content -Encoding utf8 이 붙이는 BOM 을 견딘다(11-03 실제 발생)
+        _cache["url"] = (json.loads(raw.lstrip("﻿")).get(SECRET_KEY) or "").strip()
     return _cache["url"]
 
 
