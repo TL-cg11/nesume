@@ -37,6 +37,9 @@ ingress:
   enabled: true
   host: ""                           # dev.<domain>
   certificateArn: ""
+  annotations:
+    # D17 WAF(base output waf_web_acl_arn). Count/Block 은 infra/modules/waf mode 로 바꾼다(주석 그대로)
+    alb.ingress.kubernetes.io/wafv2-acl-arn: arn:aws:wafv2:ap-northeast-2:852138520969:regional/webacl/nesume-dev-alb/b48bda0a-6917-4a19-9d2c-6642227822c8
 
 serviceAccount:
   app:
