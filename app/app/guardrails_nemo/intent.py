@@ -95,10 +95,30 @@ class NemoIntentRail:
         _current_embedder = embedder
         self.threshold = threshold
         self._rails = LLMRails(config)
+        # NeMo 는 예시 색인을 첫 호출 때 만든다. 첫 요청들이 동시에 오면 색인 전에 검색해 내부 오류가 난다
+        # (11-03 로컬 재현) → 첫 호출 하나만 색인을 만들게 하고 나머지는 기다린다
+        self._ready = False
+        self._lock = asyncio.Lock()
+
+    async def warmup(self) -> None:
+        if self._ready:
+            return
+        async with self._lock:
+            if not self._ready:
+                await self._generate("안녕하세요")
+                self._ready = True
 
     async def acheck(self, text: str) -> NemoResult:
+        await self.warmup()
+        return NemoResult(parse_intent(await self._generate(text)))
+
+    async def _generate(self, text: str) -> str:
         res = await self._rails.generate_async(messages=[{"role": "user", "content": text}])
-        return NemoResult(parse_intent(str(res.get("content", ""))))
+        content = str(res.get("content", ""))
+        if not content.startswith(_PREFIX):
+            # 우리 봇 문구가 아니면 NeMo 내부 오류("I'm sorry, an internal error…")다. 정상으로 읽지 않는다
+            raise RuntimeError("NeMo 내부 오류")
+        return content
 
     def check_many(self, texts: list[str]) -> list[NemoResult]:
         async def run() -> list[NemoResult]:

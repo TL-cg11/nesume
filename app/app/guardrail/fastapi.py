@@ -42,6 +42,7 @@ def _shared() -> Guardrail:
     from app.guardrail.bedrock import build_provider
     from app.guardrail.llm_client import LlmClient
     from app.guardrail.rails.llama_guard import build_output_rail
+    from app.guardrails_nemo.rail import build_nemo_rail
     from app.retrieval.embedder import get_embedder
     from app.retrieval.search import build_retriever
 
@@ -61,6 +62,7 @@ def _shared() -> Guardrail:
         audit=DbAuditSink(),
         history=InMemoryTurnStore(),
         output_rail=build_output_rail(settings),
+        input_rail=build_nemo_rail(settings),  # C16. NEMO_*_MODE=off(기본)면 None
     )
 
 
