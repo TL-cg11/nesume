@@ -24,6 +24,8 @@ import MentorSharePage from '../features/share/MentorSharePage.jsx'
 import AuditLogsPage from '../features/audit/AuditLogsPage.jsx'
 import RequireAuth from '../features/auth/RequireAuth.jsx'
 import AdminUsersPage from '../features/admin/AdminUsersPage.jsx'
+import AdminDashboardPage from '../features/admin/AdminDashboardPage.jsx'
+import AdminSessionsPage from '../features/admin/AdminSessionsPage.jsx'
 // C: 공고 추천(C8)·학습 로드맵(C14)·지원 현황(C15) — nesumeC에서 이식(docs C-frontend-wiring.md 6절)
 import LearningPage from '../features/learning/LearningPage.jsx'
 import ApplicationsPage from '../features/applications/ApplicationsPage.jsx'
@@ -51,10 +53,14 @@ export const featureRoutes = [
   { path: 'mfa/setup', element: <MfaSetupPage /> },
   { path: 'mentor', element: <MentorSharesPage />, nav: '받은 공유', roles: ['mentor'] }, // B17 멘토 전용 — 메뉴도 멘토에게만
   { path: 'mentor/:shareId', element: <MentorSharePage /> },
+  // D14·D15 운영 대시보드(운영자 전용): 차단 현황·트래픽. 운영자의 홈(/)도 여기로 온다(RoleNavLayout)
+  { path: 'admin/dashboard', element: <RequireAuth roles={['operator']}><AdminDashboardPage /></RequireAuth>, nav: '운영 대시보드', roles: ['operator'] },
   // B11 AI 사용 기록(운영자 MFA 전용, 10/29). 프롬프트 템플릿 화면은 메뉴에서 뺌 — 템플릿 API는 A6가 쓰므로 서버에 유지
   { path: 'ai-logs', element: <AuditLogsPage />, nav: 'AI 사용 기록', roles: ['operator'] },
   // D6 역할 관리(운영자 전용). 운영자 부여·회수
   { path: 'admin/users', element: <RequireAuth roles={['operator']}><AdminUsersPage /></RequireAuth>, nav: '역할 관리', roles: ['operator'] },
+  // D16 세션 차단(운영자 전용): 자동 차단 목록 확인·수동 차단·해제
+  { path: 'admin/sessions', element: <RequireAuth roles={['operator']}><AdminSessionsPage /></RequireAuth>, nav: '세션 차단', roles: ['operator'] },
 ]
 
 export const routes = [

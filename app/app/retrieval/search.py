@@ -13,6 +13,7 @@ A8 `Retriever` 규약 그대로 구현한다(질의문 → 임베딩 → `search
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Callable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
@@ -25,7 +26,10 @@ from app.guardrail.pipeline import Chunk
 from app.models.embedding import MODEL_VERSION, JobPostingEmbedding, UserProfileEmbedding
 from app.models.posting import JobPosting
 from app.policy.policy import Policy, build_where, default_matrix_path
+from app.retrieval import canary
 from app.retrieval.embedder import Embedder
+
+log = logging.getLogger("nesume.retrieval")
 
 #: 정책 매트릭스 1회 로드. 경로는 env `POLICY_MATRIX_PATH`(D2 공식본) 우선, 없으면 번들.
 _policy = Policy.load(default_matrix_path())
@@ -107,6 +111,7 @@ def search_personal(
     stmt = (
         select(
             UserProfileEmbedding.id,
+            UserProfileEmbedding.owner_id,  # C13 결과 검사(남의 행·미끼 소유자)
             UserProfileEmbedding.source_type,
             UserProfileEmbedding.source_id,
             UserProfileEmbedding.chunk_index,
@@ -151,7 +156,15 @@ class PersonalRetriever:
     질의문을 **색인과 같은 임베더**로 벡터화해 `search_personal`(C2 WHERE 강제)을 부른다.
     대상은 개인 인덱스만(공고는 외부 텍스트라 인젝션 표면 — A11은 `get_posting_fields`로 받음).
     세션은 호출마다 직접 연다(`DbAuditSink`와 같은 방식). DB·임베딩은 동기라 스레드에서 돈다.
-    임베더 오류는 그대로 올린다 — 빈 결과로 삼키면 "검색 0건"과 구분이 안 된다.
+    임베더·DB 오류는 **경고 로그 + 빈 결과**(11-02, docs/C6.md). 검색이 모든 LLM 요청 앞에 붙으므로
+    임베더 장애가 AI 기능 전체 장애가 되지 않게 검색만 건너뛴다. 빈 결과라 새는 것은 없다.
+    "검색 0건"과는 로그(`personal search unavailable`)로 구분한다.
+
+    C13: 결과에 미끼(`LEAK_CANARY`)나 매트릭스상 받을 수 없는 행(`AUTHZ_FILTER_BYPASS`)이 하나라도
+    있으면 = 필터가 뚫렸다 → 같은 결과의 다른 행도 믿을 수 없으므로 **결과 전체를 버리고**(결정2)
+    보안 이벤트를 남긴다.
+    지금은 빈 결과로 막는다(fail-closed): A8이 조각별 `block` 판정을 읽는 건 A #23부터라, 그 전에 판정만 붙여
+    보내면 그대로 모델에 넘어간다. #23 머지 뒤 판정·신호를 실어 보내 감사 로그 `canary_hit`까지 잇는다(①').
     """
 
     def __init__(
@@ -160,10 +173,12 @@ class PersonalRetriever:
         *,
         session_factory: Callable[[], AbstractContextManager[Session]] = SessionLocal,
         policy: Policy | None = None,
+        canary_tokens: Callable[[], tuple[str, ...]] = canary.tokens.get,
     ):
         self._embedder = embedder
         self._session_factory = session_factory
         self._policy = policy or _policy  # 검색 WHERE와 같은 정책 객체 → 판정이 어긋나지 않게
+        self._canary_tokens = canary_tokens
 
     async def search(self, query: str, *, role: str, user_id: str, top_k: int) -> list[Chunk]:
         if not role or not user_id:  # 임베딩 호출 전에 막는다(필터 없는 경로 차단)
@@ -171,9 +186,23 @@ class PersonalRetriever:
         return await asyncio.to_thread(self._search, query, role, user_id, top_k)
 
     def _search(self, query: str, role: str, user_id: str, top_k: int) -> list[Chunk]:
-        vec = self._embedder.embed([query])[0]
-        with self._session_factory() as db:
-            rows = search_personal(db, vec, role=role, user_id=user_id, top_k=top_k)
+        try:
+            vec = self._embedder.embed([query])[0]
+            with self._session_factory() as db:
+                rows = search_personal(db, vec, role=role, user_id=user_id, top_k=top_k)
+        except Exception as exc:  # noqa: BLE001 — 검색 장애로 LLM 요청 전체를 실패시키지 않는다
+            # 질의·본문은 남기지 않는다. 예외 종류만(메시지에 주소·키가 실릴 수 있어 원문 대신 타입명)
+            log.warning("personal search unavailable, continuing without retrieval: %s", type(exc).__name__)
+            return []
+        known = self._canary_tokens()
+        check = {"role": role, "user_id": user_id, "policy": self._policy, "known_tokens": known}
+        hits = [(r, rule) for r in rows if (rule := canary.violation(r, **check))]
+        if hits:
+            rules = {h for _, h in hits}
+            rule = canary.LEAK_CANARY if canary.LEAK_CANARY in rules else canary.FILTER_BYPASS
+            bad = [r for r, _ in hits]
+            canary.report(rule, where="search_personal", role=role, user_id=user_id, rows=bad)
+            return []
         return [
             PolicyChunk(
                 doc_id=doc_id_of(r.source_type, r.source_id, r.chunk_index),

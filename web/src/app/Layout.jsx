@@ -20,7 +20,9 @@ const NAV_META = {
   // B17 멘토 공유, B11 AI 사용 기록(발표 시안의 '관리' 그룹)
   mentor: { icon: 'user', group: '관리' },
   'ai-logs': { icon: 'shield', group: '관리' }, // B11 AI 사용 기록(운영자). 10/29 프롬프트 템플릿 대신
+  'admin/dashboard': { icon: 'dash', group: '관리' }, // D14·D15 운영 대시보드
   'admin/users': { icon: 'user', group: '관리' }, // D6 역할 관리
+  'admin/sessions': { icon: 'shield', group: '관리' }, // D16 세션 차단
 }
 const GROUP_ORDER = ['워크스페이스', 'AI 도구', '취업 준비', '소개', '관리', '기타']
 
@@ -37,9 +39,10 @@ function groupNav(navItems) {
 function pageTitle(pathname, navItems) {
   const seg = pathname.split('/')[1]
   if (!seg) return '대시보드'
-  const hit = navItems.find((n) => n.path === seg)
+  // 두 단계 경로(admin/dashboard, admin/users, admin/sessions)는 전체 경로로 먼저 찾는다
+  const hit = navItems.find((n) => pathname === `/${n.path}` || pathname.startsWith(`/${n.path}/`)) ?? navItems.find((n) => n.path === seg)
   if (hit) return hit.nav
-  const label = { login: '로그인', signup: '계정 만들기', confirm: '이메일 확인', forgot: '비밀번호 재설정', mfa: '인증', admin: '역할 관리' }
+  const label = { login: '로그인', signup: '계정 만들기', confirm: '이메일 확인', forgot: '비밀번호 재설정', mfa: '인증', admin: '운영' }
   return label[seg] || 'nesume'
 }
 

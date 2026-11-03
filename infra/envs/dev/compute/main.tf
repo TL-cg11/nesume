@@ -87,3 +87,25 @@ module "addons" {
 
   depends_on = [module.eks] # 노드그룹·애드온·Pod Identity 연결이 전부 끝난 뒤
 }
+
+# ---------- D14 로그·모니터링: Fluent Bit → CloudWatch Logs(app/audit 분리), Container Insights, 알람·SNS, 대시보드 ----------
+# base 출력 fluent_bit_role_arn·cloudwatch_agent_role_arn 이 필요하다(base 를 먼저 apply).
+module "observability" {
+  source                    = "../../../modules/observability"
+  project                   = "nesume"
+  env                       = "dev"
+  region                    = local.region
+  cluster_name              = module.eks.cluster_name
+  app_log_group             = local.base.app_log_group
+  audit_log_group           = local.base.audit_log_group
+  fluent_bit_role_arn       = local.base.fluent_bit_role_arn
+  cloudwatch_agent_role_arn = local.base.cloudwatch_agent_role_arn
+  fluent_bit_chart_version  = var.fluent_bit_chart_version
+  rds_identifier            = local.name
+  alert_email               = var.alert_email
+  # D16: Discord/Slack 웹훅 구독(Lambda). 앱 시크릿에 ALERTS_WEBHOOK_URL 을 넣은 뒤 -var webhook_alerts_enabled=true
+  app_secret_arn  = local.base.app_secret_arn
+  webhook_enabled = var.webhook_alerts_enabled
+
+  depends_on = [module.eks]
+}

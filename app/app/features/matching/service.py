@@ -26,7 +26,13 @@ from app.features.matching import keywords as kw_mod
 from app.features.matching import vocab
 from app.features.matching.coverage import CoverageReport, UserEvidence, compare
 from app.features.matching.keywords import Keyword, PostingFields
-from app.guardrail import Guardrail, LlmUnavailable, RequestContext
+from app.guardrail import (
+    DEFAULT_SYSTEM_PROMPT,
+    Guardrail,
+    LlmRequest,
+    LlmUnavailable,
+    RequestContext,
+)
 from app.pii import mask
 from app.retrieval.preprocess import preprocess_external_text
 
@@ -54,6 +60,13 @@ _QUESTION_BY_CATEGORY = {
     "domain": "{text} 관련 경험이 있습니까? 아르바이트·동아리 활동도 포함됩니다.",
 }
 _QUESTION_DEFAULT = "공고가 요구하는 요건입니다 — 「{text}」. 해당하는 경험이 있습니까?"
+
+#: 경험 글과 빠진 낱말을 **한 덩어리로** 가드레일에 넘길 때 쓰는 표시.
+#:
+#: ★ 본문에 나올 수 없는 모양이어야 한다. 사용자가 이 글자를 그대로 쳐 넣으면
+#:   가르는 자리가 어긋나 프롬프트의 두 칸이 섞인다 — 검사는 이미 통째로 끝난
+#:   뒤라 보안에는 영향이 없고, 모델이 받는 글의 묶음만 어긋난다.
+_GUARD_SEP = "\n<<<MATCHING_KEYWORDS>>>\n"
 
 #: 질문 목록 맨 앞에 붙는 말. 없으면 사용자는 질문을 **채워야 할 빈칸**으로 읽는다.
 NO_INVENTION_NOTICE = "해당 경험이 없으면 쓰지 않는 것이 맞습니다. 없는 경험은 면접에서 드러납니다."
@@ -284,12 +297,25 @@ async def analyze(
         # 빠진 요건에는 문장을 만들지 않는다 — 모듈 주석 참조
         return AnalyzeResult(**base)
 
-    prompt = _PROMPT.format(
-        sep=SEP,
-        limit=MAX_HINTS,
-        experiences=_experiences_block(evidence, report),
-        missing="\n".join(f"- {m.keyword.text}" for m in writable[:MAX_HINTS]),
-    )
+    # ★ 가드레일에는 **템플릿이 아닌 것 전부**를 넘기고, 조립은 A8 안에서 하게 한다.
+    #   조립한 글을 넘기면 A3·A12 가 우리 템플릿까지 검사 대상으로 보고, 문장 전체를
+    #   보는 규칙이 죽는다 (A12 `is_continuation` 이 그래서 A10-MULTI-04 를 놓쳤다).
+    #
+    #   경험만 넘기지 않는 이유 — 빠진 낱말도 모델에 가는 글이다. 한쪽만 넘기면
+    #   **검사와 치환에서 빠진다.** 표시로 이어 보내고 조립할 때 다시 가른다.
+    guarded = _GUARD_SEP.join((
+        _experiences_block(evidence, report),
+        "\n".join(f"- {m.keyword.text}" for m in writable[:MAX_HINTS]),
+    ))
+
+    def build(query: str, chunks) -> LlmRequest:
+        experiences, _, missing = query.partition(_GUARD_SEP)
+        return LlmRequest(
+            prompt=_PROMPT.format(
+                sep=SEP, limit=MAX_HINTS, experiences=experiences, missing=missing
+            ),
+            system=DEFAULT_SYSTEM_PROMPT,
+        )
     ctx = RequestContext(
         user_id=user_id, role=role, feature=FEATURE,
         session_id=session_id, is_test=is_test,
@@ -299,7 +325,7 @@ async def analyze(
     )
 
     try:
-        result = await guard.run(prompt, ctx)
+        result = await guard.run(guarded, ctx, prompt=build)
     except LlmUnavailable:
         # 제공자 미정(2026-10). 규칙 결과만으로도 쓸 수 있어야 한다
         return AnalyzeResult(**base, llm_unavailable=True)

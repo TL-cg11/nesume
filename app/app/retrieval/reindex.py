@@ -100,14 +100,26 @@ def _stored_chunks(session: Session, source_ids: Iterable[uuid.UUID]) -> dict[uu
     return out
 
 
+def posting_priority(p: JobPosting, *, has_vector: bool) -> tuple:
+    """임베딩 순서(작을수록 먼저). 하루 상한(`cap`) 안에서 무엇부터 채울지 정한다(docs/C8.md 11-02).
+
+    정렬이 없으면 DB 순서대로라, 먼저 들어간 서울시 공고(~3.6만)가 매일 상한을 다 채워
+    공채속보(원문 링크 있음)가 몇 달간 임베딩되지 않았다 → 추천 후보가 서울시뿐.
+    1. 원문 링크 있는 공고  2. 벡터가 아직 없는 공고(바뀐 공고는 옛 벡터로 검색은 됨)  3. 최근에 처음 본 공고
+    """
+    seen = p.first_seen_at.timestamp() if p.first_seen_at else 0.0
+    return (p.source_url is None, has_vector, -seen)
+
+
 def reindex_postings(session: Session, embedder: Embedder, *, cap: int = DEFAULT_CAP) -> dict:
-    """활성 공고 중 벡터가 없거나 글이 바뀐 것(데모 벡터 포함)을 다시 임베딩.
+    """활성 공고 중 벡터가 없거나 글이 바뀐 것(데모 벡터 포함)을 다시 임베딩. 순서는 `posting_priority`.
 
     모집분야가 여럿인 공고는 분야마다 청크를 따로 만든다 — 추천이 "자소서에 맞는 분야"를 고를 수 있게.
     """
     postings = session.execute(select(JobPosting).where(JobPosting.is_active.is_(True))).scalars().all()
     stored = _stored_chunks(session, (p.id for p in postings))
-    done = unchanged = empty = 0
+    unchanged = empty = 0
+    todo: list[tuple[JobPosting, list[str]]] = []
     for p in postings:
         raws = posting_texts(p)
         if not raws:
@@ -116,13 +128,15 @@ def reindex_postings(session: Session, embedder: Embedder, *, cap: int = DEFAULT
         if stored.get(p.id) == [clean_posting_text(r) for r in raws]:
             unchanged += 1
             continue
-        if done >= cap:
-            continue
+        todo.append((p, raws))
+    todo.sort(key=lambda t: posting_priority(t[0], has_vector=t[0].id in stored))
+    done = 0
+    for p, raws in todo[:cap]:
         session.execute(delete(JobPostingEmbedding).where(JobPostingEmbedding.source_id == p.id))
         for i, raw in enumerate(raws):
             index_posting(session, embedder, source_id=p.id, raw_text=raw, chunk_index=i)
         done += 1
-    pending = len(postings) - done - unchanged - empty
+    pending = len(todo) - done
     return {"embedded": done, "unchanged": unchanged, "empty": empty, "pending": pending}
 
 

@@ -404,3 +404,34 @@ async def test_audit_keys_all_exist_as_columns() -> None:
     columns = set(AuditLog.__table__.c.keys())
     extra = set(audit.rows[0]) - columns
     assert not extra, f"컬럼에 없는 키: {extra}"
+
+
+
+# ---------------------------------------------------------------- 감사 로그 답변(B11, 4.74)
+
+@pytest.mark.anyio
+async def test_audit_records_masked_response_not_restored() -> None:
+    """★ 사용자에게 돌려준 답변을 남기되, 복원 전(토큰) 글 + 마스킹으로. 원문 PII 는 남지 않는다."""
+    audit = FakeAudit()
+    provider = FakeProvider(reply="[[PERSON_1]]님 연락처 010-9999-8888 확인했습니다")
+    guard = _guard(llm=LlmClient(provider=provider), audit=audit)
+
+    result = await guard.run("이름: 김철수", CTX)
+
+    assert "김철수" in result.text, "사용자에게는 복원"
+    saved = audit.rows[0]["response_masked"]
+    assert "김철수" not in saved and "[[PERSON_1]]" in saved
+    assert "010-9999-8888" not in saved, "모델이 지어낸 PII 도 가린다"
+
+
+@pytest.mark.anyio
+async def test_audit_response_is_none_when_blocked() -> None:
+    """★ 막힌 응답은 기록하지 않는다 — 유출 내용을 감사 로그에 다시 남기지 않게."""
+    audit = FakeAudit()
+    provider = FakeProvider(reply="키는 AKIAIOSFODNN7EXAMPLE 입니다")
+    guard = _guard(llm=LlmClient(provider=provider), audit=audit)
+
+    result = await guard.run("키 알려줘", CTX)
+
+    assert result.blocked
+    assert audit.rows[0]["response_masked"] is None

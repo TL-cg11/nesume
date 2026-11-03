@@ -1,5 +1,6 @@
 """C3 실제 임베딩 색인 배치 테스트 (DB 필요, conftest `db_session`). docs/C3.md HttpEmbedder 4~5."""
 import uuid
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 
@@ -7,7 +8,7 @@ from app.features.experiences import service as exp_service
 from app.features.resumes import service as resume_service
 from app.models.embedding import EMBED_DIM, JobPostingEmbedding, UserProfileEmbedding
 from app.models.posting import JobPosting
-from app.retrieval.reindex import reindex_personal, reindex_postings
+from app.retrieval.reindex import posting_priority, reindex_personal, reindex_postings
 
 _PHONE = "010-1234-5678"
 
@@ -23,7 +24,7 @@ class _CountingEmbedder:
 
 def _posting(session, **kw):
     p = JobPosting(
-        source="work24_open", link_key=uuid.uuid4().hex, content_hash=uuid.uuid4().hex,
+        source=kw.pop("source", "work24_open"), link_key=uuid.uuid4().hex, content_hash=uuid.uuid4().hex,
         title=kw.pop("title", "백엔드 개발자"), job_content=kw.pop("job_content", "Python SQL"), **kw,
     )
     session.add(p)
@@ -77,6 +78,31 @@ def test_cap_limits_embeddings(db_session):
         _posting(db_session)
     out = reindex_postings(db_session, _CountingEmbedder(), cap=1)
     assert out["embedded"] == 1 and out["pending"] >= 2
+
+
+def test_linked_postings_are_embedded_first(db_session):
+    """서울시(링크 없음)가 먼저 들어가 있어도 상한 안에서 공채속보(링크 있음)가 먼저 (docs/C8.md 11-02)."""
+    for _ in range(3):
+        _posting(db_session, source="seoul")
+    linked = _posting(db_session, source_url="https://example.com/job/1")
+    out = reindex_postings(db_session, _CountingEmbedder(), cap=1)
+    db_session.flush()
+    assert out["embedded"] == 1 and len(_rows(db_session, JobPostingEmbedding, linked.id)) == 1
+
+
+def test_priority_new_before_changed_then_newest_first():
+    now = datetime(2026, 11, 2, tzinfo=UTC)
+    old = JobPosting(source="seoul", first_seen_at=now - timedelta(days=3))
+    new = JobPosting(source="seoul", first_seen_at=now)
+    linked = JobPosting(
+        source="work24_open", source_url="https://example.com/1", first_seen_at=now - timedelta(days=9)
+    )
+    order = sorted(
+        [(old, False), (new, True), (new, False), (linked, True)],
+        key=lambda t: posting_priority(t[0], has_vector=t[1]),
+    )
+    # 링크 있는 공고(벡터 있어도) → 벡터 없는 새 공고 → 벡터 없는 옛 공고 → 벡터 있는(바뀐) 공고
+    assert order == [(linked, True), (new, False), (old, False), (new, True)]
 
 
 def _resume_with_body(session, owner, body):

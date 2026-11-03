@@ -1,7 +1,7 @@
 # 차단 정책 (D10)
 
-버전: v0 · 작성일: 2026-10-27 · 소유: D(인프라·플랫폼·보안)
-관련: 기획서 `spec.md` 7·8·9장, 역할·등급 정의(D1), `app/policy/matrix.yaml`(D2), `app/guardrail/classifier_rules.yaml`(A3), `app/guardrail/schema.py`(A4), `app/features/ratelimit/policy.py`(C7), D7 인증·MFA, A10 `tests/guardrail/scenarios_a10.yaml`
+버전: v0.2 · 작성일: 2026-10-27 · 수정: 2026-11-03 · 소유: D(인프라·플랫폼·보안)
+관련: 기획서 `spec.md` 7·8·9장, 역할·등급 정의(D1), `app/policy/matrix.yaml`(D2), `app/guardrail/classifier_rules.yaml`(A3), `app/guardrail/schema.py`(A4), `app/features/ratelimit/policy.py`(C7), `app/retrieval/canary.py`(C12·C13), `app/guardrail/rails/llama_guard.py`(D19), `app/core/session_block.py`(D16, `docs/ops/alerts.md`), D7 인증·MFA, A10 `tests/guardrail/scenarios_a10.yaml`
 
 이 문서는 가드레일이 질의를 **어떻게 처리하고, 막혔을 때 사용자에게 무엇을 말하고, 반복 공격자를 어떻게 제한하는지**를 확정한다. 기획서 9장(차단 정책)을 머지된 코드 현실에 맞춰 못 박은 것이며, 두 문서가 다르면 이 문서가 우선한다.
 
@@ -42,8 +42,8 @@
 | 단계 | 담당 | 보는 것 |
 |---|---|---|
 | `classifier` | A1 입력 검사 + A3 분류 + A12 멀티턴 | 사용자가 친 질의 |
-| `retriever` | C6 검색 필터 | 역할 × 등급으로 걸러진 검색 결과 |
-| `output_guard` | A5 출력 검사 | 모델 응답(복원 전) |
+| `retriever` | C6 검색 필터 + C13 결과 재검사 | 역할 × 등급으로 걸러진 검색 결과. 걸러진 결과를 한 행씩 다시 확인한다(2장 #13·#14) |
+| `output_guard` | A5 출력 검사 + D19 출력 레일 | 모델 응답(복원 전). A5 규칙 검사 뒤 안전 분류 모델(Llama Guard 계열)이 유해 콘텐츠를 한 번 더 본다(2장 #15) |
 
 세 단계의 판정은 A8이 합친다. **더 무거운 쪽이 이긴다**(block > mask > allow). 감사 로그의 `decision_stage`에는 무거운 판정을 만든 단계가 남는다.
 
@@ -65,11 +65,18 @@
 | 10 | 탈취 세션 제한 중 | — | 거부(429) | ✗ | 없음 | ✗ | `MSG_SESSION_LIMITED` |
 | 11 | 파이프라인 내부 오류 | `ERR_PIPELINE` | block | — | 없음 | ✗ | 공통 서버 오류 문구 |
 | 12 | 정상 | — | allow | ✓ | 정상 | ✗ | 없음 |
+| 13 | **검색 결과**에 카나리 미끼가 섞임(C13) | `LEAK_CANARY` | block | ✗ | 없음 | ✗ | `MSG_BLOCK_INTERNAL` |
+| 14 | **검색 결과**에 그 역할이 받을 수 없는 행이 섞임(C13. 예: user에게 남의 자소서, mentor에게 개인 행) | `AUTHZ_FILTER_BYPASS` | block | ✗ | 없음 | ✗ | `MSG_BLOCK_INTERNAL` |
+| 15 | 출력이 **유해 콘텐츠**(폭력·무기·자해·혐오·성적 내용 등 Llama Guard 3 범주 S1~S13. D19 레일, `LLAMA_GUARD_ENABLED`) | `UNSAFE_CONTENT`(+ `UNSAFE_CONTENT.S9` 같은 범주 표식) | block | (이미 호출됨) | 없음, **복원하지 않음** | ✗ | `MSG_BLOCK_UNSAFE` |
+| 15-1 | D19 레일 오류·타임아웃(3s)·판정 형식 불명 | `OUTRAIL_ERROR` | **allow + 표식**(fail-open 기본). `LLAMA_GUARD_FAIL_OPEN=false` 면 block | (이미 호출됨) | 정상 | ✗ | 없음 / 차단 시 `MSG_BLOCK_UNSAFE` |
 
 원칙
-- **1·2·3·4·7은 LLM을 부르지 않는다.** 부르면 그 자체가 비용이고 유출 경로다.
+- **1·2·3·4·7·13·14는 LLM을 부르지 않는다.** 부르면 그 자체가 비용이고 유출 경로다.
 - **8은 복원(detokenize)하지 않는다.** 막기로 한 본문에 진짜 이름이 들어가면 안 된다.
-- **탈취 카운트(6장)는 2·3·4에서만 는다.** 입력 PII 거절(1)과 출력 유출(8)은 사용자 실수나 모델 문제일 수 있으므로 세지 않는다.
+- **탈취 카운트(6장)는 2·3·4에서만 는다.** 입력 PII 거절(1)과 출력 유출(8)은 사용자 실수나 모델 문제일 수 있으므로 세지 않는다. 검색 단계 유출(13·14)도 세지 않는다. 질의가 아니라 **필터 쪽이 뚫린 것**이라 사용자 탓으로 돌릴 수 없고, 탈취 질의였다면 분류 단계(2·3·4)에서 이미 셌다.
+- **13·14는 그 요청의 검색 결과 전체를 버린다.** 나올 수 없는 행이 하나라도 섞이면 같은 결과의 다른 행도 믿을 수 없다. 걸러낸 뒤 나머지로 응답하지 않는다. 판정 단계는 `retriever`, 13은 감사 로그 `canary_hit`도 True다(9장).
+- **15는 A5 뒤에만 돈다.** A5 가 이미 막은 응답(#8)은 레일을 부르지 않는다(비용). 레일은 마스킹·토큰화된 본문을 보므로 PII 가 모델 밖으로 나가지 않는다. 표본 비율(`LLAMA_GUARD_SAMPLE_RATE`)로 일부만 검사할 수 있고, 미검사 요청은 `OUTRAIL_SKIPPED` 표식만 남는다. fail-open 을 기본으로 둔 이유: 레일은 **2차** 그물이고(A5 가 1차), 외부 모델 장애로 글쓰기 기능 전체가 멈추는 쪽이 더 큰 피해다. 오류 표식 비율은 대시보드에서 본다.
+- **13·14는 보안 이벤트다.** 차단으로 끝나지 않고 `nesume.security` 로거(`security_event=canary_hit|filter_bypass`)로 남겨 D16 알림(`SecurityLogBridge` → Discord·이메일)과 대시보드(D15)가 받는다. **8(출력 단계 카나리)은 D16 이 그 세션을 즉시 차단**한다(운영자가 풀 때까지, `docs/ops/alerts.md` 3장). 미끼는 모든 역할에게 차단되는 기밀 등급이라 정상 경로에서는 절대 나오지 않는다. 나왔다는 것은 C6 WHERE 필터가 깨졌거나 우회됐다는 뜻이므로 **즉시 대응**한다(운영 문서 D18).
 - 모든 행은 감사 로그 한 행으로 남는다(9장). 11도 남는다.
 
 ---
@@ -127,15 +134,16 @@
 |---|---|---|
 | `MSG_BLOCK_PII_RRN` | 주민등록번호는 자기소개서에 넣을 수 없습니다. 해당 부분을 지우고 다시 시도해 주십시오. | 2장 #1 |
 | `MSG_BLOCK_PII_ACCOUNT` | 계좌번호는 자기소개서에 넣을 수 없습니다. 해당 부분을 지우고 다시 시도해 주십시오. | 2장 #1 |
-| `MSG_BLOCK_INTERNAL` | 요청을 처리할 수 없습니다. 서비스 내부 설정은 제공하지 않습니다. | 2장 #2·#4·#8 |
+| `MSG_BLOCK_INTERNAL` | 요청을 처리할 수 없습니다. 서비스 내부 설정은 제공하지 않습니다. | 2장 #2·#4·#8·#13·#14 |
 | `MSG_BLOCK_OTHER_USER` | 요청을 처리할 수 없습니다. 다른 사용자의 문서는 제공하지 않습니다. | 2장 #3·#4 |
 | `MSG_BLOCK_AUTHZ` | 요청하신 자료는 현재 권한으로 열람할 수 없습니다. | 2장 #7 |
 | `MSG_MASKED` | 민감한 정보가 포함되어 일부를 가렸습니다. | 2장 #5·#9 |
 | `MSG_MASKED_OTHER_PERSON` | 다른 지원자의 개인정보는 제공할 수 없습니다. | 2장 #5 (`SENS_OTHER_PERSON`) |
-| `MSG_SESSION_LIMITED` | 반복된 부적절한 요청으로 잠시 이용이 제한되었습니다. {retry_after_min}분 후 다시 시도해 주십시오. | 2장 #10 |
+| `MSG_BLOCK_UNSAFE` | 요청을 처리할 수 없습니다. 유해하거나 부적절한 내용은 제공하지 않습니다. | 2장 #15 |
+| `MSG_SESSION_LIMITED` | 반복된 부적절한 요청으로 잠시 이용이 제한되었습니다. {retry_after_min}분 후 다시 시도해 주십시오. | 2장 #10 · D16 차단 세션 |
 | `MSG_RATE_LIMITED` | 요청이 많아 잠시 이용이 제한되었습니다. {retry_after_sec}초 후 다시 시도해 주십시오. | 7장 비용 쿼터 |
 
-`MSG_BLOCK_INTERNAL`은 출력 유출(#8)에도 쓴다. 모델이 뭘 흘렸는지(카나리·타인 문서) 사용자에게 구분해 알릴 이유가 없다.
+`MSG_BLOCK_INTERNAL`은 출력 유출(#8)과 검색 단계 유출(#13·#14)에도 쓴다. 모델이 뭘 흘렸는지(카나리·타인 문서), 검색에 뭐가 섞였는지 사용자에게 구분해 알릴 이유가 없다. #14에 `MSG_BLOCK_AUTHZ`를 쓰지 않는 이유: 그 문구는 "권한 밖 자료를 **요구**했다"는 뜻인데 #14는 요구와 무관하게 필터가 뚫린 경우라, 권한 문구를 주면 "열람할 자료가 있다"는 힌트가 된다.
 
 ### 5.3 응답 모양
 
@@ -161,6 +169,7 @@
 | 시간창·제한 시간 | **600초(10분)** | 환경변수 `RL_EXFIL_BLOCK_SECONDS` |
 | 경계 | 창 안 누적이 임계치 **이상**이면 거부. 5회째 탈취 판정 직후부터 막힌다 | |
 | 제한 중 응답 | HTTP 429, `code: rate_limited`, `Retry-After: <남은 초>`, `MSG_SESSION_LIMITED` | |
+| D16 차단 목록(`blocked_sessions`) | 임계치 도달 시 같은 세션을 목록에 넣고 알림(`exfil_threshold`). 출력 단계 카나리(#8)는 **해제까지** 차단. 운영자 수동 차단·해제 `/admin/sessions`. 제한 중 응답은 위와 같다 | `docs/ops/alerts.md` |
 
 규칙
 - **카운트 대상**은 판정이 `block`이고 `query_type`이 `exfiltration`인 요청만이다(2장 #2·#3·#4). 입력 PII 거절·출력 유출·권한 안내는 세지 않는다.
@@ -169,7 +178,9 @@
 - `system` 역할은 대화형 API 자체가 403이므로 해당 없다.
 - 수치 변경은 환경변수로만 한다. 코드 기본값은 이 표와 같아야 하며, Helm `values*.yaml`에 명시하지 않으면 기본값이 쓰인다.
 
-> **구현 상태(2026-10-27):** C7 `RateLimiter.check_session`·`record_violation`은 라이브러리로만 있고 라우터에 연결되지 않았다. **배선 담당은 A8(파이프라인 호출부)이 아니라 라우터 의존성(B)**으로 정한다. 위치는 LLM 경로 앞 `check_session` → A8 호출 → 판정이 탈취 block이면 `record_violation`. A8을 건드리지 않는다(`docs/C7.md` 배선 그림과 같다).
+> **구현 상태(2026-11-03):** C7 래퍼(`RateLimitedGuardrail`)와 D16 래퍼(`SessionBlockGuardrail`)가 `get_guardrail()` 공급 지점에서 모든 LLM 경로를 감싼다. 바깥이 C7: C7 한도 → D16 차단 목록 → A8 → D16 자동 차단·알림(이번 위반을 더해 임계치 판정) → C7 위반 기록.
+>
+> **(2026-10-27 기록)** C7 `RateLimiter.check_session`·`record_violation`은 라이브러리로만 있고 라우터에 연결되지 않았다. **배선 담당은 A8(파이프라인 호출부)이 아니라 라우터 의존성(B)**으로 정한다. 위치는 LLM 경로 앞 `check_session` → A8 호출 → 판정이 탈취 block이면 `record_violation`. A8을 건드리지 않는다(`docs/C7.md` 배선 그림과 같다).
 
 ---
 
@@ -196,7 +207,8 @@ C7의 요청/분(기본 60), 토큰/일(기본 100,000)은 **비용·남용 방�
 
 - 모든 요청은 B11이 요청 종료 시 `finally`에서 **정확히 한 번** 감사 로그를 쓴다. 차단되든 예외가 나든 기록이 남는다.
 - 대표 `rule_id`는 가장 무거운 것, 동률이면 먼저 걸린 것(A4). 나머지는 `flags`에 전부 남는다.
-- `canary_hit`는 별도 불리언 컬럼으로 나간다. 카나리 탐지율 100%가 목표라 배열 안에서 세지 않는다.
+- `canary_hit`는 별도 불리언 컬럼으로 나간다. 카나리 탐지율 100%가 목표라 배열 안에서 세지 않는다. 출력 단계(#8)와 검색 단계(#13) 모두 `LEAK_CANARY`이므로 같은 컬럼이 True가 된다. 어느 단계였는지는 `decision_stage`로 구분한다.
+- 미끼 문서는 helm `canarySeed` 훅 Job(`deploy/nesume/templates/canary-seed-job.yaml`, `python -m app.batch.seed_canaries`)이 배포마다 멱등으로 심는다. 임베더가 없는 환경(kind, `embedder.enabled=false`)에는 미끼가 없으므로 #13은 일어나지 않고 #14만 동작한다. 토큰은 DB에만 있고 로그에는 앞 4자리만 남는다.
 - 대시보드(D15)에서 보는 것: 탈취 차단 건수·세션 제한 발동 횟수, `AUTHZ_*` 표식 비율이 높은 사용자·세션, 과차단율(A10 정상 케이스가 막힌 비율), 카나리 적중.
 
 ---
@@ -222,8 +234,12 @@ C7의 요청/분(기본 60), 토큰/일(기본 100,000)은 **비용·남용 방�
 | 파트 | 요청 | 근거 |
 |---|---|---|
 | A8 | 권한 외 표식 + 검색 결과 0건이면 LLM 미호출·`MSG_BLOCK_AUTHZ` | 4장 |
+| A8 / C13 | 검색 단계 `LEAK_CANARY`·`AUTHZ_FILTER_BYPASS`를 `Verdict("block", "retriever", …)`로 합쳐 LLM 미호출·`MSG_BLOCK_INTERNAL`·`canary_hit`. 지금(2026-11-03)은 C13이 결과를 비워 fail-closed로만 막는다(A #23 머지 전). 그 상태에서는 감사 로그에 `retriever` 판정이 남지 않고, `AUTHZ_*` 표식이 없는 질의는 빈 맥락으로 LLM이 호출된다 | 2장 #13·#14 |
 | A9 / A(matching·style) | `blocked_reason` → `notice_code`·`notice`. 규칙 ID는 응답에서 제거 | 5.3 |
 | A10 | 시나리오 기대값에 `notice_code` 추가. `message` 문장은 유지 | 5.2 |
+| A8 / A9 | D19 레일 포트(`Guardrail.output_rail`, `OutputRail` 프로토콜)와 `_run`·`_run_split` 의 호출 지점 리뷰. `UNSAFE_CONTENT` → `MSG_BLOCK_UNSAFE` 문구 매핑 반영 | 2장 #15 |
+| B16 | 레일 on/off 로 러너를 두 번 돌려 차단율·과차단율 비교(`docs/ops/output-rail.md` 표를 실측으로 갱신) | 2장 #15, 10장 |
+| C4 | 수집 3회 연속 실패 시 `emit("collector_failed", …)` 호출 | D16 |
 | B | 라우터 의존성으로 C7 `check_session`·`record_violation` 배선. 429 응답에 `MSG_SESSION_LIMITED` | 6장 |
 | B16 | 테스트 세션은 `test-` 접두어로 제한 예외 확인 | 6장 |
 | 전원 | `tasks.md` A4 "allow/block/mask/flag" → "allow/block/mask + flags" 수정 | 1.1 |
@@ -235,3 +251,5 @@ C7의 요청/분(기본 60), 토큰/일(기본 100,000)은 **비용·남용 방�
 | 날짜 | 버전 | 내용 |
 |---|---|---|
 | 2026-10-27 | v0 | 최초 작성. 판정 3값 확정, 유형별 처리 표 12행, 하드 차단 3규칙, 권한 외 빈 결과 안내 결정, 문구 ID 9종(A10 초안 기준), 탈취 제한 5회/600초·카운트 대상 확정, 응답에서 규칙 ID 제거 결정 |
+| 2026-11-03 | v0.2 | D16·D19 반영. 2장 #15(`UNSAFE_CONTENT`, D19 레일)·#15-1(`OUTRAIL_ERROR` fail-open) 추가, 문구 `MSG_BLOCK_UNSAFE` 추가, 1.3 output_guard 단계에 레일 명시, 6장에 D16 차단 목록·자동 차단, 9장 #8 즉시 차단, 11장 요청 추가 |
+| 2026-11-03 | v0.1 | C12·C13 반영. 2장에 검색 단계 행 #13(`LEAK_CANARY`)·#14(`AUTHZ_FILTER_BYPASS`, 신규 ID) 추가: block·LLM 미호출·결과 전체 폐기·탈취 카운트 ✗·`MSG_BLOCK_INTERNAL`. 미끼 시드 helm 훅 Job 기록, A8/C13 합산 요청 추가 |

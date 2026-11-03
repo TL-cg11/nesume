@@ -62,6 +62,15 @@ config:
   LLM_PROVIDER: bedrock
   LLM_MODEL_ID: global.amazon.nova-2-lite-v1:0   # Anthropic 게이트가 열리면 global.anthropic.claude-haiku-5-5
   BEDROCK_REGION: ap-northeast-2
+  # D19 출력 레일(Llama Guard 계열 안전 분류 모델, A5 뒤). 기본 꺼짐. 켜면 IRSA app 역할의 output_rail 권한(iam 모듈)이 필요
+  LLAMA_GUARD_ENABLED: "false"
+  LLAMA_GUARD_MODEL_ID: us.meta.llama3-1-8b-instruct-v1:0   # 계정에 Llama Guard 가 없어 Llama 3.1 8B + Llama Guard 3 템플릿
+  LLAMA_GUARD_REGION: us-east-1                              # 서울에는 meta 모델이 없다
+  LLAMA_GUARD_TIMEOUT_S: "3"
+  LLAMA_GUARD_SAMPLE_RATE: "1.0"                             # 비용 조정. 0.2 면 20% 만 검사
+  LLAMA_GUARD_FAIL_OPEN: "true"                              # 모델 오류 시 통과+표식(block-policy 2장 #15)
+  # D16 알림. 비우면 로그만. 값은 compute 출력 alerts_topic_arn. Discord/Slack 웹훅은 Secrets Manager JSON 의 ALERTS_WEBHOOK_URL
+  ALERTS_SNS_TOPIC_ARN: ""
   DB_HOST: ""
   DB_PORT: "5432"
   DB_NAME: nesume
@@ -79,6 +88,7 @@ secrets:
   BATCH_USERNAME: ""                 # D6 시스템 계정(배치용)
   BATCH_PASSWORD: ""
   SEED_PASSWORD: ""               # D6 시드 계정 공통 비밀번호(seed.enabled 환경만)
+  ALERTS_WEBHOOK_URL: ""          # D16 로컬·kind 전용(Discord/Slack 에 직접 POST). AWS 는 Secrets Manager JSON 필드
 
 externalSecrets:
   enabled: true
@@ -138,6 +148,17 @@ embedder:
 seed:                                # D6. staging 만 true
   enabled: false
   command: ["python", "-m", "app.auth.seed"]
+
+# C12 카나리(미끼) 문서 시드. post-install/post-upgrade 훅 Job(canary-seed-job.yaml). 멱등이라 배포마다 돌아도 된다.
+# 임베더가 있어야 하므로 EMBEDDING_URL 이 비는 환경(kind, embedder.enabled=false)에서는 만들지 않는다.
+canarySeed:
+  enabled: true
+  command: ["python", "-m", "app.batch.seed_canaries"]
+  backoffLimit: 4                    # embedder 워밍업·첫 설치 migrate 대기. 10s·20s·40s·80s 재시도
+  ttlSecondsAfterFinished: 600
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 512Mi }
 
 ingress:
   enabled: true

@@ -35,6 +35,8 @@ from app.db import get_db
 from app.models import User
 
 log = logging.getLogger("nesume.admin")
+# 역할 변경은 감사 성격 → log_type=audit 로 CloudWatch 감사 로그 그룹에 들어간다(D14)
+audit_log = logging.getLogger("nesume.audit.admin")
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -204,7 +206,7 @@ def change_user_role(
     if hasattr(user, "token_not_before"):
         user.token_not_before = datetime.now(UTC)
 
-    log.info(
+    audit_log.info(
         "role_changed",
         extra={"fields": {"user_id": user_id, "from": previous_role, "to": body.role, "actor": actor.sub}},
     )

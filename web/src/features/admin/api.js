@@ -20,3 +20,23 @@ export const errorText = (e) => {
   if (e.status === 403) return '운영자만 사용할 수 있습니다.'
   return e.message
 }
+
+// D14·D15 운영자 대시보드. hours 1~336, is_test(평가 러너) 트래픽은 기본 제외. 트래픽은 응답한 파드 기준(core/metrics.py)
+export const dashboardApi = {
+  summary: ({ hours, includeTest }, signal) =>
+    api.get(`/admin/dashboard/summary?hours=${hours}&include_test=${includeTest ? 'true' : 'false'}`, { signal }),
+  traffic: (minutes, signal) => api.get(`/admin/dashboard/traffic?minutes=${minutes}`, { signal }),
+  // 사용자 ID → 이메일(B11). 못 찾은 ID(익명화·삭제)는 빠진다
+  emails: (ids) =>
+    ids.length ? api.get(`/audit-logs/emails?${ids.map((id) => `user_id=${encodeURIComponent(id)}`).join('&')}`) : Promise.resolve({}),
+}
+
+// D16 세션 차단(운영자 MFA). 자동 차단(카나리·탈취 임계치)과 수동 차단이 같은 목록이다
+export const sessionsApi = {
+  blocked: (active = true, signal) => api.get(`/admin/sessions/blocked?active=${active ? 'true' : 'false'}`, { signal }),
+  block: (sessionId, { note, minutes } = {}) =>
+    api.post(`/admin/sessions/${encodeURIComponent(sessionId)}/block`, { note: note || null, minutes: minutes || null }),
+  release: (sessionId) => api.delete(`/admin/sessions/${encodeURIComponent(sessionId)}/block`),
+}
+
+export const BLOCK_REASON_LABEL = { canary_hit: '카나리 적중(자동)', exfil_threshold: '탈취 임계치(자동)', operator: '운영자 수동' }
