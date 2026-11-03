@@ -1,4 +1,4 @@
-﻿# origin/main 최신본으로 dev 전체 기동: compute apply -> kubeconfig -> ESO 대기 -> 이미지 태그 결정 -> helm -> /api/health
+﻿# origin/main 최신본으로 dev 전체 기동: compute apply -> kubeconfig -> ESO 대기 -> 이미지 태그 결정 -> helm -> edge apply -> /api/health
 # 실행: $env:AWS_PROFILE = "nesume"; .\infra\scripts\up.ps1      (15~20분)
 # 로컬 체크아웃의 브랜치·미커밋 상태와 무관하다. 차트·Terraform 은 origin/main 임시 worktree(_main-src.ps1)에서 읽는다.
 $ErrorActionPreference = "Stop"
@@ -76,12 +76,19 @@ for ($i = 0; $i -lt 30 -and -not $Alb; $i++) {
 }
 if (-not $Alb) { throw "ingress has no ALB address after 5 minutes" }
 
+# HTTPS 앞단 CloudFront(edge). ALB 를 새로 만들었으면 오리진을 바꾼다(배포 반영 수 분, apply 가 기다린다).
+# ALB 는 CloudFront 에서 온 요청만 받으므로(SG + WAF origin-verify) 헬스 체크도 CloudFront 주소로 한다.
+$Edge = Join-Path $Src "infra\envs\dev\edge"
+terraform -chdir="$Edge" init -input=false; Check "terraform init (edge)"
+terraform -chdir="$Edge" apply -auto-approve -input=false; Check "terraform apply (edge)"
+$Url = terraform -chdir="$Edge" output -raw url; Check "terraform output url (edge)"
+
 $ok = $false
 for ($i = 0; $i -lt 30 -and -not $ok; $i++) {
   Start-Sleep 10
-  try { $ok = (Invoke-WebRequest -UseBasicParsing "http://$Alb/api/health" -TimeoutSec 5).StatusCode -eq 200 } catch {}
+  try { $ok = (Invoke-WebRequest -UseBasicParsing "$Url/api/health" -TimeoutSec 5).StatusCode -eq 200 } catch {}
 }
-if (-not $ok) { throw "/api/health is not 200 at http://$Alb" }
+if (-not $ok) { throw "/api/health is not 200 at $Url (origin ALB $Alb)" }
 kubectl -n dev get pods
-Write-Host "`nUP: http://$Alb  (chart origin/main $MainSha, app/web image $Sha, embedder $EmbTag, db $DbHost)"
+Write-Host "`nUP: $Url  (origin ALB $Alb, chart origin/main $MainSha, app/web image $Sha, embedder $EmbTag, db $DbHost)"
 } finally { Remove-MainSource $Src }

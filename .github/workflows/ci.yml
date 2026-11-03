@@ -67,9 +67,9 @@ jobs:
           terraform_wrapper: false
       - name: terraform fmt
         run: terraform fmt -recursive -check infra
-      - name: terraform validate (base, compute)
+      - name: terraform validate (base, compute, edge)
         run: |
-          for d in infra/envs/dev/base infra/envs/dev/compute; do
+          for d in infra/envs/dev/base infra/envs/dev/compute infra/envs/dev/edge; do
             terraform -chdir="$d" init -backend=false -input=false >/dev/null
             terraform -chdir="$d" validate
           done
@@ -319,13 +319,15 @@ jobs:
         env:
           SHA: ${{ steps.tag.outputs.sha }}
         run: |
-          ALB=$(kubectl -n dev get ingress nesume -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          # ALB 는 CloudFront 에서 온 요청만 받는다(SG + WAF origin-verify). HTTPS 주소(edge output)로 확인한다.
+          terraform -chdir=infra/envs/dev/edge init -input=false >/dev/null
+          URL=$(terraform -chdir=infra/envs/dev/edge output -raw url)
           for i in $(seq 1 18); do
-            body=$(curl -fsS --max-time 5 "http://$ALB/api/health" || true)
+            body=$(curl -fsS --max-time 5 "$URL/api/health" || true)
             if echo "$body" | grep -q "$SHA"; then
-              echo "### deployed \`$SHA\` -> http://$ALB" >> "$GITHUB_STEP_SUMMARY"
+              echo "### deployed \`$SHA\` -> $URL" >> "$GITHUB_STEP_SUMMARY"
               echo "$body"; exit 0
             fi
             sleep 10
           done
-          echo "/api/health at http://$ALB does not report $SHA"; kubectl -n dev get pods; exit 1
+          echo "/api/health at $URL does not report $SHA (ALB recreated? run infra up or edge apply)"; kubectl -n dev get pods; exit 1

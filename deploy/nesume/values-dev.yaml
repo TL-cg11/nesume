@@ -42,8 +42,12 @@ externalSecrets:
 ingress:
   enabled: true
   host: ""                           # dev.<domain>
-  certificateArn: ""
+  certificateArn: ""                 # 도메인이 없어 HTTPS 는 CloudFront 가 끝낸다(infra/envs/dev/edge). ALB 는 HTTP 80
   annotations:
+    # HTTPS(11-03): ALB 는 CloudFront 대역에서만 80 을 받는다(base output alb_security_group_name, 이름으로 찾는다).
+    # 노드 쪽 규칙은 컨트롤러 공유 백엔드 SG 가 맡는다. 바꾸면 ALB 의 SG 만 교체되고 ALB·주소는 그대로다.
+    alb.ingress.kubernetes.io/security-groups: nesume-dev-alb
+    alb.ingress.kubernetes.io/manage-backend-security-group-rules: "true"
     # D17 WAF(base output waf_web_acl_arn). Count/Block 은 infra/modules/waf mode 로 바꾼다(주석 그대로)
     alb.ingress.kubernetes.io/wafv2-acl-arn: arn:aws:wafv2:ap-northeast-2:852138520969:regional/webacl/nesume-dev-alb/b48bda0a-6917-4a19-9d2c-6642227822c8
 

@@ -1,5 +1,5 @@
 # D11 CD: dev compute(EKS·RDS·NAT) 를 Actions 에서 올리고 내린다. infra/scripts/up.ps1·down.ps1 과 같은 순서를 러너에서 돈다.
-#   up   : 수동(Run workflow → up). compute apply(최대 3회) → 애드온 대기 → ECR 태그 결정 → helm → ALB /api/health. 15~20분
+#   up   : 수동(Run workflow → up). compute apply(최대 3회) → 애드온 대기 → ECR 태그 결정 → helm → ALB 대기 → edge apply(CloudFront 오리진) → HTTPS /api/health. 15~20분
 #   down : 수동(Run workflow → down). helm uninstall → ALB 소멸 대기 → compute destroy → 과금 잔존 확인. 10분
 # 켜진 뒤의 코드 배포는 ci.yml build-deploy 가 main 푸시마다 한다(클러스터가 켜져 있을 때). 둘은 concurrency 그룹 infra 를 공유해 동시에 클러스터를 만지지 않는다.
 # AWS 권한은 OIDC 로 nesume-github-ci 역할(신뢰 조건 ref=refs/heads/main → 이 워크플로는 main 에서만 실행 가능). 저장소에 AWS 키 없음.
@@ -28,6 +28,7 @@ env:
   AWS_REGION: ${{ vars.AWS_REGION }}
   EKS_CLUSTER: ${{ vars.EKS_CLUSTER }}
   COMPUTE: infra/envs/dev/compute
+  EDGE: infra/envs/dev/edge   # HTTPS 앞단 CloudFront. down 해도 남는다(주소 고정)
 
 jobs:
   up:
@@ -131,10 +132,8 @@ jobs:
             --set-string image.app.tag="$SHA" --set-string image.web.tag="$SHA" $EMB_SET \
             --wait --timeout 10m
 
-      - name: wait for ALB and /api/health
-        env:
-          SHA: ${{ steps.tags.outputs.sha }}
-          EMB: ${{ steps.tags.outputs.emb }}
+      - name: wait for ALB
+        id: alb
         run: |
           alb=""
           for i in $(seq 1 30); do
@@ -142,20 +141,35 @@ jobs:
             [ -n "$alb" ] && break; sleep 10
           done
           if [ -z "$alb" ]; then echo "ingress has no ALB address after 5 minutes"; kubectl -n dev describe ingress nesume; exit 1; fi
+          echo "alb=$alb" >> "$GITHUB_OUTPUT"
+
+      # ALB 를 새로 만들었으면 CloudFront 오리진을 바꾼다(배포 반영 수 분, apply 가 기다린다). 바뀐 게 없으면 no-op.
+      # ALB 는 CloudFront 에서 온 요청만 받으므로(SG + WAF origin-verify) 헬스 체크도 CloudFront 주소로 한다.
+      - name: terraform apply (edge)
+        run: |
+          terraform -chdir="$EDGE" init -input=false
+          terraform -chdir="$EDGE" apply -auto-approve -input=false
+
+      - name: /api/health over HTTPS
+        env:
+          SHA: ${{ steps.tags.outputs.sha }}
+          EMB: ${{ steps.tags.outputs.emb }}
+          ALB: ${{ steps.alb.outputs.alb }}
+        run: |
+          url=$(terraform -chdir="$EDGE" output -raw url)
           for i in $(seq 1 30); do
-            if body=$(curl -fsS --max-time 5 "http://$alb/api/health"); then
+            if body=$(curl -fsS --max-time 5 "$url/api/health"); then
               kubectl -n dev get pods
               {
-                echo "### UP: http://$alb"
-                echo "- chart main \`${GITHUB_SHA::7}\`, app/web image \`$SHA\`, embedder \`$EMB\`"
+                echo "### UP: $url"
+                echo "- origin ALB \`$ALB\`, chart main \`${GITHUB_SHA::7}\`, app/web image \`$SHA\`, embedder \`$EMB\`"
                 echo "- /api/health: \`$body\`"
-                echo "- 팀 공지 채널의 ALB 주소를 갱신할 것(올릴 때마다 바뀜)"
               } >> "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
             sleep 10
           done
-          echo "/api/health is not 200 at http://$alb"; kubectl -n dev get pods; exit 1
+          echo "/api/health is not 200 at $url (origin ALB $ALB)"; kubectl -n dev get pods; exit 1
 
   down:
     if: github.event_name == 'workflow_dispatch' && inputs.action == 'down'

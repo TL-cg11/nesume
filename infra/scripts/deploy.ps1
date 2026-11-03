@@ -84,16 +84,20 @@ helm upgrade --install nesume (Join-Path $Src "deploy\nesume") -n dev -f (Join-P
   --set-string config.DB_HOST=$DbHost --set-string image.app.tag=$Sha --set-string image.web.tag=$Sha @EmbSet --wait --timeout 10m
 Check "helm upgrade --install"
 
-$Alb = kubectl -n dev get ingress nesume -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+# ALB 는 CloudFront 에서 온 요청만 받는다(SG + WAF origin-verify). 헬스 체크는 HTTPS 주소(edge output)로 한다.
+# helm upgrade 는 Ingress 를 유지하므로 ALB·오리진은 그대로다. ALB 가 새로 만들어졌으면 up.ps1(edge apply 포함)을 돈다.
+$Edge = Join-Path $Src "infra\envs\dev\edge"
+terraform -chdir="$Edge" init -input=false | Out-Null; Check "terraform init (edge)"
+$Url = terraform -chdir="$Edge" output -raw url; Check "terraform output url (edge)"
 $ok = $false
 for ($i = 0; $i -lt 18 -and -not $ok; $i++) {
   try {
-    $body = (Invoke-WebRequest -UseBasicParsing "http://$Alb/api/health" -TimeoutSec 5).Content
+    $body = (Invoke-WebRequest -UseBasicParsing "$Url/api/health" -TimeoutSec 5).Content
     $ok = $body -match $Sha
   } catch {}
   if (-not $ok) { Start-Sleep 10 }
 }
-if (-not $ok) { throw "/api/health at http://$Alb does not report version $Sha yet. Check: kubectl -n dev get pods; helm -n dev history nesume" }
+if (-not $ok) { throw "/api/health at $Url does not report version $Sha yet. Check: kubectl -n dev get pods; helm -n dev history nesume" }
 kubectl -n dev get pods
-Write-Host "`nDEPLOYED $Sha -> http://$Alb  ($body)"
+Write-Host "`nDEPLOYED $Sha -> $Url  ($body)"
 } finally { Remove-MainSource $Src }

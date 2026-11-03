@@ -32,9 +32,15 @@ output "cognito_user_pool_id" { value = module.cognito.user_pool_id }
 output "cognito_client_ids" { value = module.cognito.client_ids }
 output "cognito_issuer" { value = module.cognito.issuer }
 output "cognito_jwks_url" { value = module.cognito.jwks_url }
-output "cloudtrail_arn" { value = module.security.trail_arn }                    # D17
-output "cloudtrail_bucket" { value = module.security.trail_bucket }              # D17
-output "guardduty_detector_id" { value = module.security.guardduty_detector_id } # D17
-output "waf_web_acl_arn" { value = module.waf.web_acl_arn }                      # D17 → values-dev.yaml Ingress 주석
-output "waf_log_group" { value = module.waf.log_group }                          # D17
-output "eval_waf_token_secret" { value = module.waf.eval_token_secret_name }     # D17 평가 러너가 읽는 시크릿 이름
+output "cloudtrail_arn" { value = module.security.trail_arn }                       # D17
+output "cloudtrail_bucket" { value = module.security.trail_bucket }                 # D17
+output "guardduty_detector_id" { value = module.security.guardduty_detector_id }    # D17
+output "waf_web_acl_arn" { value = module.waf.web_acl_arn }                         # D17 → values-dev.yaml Ingress 주석
+output "waf_log_group" { value = module.waf.log_group }                             # D17
+output "eval_waf_token_secret" { value = module.waf.eval_token_secret_name }        # D17 평가 러너가 읽는 시크릿 이름
+output "alb_security_group_name" { value = module.network.alb_security_group_name } # HTTPS → values-dev.yaml Ingress 주석
+output "origin_verify_token" {                                                      # HTTPS → edge 레이어(CloudFront 오리진 헤더)
+  value     = module.waf.origin_token
+  sensitive = true
+}
+output "viewer_ip_header" { value = module.waf.viewer_ip_header } # HTTPS → edge 레이어(CloudFront 함수)

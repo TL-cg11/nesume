@@ -2,9 +2,14 @@
 # Ingress 주석(alb.ingress.kubernetes.io/wafv2-acl-arn)으로 붙인다(ALB 컨트롤러 IAM 에 wafv2:AssociateWebACL 있음).
 # 결정(docs/D17.md): Rate Limit IP당 5분 1,000건(결정2) · 평가 러너 비밀 헤더는 Rate Limit 에서만 제외(결정1)
 #                  · Count 로 관찰 뒤 Block(결정6) · 본문 크기 규칙은 자소서 본문을 막을 수 있어 Count 고정.
+# HTTPS(11-03): 앞단 CloudFront(envs/dev/edge)가 TLS 를 끝내고 ALB 로 넘긴다. 그래서 ① ALB 직접 요청은 비밀 헤더로 막고
+# ② 소스 IP 가 CloudFront 엣지라 IP 단위 규칙은 CloudFront 함수가 덮어쓰는 x-viewer-ip 헤더를 본다.
+# 관리형 IP 평판 목록은 소스 IP 만 보므로 CloudFront 뒤에서는 사실상 걸리지 않는다(엣지 IP 는 목록에 없다).
 
 locals {
   block = var.mode == "block"
+
+  viewer_ip_header = "x-viewer-ip" # edge 모듈 CloudFront 함수가 event.viewer.ip 로 덮어쓴다(클라이언트가 보낸 값은 버려진다)
 
   # 순서대로 평가. Count 모드에서는 끝내지 않으므로 순서는 Block 때의 의미다.
   managed_rule_groups = [
@@ -45,6 +50,16 @@ resource "aws_secretsmanager_secret_version" "eval_token" {
   secret_string = random_password.eval_token.result
 }
 
+# ---------------------------------------------------------------- CloudFront 오리진 비밀 헤더
+
+# CloudFront 가 오리진 요청마다 x-origin-verify 로 붙인다(edge 레이어가 base output 으로 읽는다). 이 값이 없거나 다르면
+# ALB 직접 요청이거나 남의 CloudFront 배포다 — SG 가 CloudFront 대역만 열어도 후자는 들어오므로 여기서 막는다.
+# 값은 state·Web ACL 정의·CloudFront 배포 설정에 평문으로 남는다(eval_token 과 같은 기준). 바꾸려면 taint 후 base → edge apply.
+resource "random_password" "origin_token" {
+  length  = 40
+  special = false
+}
+
 # ---------------------------------------------------------------- Web ACL
 
 resource "aws_wafv2_web_acl" "this" {
@@ -76,7 +91,13 @@ resource "aws_wafv2_web_acl" "this" {
       rate_based_statement {
         limit                 = var.rate_limit
         evaluation_window_sec = 300
-        aggregate_key_type    = "IP"
+        aggregate_key_type    = "FORWARDED_IP"
+
+        # 헤더가 없는 요청(ALB 직접)은 세지 않는다 — 어차피 origin-verify 가 막는다.
+        forwarded_ip_config {
+          header_name       = local.viewer_ip_header
+          fallback_behavior = "NO_MATCH"
+        }
 
         # 비밀 헤더가 정확히 맞는 요청은 세지 않는다(결정1). 관리형 규칙은 예외 없이 적용.
         scope_down_statement {
@@ -102,6 +123,47 @@ resource "aws_wafv2_web_acl" "this" {
     visibility_config {
       cloudwatch_metrics_enabled = true
       metric_name                = "${var.name}-rate-limit-ip"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  # CloudFront 를 거치지 않은 요청 차단. 관리형 규칙보다 앞(5)에 둬 직접 요청은 여기서 끝난다.
+  rule {
+    name     = "origin-verify"
+    priority = 5
+
+    action {
+      dynamic "block" {
+        for_each = local.block ? [1] : []
+        content {}
+      }
+      dynamic "count" {
+        for_each = local.block ? [] : [1]
+        content {}
+      }
+    }
+
+    statement {
+      not_statement {
+        statement {
+          byte_match_statement {
+            search_string         = random_password.origin_token.result
+            positional_constraint = "EXACTLY"
+            field_to_match {
+              single_header { name = "x-origin-verify" }
+            }
+            text_transformation {
+              priority = 0
+              type     = "NONE"
+            }
+          }
+        }
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "${var.name}-origin-verify"
       sampled_requests_enabled   = true
     }
   }
@@ -253,6 +315,9 @@ resource "aws_wafv2_web_acl_logging_configuration" "this" {
   }
   redacted_fields {
     single_header { name = "x-eval-token" }
+  }
+  redacted_fields {
+    single_header { name = "x-origin-verify" }
   }
 
   depends_on = [aws_cloudwatch_log_resource_policy.waf]
