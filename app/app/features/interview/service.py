@@ -8,6 +8,8 @@
 3. 마지막 주 질문까지 끝나거나 사용자가 종료하면 마무리 → 종합 피드백(구조·구체성·일관성·질문별·제안)과
    면접과 별개로 만든 자소서 기반 예상 질문 목록을 함께 준다. 대화 중에는 평가하지 않는다(실제 면접처럼)
 - 모든 LLM 호출은 A8 Guardrail.run(feature=interview). 자료·대화는 울타리로 감싸 데이터로만 넘긴다
+- A8에는 사용자가 이번에 요청한 것(이번 턴 답변, 또는 시작·피드백·예상 질문 요청)만 query로 넘기고,
+  템플릿·자소서·경험·대화는 조립 함수(prompt=)가 A8 안에서 붙인다. 감사 로그 '질문'에는 query만 남는다(11/3)
 - 답변은 모델에 보내기 전에 민감정보 거부(A1, spec 3.3). 저장은 B4·B7과 같이 토큰화 + 대응표
 - LLM을 기다리는 동안 DB 세션을 잡지 않는다: 읽기 → LLM → 쓰기를 짧은 세션으로 나눈다
   (A11 matching과 같은 이유)
@@ -28,8 +30,16 @@ from app.features.experiences.reader import linked_experiences_for_resume
 from app.features.resumes import pii_hooks
 from app.features.resumes import repository as resume_repo
 from app.features.resumes import service as resume_service
-from app.guardrail import Guardrail, LlmUnavailable, RequestContext
+from app.guardrail import (
+    DEFAULT_SYSTEM_PROMPT,
+    Guardrail,
+    LlmRequest,
+    LlmUnavailable,
+    PromptBuilder,
+    RequestContext,
+)
 from app.models import InterviewMessage, InterviewSession
+from app.pii import mask
 
 FEATURE = "interview"  # spec 10.1 feature 값
 MAIN_MIN, MAIN_MAX, MAIN_DEFAULT = 3, 7, 5
@@ -44,8 +54,7 @@ CLOSING = "오늘 면접은 여기서 마치겠습니다. 수고하셨습니다.
 # 면접관 페르소나: (이름, 설정, 꼬리 질문 예시). 11/2 상세화
 # - 설정(배경·말투·질문 초점·꼬리 질문·부실한 답)은 면접관 시스템 프롬프트(_SYSTEM)로 묶는다.
 #   A8 기본 "자소서 도우미" 시스템 프롬프트와 충돌해 면접관이 답변을 대신 써 주던 문제(11/2 dev).
-#   ★ 지금은 A8에 호출별 시스템 프롬프트가 없어 사용자 프롬프트 맨 앞에 붙인다(_run).
-#     A #18(run(prompt=) 조립 함수)이 병합되면 조립 함수의 system 으로 올린다(part2_guide 4.73)
+#   A #18의 조립 함수(run(prompt=))가 돌려주는 system 으로 넘긴다(11/3, part2_guide 4.73)
 # - 예시 질문은 사용자 프롬프트에만 둔다. 시스템 프롬프트에 두면 면접관이 그대로 따라 말할 때
 #   A5 시스템 프롬프트 유출 검사(25자 일치)에 걸려 정상 질문이 막힐 수 있다
 PERSONAS = {
@@ -566,14 +575,29 @@ def system_prompt(persona: str) -> str:
     return _SYSTEM.format(label=label, setting=setting)
 
 
-async def _run(
-    guard: Guardrail, prompt: str, ctx: RequestContext, system: str | None = None
-) -> Outcome | str:
-    if system:  # 임시: A #18 병합 전까지 사용자 프롬프트 맨 앞에(위 PERSONAS 주석)
-        prompt = f"{system}\n\n{prompt}"
+# 감사 로그 '질문'에 남는 요청 문구(이번 턴 답변이 없는 호출)
+_REQ_OPENING = "모의 면접 시작(주 질문 {main_count}개)"
+_REQ_FEEDBACK = "모의 면접 종합 피드백"
+_REQ_EXPECTED = "자기소개서 기반 예상 면접 질문 {count}개"
+
+
+def _builder(template: str, system: str = DEFAULT_SYSTEM_PROMPT, **data: object) -> PromptBuilder:
+    """A8 조립 함수. query(가린 뒤의 이번 턴 답변)는 {answer} 자리에, 나머지 자료는 그대로 채운다.
+
+    자료는 query가 아니라서 A8이 치환하지 않는다 — 모델에 원문 개인정보가 가지 않게 여기서 가린다
+    (mask: A1과 같은 탐지, 되돌리지 않음). 검색 조각(C6)을 붙이는 것과 같은 자리다.
+    """
+    safe = {k: mask(v) if isinstance(v, str) else v for k, v in data.items()}
+
+    def build(query: str, _chunks: object) -> LlmRequest:
+        return LlmRequest(prompt=template.format(answer=query, **safe), system=system)
+    return build
+
+
+async def _run(guard: Guardrail, query: str, ctx: RequestContext, build: PromptBuilder) -> Outcome | str:
     try:
         # 검색(C6)은 건너뛴다: 면접은 고른 자소서·연결 경험만 쓴다(B13). 다른 자소서 조각이 섞이면 안 된다
-        out = await guard.run(prompt, ctx, retrieve=False)
+        out = await guard.run(query, ctx, prompt=build, retrieve=False)
     except LlmUnavailable:
         return Outcome(llm_unavailable=True)
     if out.blocked:
@@ -589,8 +613,9 @@ async def ask_opening(
     guard: Guardrail, ctx: RequestContext, t: TurnContext, main_count: int
 ) -> Outcome | str:
     """인사 + 첫 주 질문."""
-    prompt = _OPENING_PROMPT.format(main_count=main_count, resume=t.resume, experiences=t.experiences)
-    got = await _run(guard, prompt, ctx, system_prompt(t.persona))
+    build = _builder(_OPENING_PROMPT, system_prompt(t.persona), main_count=main_count, resume=t.resume,
+                     experiences=t.experiences)
+    got = await _run(guard, _REQ_OPENING.format(main_count=main_count), ctx, build)
     if isinstance(got, Outcome):
         return got
     return parse_turn(got, follow_allowed=False)[1]
@@ -607,14 +632,15 @@ async def ask_next(guard: Guardrail, ctx: RequestContext, t: TurnContext) -> Out
     if last and not follow_allowed:
         return "closing", None
     options = ([_FOLLOW] if follow_allowed else []) + [_LAST if last else _NEXT]
-    prompt = _TURN_PROMPT.format(
+    build = _builder(
+        _TURN_PROMPT, system_prompt(t.persona),
         examples=" / ".join(f'"{x}"' for x in PERSONAS[t.persona][2]),
         main_count=t.main_count, main_no=p.main_no, follow_used=p.follow_used,
         follow_max=FOLLOW_MAX, asked=_bullets(t.asked), current=t.asked[-1] if t.asked else "(없음)",
         follows=_bullets(t.follows), choices=" / ".join(options),
         tags=" 또는 ".join(o.split(" ", 1)[0] for o in options), resume=t.resume, experiences=t.experiences,
-        transcript=t.transcript, answer=t.answer)
-    got = await _run(guard, prompt, ctx, system_prompt(t.persona))
+        transcript=t.transcript)
+    got = await _run(guard, t.answer, ctx, build)
     if isinstance(got, Outcome):
         return got
     kind, body = parse_turn(got, follow_allowed=follow_allowed)
@@ -627,14 +653,16 @@ async def ask_feedback(
     guard: Guardrail, ctx: RequestContext, t: TurnContext
 ) -> Outcome | tuple[str, list[str]]:
     """(정리한 피드백 글, 예상 질문 목록). 예상 질문은 면접과 별개로 자소서·경험만으로 만든다."""
-    got = await _run(guard, _FEEDBACK_PROMPT.format(resume=t.resume, transcript=t.transcript), ctx)
+    got = await _run(guard, _REQ_FEEDBACK, ctx,
+                     _builder(_FEEDBACK_PROMPT, resume=t.resume, transcript=t.transcript))
     if isinstance(got, Outcome):
         return got
     sections = parse_feedback(got)
     if not any(sections.values()):  # 형식을 안 지켰으면 통째로 제안 칸에
         sections["제안"] = got.strip()[:2000]
     feedback = "\n".join(f"{k}: {sections[k]}" for k in FEEDBACK_KEYS)
-    exp = await _run(guard, _EXPECTED_PROMPT.format(count=EXPECTED_COUNT, resume=t.resume,
-                                                    experiences=t.experiences), ctx)
+    exp = await _run(guard, _REQ_EXPECTED.format(count=EXPECTED_COUNT), ctx,
+                     _builder(_EXPECTED_PROMPT, count=EXPECTED_COUNT, resume=t.resume,
+                              experiences=t.experiences))
     expected = parse_questions(exp, EXPECTED_COUNT) if isinstance(exp, str) else []
     return feedback, expected
