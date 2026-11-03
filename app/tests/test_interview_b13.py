@@ -41,8 +41,9 @@ class Script:
             return "[다음]\n안녕하세요. 자기소개 부탁드립니다."
         return self.turns.pop(0) if len(self.turns) > 1 else self.turns[0]
 
-    async def run(self, prompt, ctx):
+    async def run(self, prompt, ctx, **kwargs):
         self.prompts.append((prompt, ctx))
+        assert kwargs.get("retrieve") is False, "면접은 검색(C6)을 쓰지 않는다"
         if self.unavailable:
             raise LlmUnavailable("no model")
         verdict = SimpleNamespace(decision="block" if self.blocked else "allow",
@@ -200,6 +201,27 @@ def test_start_with_real_guardrail_pipeline_masks_phone():
     assert res.status_code == 201, res.text
     assert PHONE not in provider.calls[0].prompt
     assert provider.calls[0].prompt.startswith("당신은 모의 면접의"), "A8을 거쳐 면접관 설정이 모델에 도달"
+
+
+def test_start_skips_retrieval_even_when_guardrail_has_retriever():
+    """고른 자소서·연결 경험만 쓴다. 다른 자소서 조각(C6 검색)이 프롬프트에 섞이지 않는다(11/3)."""
+    from app.guardrail import Chunk
+
+    class Retriever:
+        queries = []
+
+        async def search(self, query, *, role, user_id, top_k):
+            self.queries.append(query)
+            return [Chunk("other", "personal", "다른 자소서 본문 XYZ")]
+
+    provider = FakeProvider(reply="[다음]\n자기소개 부탁드립니다.")
+    retriever = Retriever()
+    c = _client(f"iv-{uuid.uuid4()}", Guardrail(llm=LlmClient(provider=provider), vault=InMemoryVaultStore(),
+                                                 retriever=retriever))
+    res = _start(c, _resume(c)["id"])
+    assert res.status_code == 201, res.text
+    assert retriever.queries == []
+    assert "XYZ" not in provider.calls[0].prompt
 
 
 # --- 진행 ---------------------------------------------------------------------

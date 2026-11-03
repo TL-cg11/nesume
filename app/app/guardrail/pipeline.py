@@ -289,7 +289,12 @@ class Guardrail:
     output_rail: OutputRail | None = None
 
     async def run(
-        self, query: str, ctx: RequestContext, *, prompt: PromptBuilder | None = None
+        self,
+        query: str,
+        ctx: RequestContext,
+        *,
+        prompt: PromptBuilder | None = None,
+        retrieve: bool = True,
     ) -> PipelineResult:
         """모델을 **한 번** 부르는 보통 경로.
 
@@ -302,8 +307,12 @@ class Guardrail:
           그 때문에 `A10-MULTI-04`(나눠 묻기)가 1차 측정에서 통과하지 못했다.
 
           `prompt` 를 주지 않으면 ``self.prompt_builder``(기본 조립)를 쓴다.
+
+        ``retrieve=False`` 면 이 호출만 검색(C6)을 건너뛴다. 기능이 넣을 자료를
+        직접 고른 경우에 쓴다 — B13 면접은 고른 자소서·연결 경험만 써야 해서
+        다른 자소서 조각이 섞이면 안 된다(11/3). 검사(A1·A3·A12·A5)는 그대로다.
         """
-        return await self._execute(query, ctx, prompt=prompt, parts=None)
+        return await self._execute(query, ctx, prompt=prompt, parts=None, retrieve=retrieve)
 
     async def run_split(self, query: str, ctx: RequestContext, *, parts: PartsBuilder) -> PipelineResult:
         """긴 글을 나눠 **여러 번** 부르는 경로 (A6 의 5,000자 초과 분할).
@@ -324,6 +333,7 @@ class Guardrail:
         *,
         prompt: PromptBuilder | None,
         parts: PartsBuilder | None,
+        retrieve: bool = True,
     ) -> PipelineResult:
         started = time.monotonic()
 
@@ -333,7 +343,7 @@ class Guardrail:
 
         try:
             result = await (
-                self._run(query, ctx, prompt)
+                self._run(query, ctx, prompt, retrieve=retrieve)
                 if parts is None
                 else self._run_split(query, ctx, parts)
             )
@@ -416,7 +426,12 @@ class Guardrail:
         return verdict, await tokenize(query, owner_id=ctx.user_id, store=self.vault)
 
     async def _run(
-        self, query: str, ctx: RequestContext, prompt: PromptBuilder | None = None
+        self,
+        query: str,
+        ctx: RequestContext,
+        prompt: PromptBuilder | None = None,
+        *,
+        retrieve: bool = True,
     ) -> PipelineResult:
         verdict, tokenized = await self._before_llm(query, ctx)
         if tokenized is None:
@@ -425,7 +440,7 @@ class Guardrail:
         # 4. 검색 (C6). 질의는 **가린 것**을 넘긴다 —
         #    임베딩에 원문 PII 를 넣지 않고, 토큰을 넣으면 벡터가 망가진다
         chunks: Sequence[Chunk] = ()
-        if self.retriever is not None:
+        if retrieve and self.retriever is not None:
             chunks = await self.retriever.search(
                 mask(query), role=ctx.role, user_id=ctx.user_id, top_k=self.top_k
             )
