@@ -1,15 +1,49 @@
 import { useCallback, useEffect, useState } from 'react'
 import { auditApi, errorText } from './api.js'
+import { BLOCK_WHEN, MASK_WHEN, STAGE, maskedCounts, ruleText, splitMasked } from './labels.js'
 import './audit.css'
 
 // AI 사용 기록(B11 화면, 10/29): 누가·언제·어떤 기능으로 무엇을 물었고 어떻게 판정됐는지. 운영자(MFA) 전용.
-// 질문·답변은 개인정보를 가린 형태로만 저장된다(spec 10.1). 답변 기록은 감사 로그 칸 추가·A8 연결 후 표시
+// 질문·답변은 개인정보를 가린 형태로만 저장된다(spec 10.1). 11/3: 답변 기록, 가린 자리 강조, 판정 상세(4.74)
 const PAGE = 50
 const DECISION = { allow: '허용', mask: '가림', block: '차단' }
 
 const fmt = (iso) => new Date(iso).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'medium' })
 const dayStart = (d) => (d ? new Date(`${d}T00:00:00`).toISOString() : undefined)
 const dayEnd = (d) => (d ? new Date(new Date(`${d}T00:00:00`).getTime() + 86400000).toISOString() : undefined)
+
+// 가린 자리를 강조해서 보여 준다(원래 값은 저장돼 있지 않다)
+function MaskedText({ text }) {
+  return splitMasked(text).map((p, i) =>
+    p.masked ? <mark key={i} className="aud-masked" title={`${p.kind} 가림`}>{p.kind}</mark> : <span key={i}>{p.text}</span>,
+  )
+}
+
+// 판정 상세: 어느 단계에서, 어떤 규칙으로, 무엇을 가렸는지·막았는지
+function Detail({ log }) {
+  const rules = [...new Set([log.rule_id, ...log.flags].filter(Boolean))]
+  const counts = Object.entries(maskedCounts(log.query_masked, log.response_masked))
+  if (log.decision === 'allow' && !rules.length && !counts.length) return null
+  const when = log.decision === 'block' ? BLOCK_WHEN : log.decision === 'mask' ? MASK_WHEN : null
+  return (
+    <div className={`aud-detail ${log.decision}`}>
+      {when && log.decision_stage && (
+        <p><strong>{STAGE[log.decision_stage] ?? log.decision_stage}</strong> · {when[log.decision_stage] ?? ''}</p>
+      )}
+      {rules.length > 0 && (
+        <ul className="aud-rules">
+          {rules.map((r) => (
+            <li key={r}>{ruleText(r)} <code className="muted">{r}</code>{r === log.rule_id && rules.length > 1 && ' · 대표 규칙'}</li>
+          ))}
+        </ul>
+      )}
+      {counts.length > 0 && (
+        <p className="muted">가린 항목: {counts.map(([k, n]) => `${k} ${n}건`).join(', ')}</p>
+      )}
+      {log.canary_hit && <p className="error">미끼(카나리) 문서가 감지되었습니다.</p>}
+    </div>
+  )
+}
 
 function Row({ log, email }) {
   const [open, setOpen] = useState(false)
@@ -22,17 +56,18 @@ function Row({ log, email }) {
         <span className="muted">· {log.feature}</span>
         <span className={`aud-pill ${log.decision}`}>{DECISION[log.decision] ?? log.decision}</span>
         {log.query_type && <span className="muted">· {log.query_type}</span>}
-        {log.flags.length > 0 && <span className="muted">· {log.flags.join(', ')}</span>}
         {log.is_test && <span className="muted">· 평가</span>}
       </div>
       <dl className="aud-qa">
         <dt>질문</dt>
-        <dd className={open ? '' : 'clip'}>{log.query_masked || <span className="muted">(없음)</span>}</dd>
+        <dd className={open ? '' : 'clip'}>{log.query_masked ? <MaskedText text={log.query_masked} /> : <span className="muted">(없음)</span>}</dd>
         <dt>답변</dt>
         <dd className={open ? '' : 'clip'}>
-          {log.response_masked ?? <span className="muted">{log.decision === 'block' ? '(차단되어 답변 없음)' : '(기록 없음)'}</span>}
+          {log.response_masked ? <MaskedText text={log.response_masked} />
+            : <span className="muted">{log.decision === 'block' ? '(차단되어 답변 없음)' : '(기록 없음 — 답변 기록 이전 요청)'}</span>}
         </dd>
       </dl>
+      <Detail log={log} />
       <button type="button" className="link" onClick={() => setOpen((o) => !o)}>{open ? '접기' : '전체 보기'}</button>
     </li>
   )
