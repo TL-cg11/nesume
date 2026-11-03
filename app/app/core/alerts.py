@@ -167,17 +167,56 @@ TYPE_LABELS: dict[str, str] = {
 DISCORD_USERNAME = "NESUME RADAR"
 
 
+SEVERITY_LABELS: dict[str, str] = {"critical": "긴급", "warn": "주의", "info": "안내"}
+#: 상단 작은 분류 줄(author). 보안 이벤트 / 배치 / 운영자 조치가 한눈에 갈리게
+CATEGORIES: dict[str, str] = {
+    "canary_hit": "보안 이벤트", "exfil_threshold": "보안 이벤트", "block_spike": "보안 이벤트",
+    "collector_failed": "배치", "alarm": "알람",
+    "session_blocked": "운영자 조치", "session_released": "운영자 조치",
+}
+#: 유형별 "바로 할 일" 한 줄(docs/ops/alerts.md 3장 요약). 받는 사람이 문서를 열지 않아도 첫 행동을 알게
+ACTIONS: dict[str, str] = {
+    "canary_hit": (
+        "즉시 운영 대시보드 → 최근 이벤트의 사용자 확인. 원인(검색 필터·매트릭스)을 찾기 전엔 세션을 풀지 않음"
+    ),
+    "exfil_threshold": (
+        "AI 사용 기록에서 이 세션의 질의 확인. 반복이면 /admin/sessions 에서 해제까지 차단 또는 역할 회수"
+    ),
+    "block_spike": "운영 대시보드 상위 사용자·유형 확인. 특정 세션이면 수동 차단",
+    "collector_failed": (
+        "대시보드 '배치 결과' 패널 → 파드 로그의 FAILED 소스 확인(API 키 만료·임베더 다운이 흔한 원인)"
+    ),
+    "alarm": "docs/ops/observability.md 3장 '먼저 볼 것'",
+    "session_blocked": "기록용. 차단 사유는 /admin/sessions 메모",
+    "session_released": "기록용",
+}
+
+
 def discord_embed(event: AlertEvent) -> dict[str, object]:
-    """Discord 임베드 한 장. 제목(아이콘+유형)·본문(summary)·필드(세션·사용자·요청)·색(심각도)·시각."""
-    env_suffix = ("-" + event.env) if event.env else ""
-    pairs = (("세션", event.session_id), ("사용자", event.user_id), ("요청", event.request_id))
-    fields = [{"name": name, "value": f"`{value}`", "inline": True} for name, value in pairs if value]
+    """Discord 임베드 한 장.
+
+    author(분류) → title(심각도 라벨 · 유형) → description(요약, 인용 블록)
+    → fields(세션·사용자·요청, 바로 할 일)
+    → footer(환경 · 유형 코드) + timestamp. 색은 심각도.
+    """
+    env = event.env or "?"
+    pairs = (("🧭 세션", event.session_id), ("👤 사용자", event.user_id), ("🔗 요청", event.request_id))
+    fields: list[dict[str, object]] = [
+        {"name": name, "value": f"`{value}`", "inline": True} for name, value in pairs if value
+    ]
+    action = ACTIONS.get(event.type)
+    if action:
+        fields.append({"name": "📌 바로 할 일", "value": action, "inline": False})
+    quoted = "\n".join(f"> {line}" for line in event.summary[:1800].splitlines() or [""])
+    icon = DISCORD_ICONS.get(event.severity, "🔔")
+    severity = SEVERITY_LABELS.get(event.severity, event.severity)
     return {
-        "title": f"{DISCORD_ICONS.get(event.severity, '🔔')} {TYPE_LABELS.get(event.type, event.type)}",
-        "description": event.summary[:1900],
+        "author": {"name": f"nesume · {env} · {CATEGORIES.get(event.type, '알림')}"},
+        "title": f"{icon} {severity} · {TYPE_LABELS.get(event.type, event.type)}",
+        "description": quoted,
         "color": DISCORD_COLORS.get(event.severity, 0x6B7280),
         "fields": fields,
-        "footer": {"text": f"nesume{env_suffix} · {event.severity} · {event.type}"},
+        "footer": {"text": f"{event.type} · D16"},
         "timestamp": event.ts,
     }
 
