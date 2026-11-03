@@ -1,5 +1,73 @@
-{{- /* D17 자리. 규칙은 D17 에서 작성한다. 기본 off. */ -}}
+{{- /*
+D17 NetworkPolicy (spec 278행 "app → db 외 통신 차단"). 네임스페이스 기본 거부 + 필요한 길만 연다. docs/D17.md 2.3.
+★ EKS 는 vpc-cni 애드온 enableNetworkPolicy=true 여야 집행된다(infra/modules/eks). 꺼져 있으면 아래는 무시된다.
+  kubelet 프로브(노드 IP)는 vpc-cni 가 자동 허용한다.
+해석: 클러스터 안 이동은 꼭 필요한 짝만, 밖으로는 443(Bedrock·Cognito·S3·STS)만.
+  NetworkPolicy 는 IP·포트 단위라 "443 중 AWS 만"은 못 한다(도메인 이그레스 제한은 범위 밖).
+*/ -}}
 {{- if .Values.networkPolicy.enabled }}
+{{- $np := .Values.networkPolicy }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "nesume.fullname" . }}-default-deny
+  labels:
+    {{- include "nesume.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+# 모든 파드: 클러스터 DNS 만
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "nesume.fullname" . }}-dns
+  labels:
+    {{- include "nesume.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+---
+# web: ALB(퍼블릭 서브넷) → 8080, 나가는 건 app 8000 뿐(nginx /api 프록시)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "nesume.fullname" . }}-web
+  labels:
+    {{- include "nesume.labels" . | nindent 4 }}
+    app.kubernetes.io/component: web
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "nesume.selectorLabels" (dict "root" . "component" "web") | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        {{- range $np.albCidrs }}
+        - ipBlock: { cidr: {{ . | quote }} }
+        {{- end }}
+      ports:
+        - { protocol: TCP, port: 8080 }
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "nesume.selectorLabels" (dict "root" . "component" "app") | nindent 14 }}
+      ports:
+        - { protocol: TCP, port: 8000 }
+---
+# app: web 에서만 들어온다. 클러스터 안으로는 DB·embedder 만, 밖으로는 443 만
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -11,13 +79,64 @@ spec:
   podSelector:
     matchLabels:
       {{- include "nesume.selectorLabels" (dict "root" . "component" "app") | nindent 6 }}
-  policyTypes:
-    - Ingress
+  policyTypes: [Ingress, Egress]
   ingress:
     - from:
         - podSelector:
             matchLabels:
               {{- include "nesume.selectorLabels" (dict "root" . "component" "web") | nindent 14 }}
       ports:
-        - port: 8000
+        - { protocol: TCP, port: 8000 }
+  egress:
+    {{- include "nesume.np.dbEgress" . | nindent 4 }}
+    {{- include "nesume.np.embedderEgress" . | nindent 4 }}
+    {{- include "nesume.np.awsEgress" . | nindent 4 }}
+---
+# 배치(수집·purge)·마이그레이션·시드: 들어오는 길 없음. 수집은 서울시 8088(http)도 쓴다
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "nesume.fullname" . }}-jobs
+  labels:
+    {{- include "nesume.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchExpressions:
+      - { key: app.kubernetes.io/instance, operator: In, values: [{{ .Release.Name | quote }}] }
+      - { key: app.kubernetes.io/component, operator: In, values: [batch, migrate, seed] }
+  policyTypes: [Ingress, Egress]
+  egress:
+    {{- include "nesume.np.dbEgress" . | nindent 4 }}
+    {{- include "nesume.np.embedderEgress" . | nindent 4 }}
+    {{- include "nesume.np.awsEgress" . | nindent 4 }}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [{{ $np.vpcCidr | quote }}]
+      ports:
+        - { protocol: TCP, port: {{ $np.seoulApiPort }} }
+{{- if .Values.embedder.enabled }}
+---
+# embedder: app·배치·시드에서만. 모델이 이미지에 들어 있어(HF_HUB_OFFLINE) 밖으로 나갈 일이 없다 — DNS 외 이그레스 없음
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "nesume.fullname" . }}-embedder
+  labels:
+    {{- include "nesume.labels" . | nindent 4 }}
+    app.kubernetes.io/component: embedder
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "nesume.selectorLabels" (dict "root" . "component" "embedder") | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - { key: app.kubernetes.io/instance, operator: In, values: [{{ .Release.Name | quote }}] }
+              - { key: app.kubernetes.io/component, operator: In, values: [app, batch, seed] }
+      ports:
+        - { protocol: TCP, port: {{ .Values.embedder.containerPort }} }
+{{- end }}
 {{- end }}

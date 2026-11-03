@@ -54,3 +54,20 @@ module "iam" {
   audit_kms_key_arn     = module.logs.audit_kms_key_arn
   bedrock_region        = "ap-northeast-2" # 임시 Nova 2 Lite / 이후 Haiku 5.5 모두 global 프로파일. IAM은 anthropic.+amazon. 둘 다 허용
 }
+
+module "security" { # D17 계정 보안 서비스(CloudTrail·GuardDuty·Security Hub)
+  source     = "../../../modules/security"
+  name       = local.name
+  account_id = data.aws_caller_identity.me.account_id
+  region     = local.region
+}
+
+module "waf" { # D17 ALB 앞단 Web ACL. mode: count(관찰) → block. docs/D17.md 결정6·7절
+  source     = "../../../modules/waf"
+  name       = local.name
+  project    = local.project
+  env        = local.env
+  account_id = data.aws_caller_identity.me.account_id
+  region     = local.region
+  mode       = "count"
+}
