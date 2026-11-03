@@ -54,7 +54,9 @@ resource "aws_secretsmanager_secret_version" "eval_token" {
 
 # CloudFront 가 오리진 요청마다 x-origin-verify 로 붙인다(edge 레이어가 base output 으로 읽는다). 이 값이 없거나 다르면
 # ALB 직접 요청이거나 남의 CloudFront 배포다 — SG 가 CloudFront 대역만 열어도 후자는 들어오므로 여기서 막는다.
-# 값은 state·Web ACL 정의·CloudFront 배포 설정에 평문으로 남는다(eval_token 과 같은 기준). 바꾸려면 taint 후 base → edge apply.
+# 값은 state·Web ACL 정의·CloudFront 배포 설정에 평문으로 남는다(eval_token 과 같은 기준). 바꾸려면 taint 후 base → edge apply
+# (그 사이 몇 분은 CloudFront 요청도 막힌다). 로그 마스킹(아래 redacted_fields)은 설정 뒤 30분쯤 지나야 전 요청에 퍼진다
+# — 11-03 처음 붙일 때 그 사이 요청 일부는 평문으로 남았다(로그 그룹 읽기 권한자 = GetWebACL 권한자라 범위는 같다).
 resource "random_password" "origin_token" {
   length  = 40
   special = false
