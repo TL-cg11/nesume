@@ -69,5 +69,5 @@ module "waf" { # D17 ALB 앞단 Web ACL. mode: count(관찰) → block. docs/D17
   env        = local.env
   account_id = data.aws_caller_identity.me.account_id
   region     = local.region
-  mode       = "count"
+  mode       = "block" # 11-03 Count 관찰 뒤 전환(7절). 문제 시 "count" 로 되돌린다
 }
