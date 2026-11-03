@@ -18,22 +18,32 @@ A6 가 자기 엔드포인트에서 `create_version(..., source="ai")` 를 부�
 
 from __future__ import annotations
 
+import re
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from sqlalchemy.orm import Session
 
 from app.features.profile import service as profile_service
 from app.features.profile.store import ProfileStore
 from app.features.resumes import service as resumes_service
+from app.features.style import tone as tone_mod
+from app.features.style.service import invented_numbers
+from app.features.style.tone import DEFAULT_TONE, TONE_NAMES
 from app.features.templates import service as templates_service
 from app.features.writing.rewrite import (
     CANDIDATE_COUNT,
     MAX_PARTS,
+    MAX_SAMPLE_CHARS,
+    MIN_SAMPLE_CHARS,
+    SAMPLE_RULE,
+    SAMPLE_SEP,
+    RewriteOptionError,
     RewriteOptions,
     build_part_prompt,
     join_candidates,
     parse_candidates,
+    sample_measures,
     split_selection,
 )
 from app.guardrail import Guardrail, LlmUnavailable, PipelineResult, RequestContext
@@ -49,6 +59,9 @@ TEMPLATE_NAME = "rewrite-default"
 #:   시트가 `rewrite.generate` 로 적어 두었으므로 그쪽에 맞춘다
 #:   (`matching.analyze`·`style.adjust` 와 같은 `<기능>.<동작>` 꼴이기도 하다).
 FEATURE = "rewrite.generate"
+
+#: 줄바꿈과 그 앞뒤 공백. 한 문단 원문의 후보를 한 문단으로 붙일 때 쓴다
+_ONE_PARAGRAPH = re.compile(r"\s*\n\s*")
 
 
 @dataclass(frozen=True)
@@ -110,15 +123,40 @@ async def rewrite(
     is_test: bool = False,
     request_id: uuid.UUID | None = None,
     use_llm: bool = True,
+    style_sample: str | None = None,
 ) -> RewriteResult:
-    """고른 구간을 다시 쓴 후보를 만든다. **저장하지 않는다.**"""
+    """고른 구간을 다시 쓴 후보를 만든다. **저장하지 않는다.**
+
+    ``style_sample`` 이 있으면 그 글의 말투로 다시 쓴다(저장된 말투 프로필 대신).
+    """
+    sample = (style_sample or "").strip()
+    if sample and len(sample) < MIN_SAMPLE_CHARS:
+        raise RewriteOptionError(f"말투 샘플은 {MIN_SAMPLE_CHARS}자 이상이어야 합니다")
+    if len(sample) > MAX_SAMPLE_CHARS:
+        raise RewriteOptionError(f"말투 샘플은 {MAX_SAMPLE_CHARS}자까지입니다")
+    if options.tone is None and not sample:
+        # "샘플을 따른다" 는 샘플이 있어야 뜻이 있다. 없으면 기본 문체로 쓴다
+        options = replace(options, tone=DEFAULT_TONE)
+    elif options.tone is None:
+        # ★ "끝맺음도 샘플과 같게" 만 적으면 모델이 본문의 합니다체를 그대로 두었다(10-29 실측:
+        #   했다체 샘플에 후보 3개 모두 합니다체). 샘플의 주된 문체를 **서버가 판정해** 그 이름으로
+        #   지시한다. 샘플 자체가 섞여 있으면 정할 수 없으니 막연한 지시(SAMPLE_OWN_ENDINGS)로 둔다
+        sample_tone = tone_mod.analyze(sample)
+        if sample_tone.main and not sample_tone.is_mixed:
+            options = replace(options, tone=sample_tone.main)
+
     instructions = options.instructions()
+    measures = sample_measures(sample, text) if sample else ""
+    if sample:
+        instructions += f"\n{SAMPLE_RULE}\n{measures}"
     if not use_llm:
         # 화면이 옵션만 바꿔 보는 경우. 모델을 부르지 않는다
         return RewriteResult(instructions=instructions)
 
     body, notices = _template_body(db)
-    fragment = profile_service.prompt_fragment(profile_service.get(user_id, store=store))
+    fragment = "" if sample else profile_service.prompt_fragment(
+        profile_service.get(user_id, store=store)
+    )
     parts_count = len(split_selection(text))
 
     def parts(tokenized: str) -> list[str]:
@@ -126,12 +164,18 @@ async def rewrite(
 
         ★ 조각내기는 **치환된 글** 기준이다. 원문을 조각내면 토큰이 조각 경계에서
           잘려 복원되지 않는다 — ``[[PERSON_`` 과 ``1]]`` 은 토큰이 아니다.
+        ★ 샘플이 있으면 ``샘플 + SAMPLE_SEP + 글`` 이 치환되어 온다. 경계에서 갈라
+          샘플은 조각마다 붙이고 글만 조각낸다.
         """
-        pieces = split_selection(tokenized)
+        tok_sample, tok_text = "", tokenized
+        if sample and SAMPLE_SEP in tokenized:
+            tok_sample, tok_text = tokenized.split(SAMPLE_SEP, 1)
+        pieces = split_selection(tok_text)
         return [
             build_part_prompt(
                 piece, options,
                 template_body=body, profile_fragment=fragment,
+                style_sample=tok_sample, sample_measures=measures,
                 part_index=i, part_total=len(pieces),
             )
             for i, piece in enumerate(pieces)
@@ -142,8 +186,10 @@ async def rewrite(
         session_id=session_id, is_test=is_test,
         request_id=request_id or uuid.uuid4(),
     )
+    # ★ 샘플도 검사·치환 대상이다. 따로 붙이면 샘플 속 PII 가 가려지지 않는다 (rewrite.SAMPLE_SEP)
+    query = f"{sample}{SAMPLE_SEP}{text}" if sample else text
     try:
-        result: PipelineResult = await guard.run_split(text, ctx, parts=parts)
+        result: PipelineResult = await guard.run_split(query, ctx, parts=parts)
     except LlmUnavailable:
         # 제공자 미정(2026-10). A7·A11·A13 과 같은 처리 — 사용자가 빈손으로 끝나지 않는다
         return RewriteResult(instructions=instructions, parts=parts_count, llm_unavailable=True)
@@ -156,10 +202,37 @@ async def rewrite(
 
     per_part = [parse_candidates(part) for part in result.parts]
     bodies = join_candidates(per_part)
-    if not bodies:
+    parsed = bool(bodies)
+    if sample and "\n" not in text:
+        # 짧게 끊는 샘플을 따르면 모델이 문장마다 줄을 바꿨다(10-29 실측, 지시로도 안 고쳐짐).
+        # 원문이 한 문단이면 후보도 한 문단으로 붙인다
+        bodies = tuple(_ONE_PARAGRAPH.sub(" ", b).strip() for b in bodies)
+    if sample and bodies:
+        # ★ 샘플의 숫자가 본문에 섞이면 그건 이 경험의 사실이 아니다. 후보째 버린다
+        #   (A13 verify_rewrite 와 같은 판단 — 다시 쓴 글은 일부만 믿을 수 없다)
+        kept = tuple(b for b in bodies if not invented_numbers(text, b))
+        if len(kept) < len(bodies):
+            notices += (
+                f"원문에 없는 숫자가 들어간 후보 {len(bodies) - len(kept)}개를 뺐습니다.",
+            )
+        # ★ 문체(고른 것, 아니면 위에서 판정한 샘플의 문체)가 아닌 문장이 남은 후보는 뺀다 —
+        #   A13 이 바로 "문체가 섞였다" 로 짚을 글이다. 샘플이 섞여 있어 정하지 못했으면 보지 않는다
+        target = options.tone
+        toned = (
+            tuple(b for b in kept if not tone_mod.analyze(b).off_tone(target)) if target else kept
+        )
+        if len(toned) < len(kept):
+            notices += (
+                f"{TONE_NAMES[target]}가 아닌 문장이 섞인 후보 {len(kept) - len(toned)}개를 뺐습니다.",
+            )
+        bodies = toned
+    if not parsed:
         # 모델이 형식을 어겼다. 응답 전체를 후보로 치지 않는다 —
         # 사과문이나 설명문이 자소서 본문으로 저장된다
         notices += ("모델이 후보를 형식대로 주지 않아 결과를 만들지 못했습니다. 다시 시도해 주세요.",)
+    elif not bodies:
+        # 후보는 왔지만 위 검사(숫자·문체)에서 모두 빠졌다. "0개만 만들어졌다" 보다 이유가 분명하게
+        notices += ("조건에 맞는 후보가 없어 보여 드리지 못했습니다. 다시 시도해 주세요.",)
     elif len(bodies) < CANDIDATE_COUNT:
         notices += (f"후보 {CANDIDATE_COUNT}개 중 {len(bodies)}개만 만들어졌습니다.",)
 

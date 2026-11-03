@@ -23,6 +23,12 @@ def _int_env(name: str, default: int) -> int:
     return value if value > 0 else default
 
 
+def _set_env(name: str) -> frozenset[str]:
+    """쉼표로 나눈 env 값 묶음. 비었으면 빈 집합(= 예외 없음)."""
+    raw = os.environ.get(name, "")
+    return frozenset(v.strip() for v in raw.split(",") if v.strip())
+
+
 @dataclass(frozen=True)
 class Limit:
     """한 축의 한도. `window_seconds` 창 안에서 `max_count` 이상이면 거부한다."""
@@ -41,6 +47,11 @@ class RateLimits:
     tokens_per_day: Limit
     #: 탈취 세션 제한 — 탈취 판정 N회/창 넘으면 그 세션 LLM 차단. (§418 기본 5회·10분)
     exfil_per_session: Limit
+    #: 같은 사용자(`sub`)의 탈취 누적 — 세션 ID는 클라이언트가 바꿀 수 있어 우회 방어선으로 따로 센다.
+    #: 보안 직무 자소서의 A3 오탐이 쌓여도 정상 사용자를 잠그지 않게 세션보다 느슨하게(기본 10회·1시간)
+    exfil_per_user: Limit = Limit("exfil_per_user", 10, 3600)
+    #: 한도를 적용하지 않는 사용자(`sub`). 평가 러너(B16) 계정만 넣는다 — 서버 설정이라 클라이언트가 못 바꾼다
+    exempt_users: frozenset[str] = frozenset()
 
 
 def load_limits() -> RateLimits:
@@ -57,4 +68,10 @@ def load_limits() -> RateLimits:
             _int_env("RL_EXFIL_VIOLATIONS", 5),
             _int_env("RL_EXFIL_BLOCK_SECONDS", 600),
         ),
+        exfil_per_user=Limit(
+            "exfil_per_user",
+            _int_env("RL_EXFIL_USER_VIOLATIONS", 10),
+            _int_env("RL_EXFIL_USER_BLOCK_SECONDS", 3600),
+        ),
+        exempt_users=_set_env("RL_EXEMPT_USERS"),
     )

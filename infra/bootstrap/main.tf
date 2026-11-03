@@ -53,8 +53,13 @@ resource "aws_s3_bucket_public_access_block" "tfstate" {
 }
 
 # IMMUTABLE: 같은 sha 태그를 덮어쓰지 못하게 ECR 차원에서 강제한다(README 태그 규칙).
+# D20 embedder: 모델 내장 이미지가 ~2.5GB 라 보존 수를 따로 둔다(아래 lifecycle). 태그는 embedder/ 를 바꾼 커밋의 sha.
+locals {
+  ecr_keep_tagged = { app = 30, web = 30, embedder = 3 }
+}
+
 resource "aws_ecr_repository" "repo" {
-  for_each             = toset(["app", "web"])
+  for_each             = toset(keys(local.ecr_keep_tagged))
   name                 = "${var.project}/${each.key}"
   image_tag_mutability = "IMMUTABLE"
   image_scanning_configuration { scan_on_push = true }
@@ -74,8 +79,8 @@ resource "aws_ecr_lifecycle_policy" "repo" {
       },
       {
         rulePriority = 2
-        description  = "keep last 30 tagged images"
-        selection    = { tagStatus = "any", countType = "imageCountMoreThan", countNumber = 30 }
+        description  = "keep last ${local.ecr_keep_tagged[each.key]} tagged images"
+        selection    = { tagStatus = "any", countType = "imageCountMoreThan", countNumber = local.ecr_keep_tagged[each.key] }
         action       = { type = "expire" }
       },
     ]

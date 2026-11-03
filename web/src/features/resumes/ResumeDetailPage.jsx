@@ -1,19 +1,54 @@
-import { useCallback, useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router'
 import { resumesApi } from './api.js'
+import RecommendPage from '../recommend/RecommendPage.jsx'
+import PdfExport from './PdfExport.jsx'
+import PolishTab from './PolishTab.jsx'
 import QuestionEditor from './QuestionEditor.jsx'
 import SharePanel from './SharePanel.jsx'
+import { BODY_MAX, DEFAULT_LIMIT, LIMIT_STEP, TITLE_MAX, clampLimit } from './limits.js'
 import './resumes.css'
 
 // 자소서 상태(발표 시안, 4.54). 서버 schemas.RESUME_STATUSES와 같다
 const RESUME_STATUSES = ['작성 중', '검토 중', '완료']
 
+const TABS = [
+  { id: 'write', label: '자기소개서 작성' },
+  { id: 'versions', label: '버전 관리 및 비교' },
+  { id: 'share', label: '멘토 공유' },
+  { id: 'polish', label: '글 다듬기' }, // 10/29: 글 다듬기 메뉴를 자소서 안으로
+  { id: 'recommend', label: '공고 추천' }, // 10/29: 공고 추천 메뉴를 자소서 안으로(이 자소서 기준)
+]
+
 export default function ResumeDetailPage() {
   const { resumeId } = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
+  // 탭(10/29): 작성 | 버전 관리·비교 | 멘토 공유. 주소(?tab=)에 남겨 새로고침·뒤로 가기에도 유지
+  const [params, setParams] = useSearchParams()
+  const tab = TABS.some((t) => t.id === params.get('tab')) ? params.get('tab') : 'write'
+  const tabsRef = useRef(null)
+  // 탭을 바꿀 때 스크롤 통일(10/29): 탭 줄보다 아래로 내려가 있었다면 세 탭 모두 탭 줄이 맨 위에 오게 올린다.
+  // (짧은 공유 탭만 페이지가 줄어 저절로 올라가던 차이를 없앤다) 탭 줄이 보이는 위치면 그대로 둔다
+  // 글 다듬기 탭은 주소에 resume·question을 함께 둔다 — A6 '새 버전으로 저장'이 이 값을 읽는다
+  const tabParams = (id, qid) =>
+    id === 'write' ? {} : id === 'polish' && qid ? { tab: id, resume: resumeId, question: qid } : { tab: id }
+  const goTab = (id) => {
+    // 글 다듬기에서 나오면 버전 목록을 다시 불러온다(거기서 새 버전을 저장했을 수 있다)
+    if (tab === 'polish' && id !== 'polish') {
+      setShareRev((n) => n + 1)
+      load()
+    }
+    setParams(tabParams(id, selectedId ?? resume?.questions[0]?.id), { replace: true })
+    const el = tabsRef.current
+    // 새 탭이 그려진 뒤에 맞춘다(그리기 전에 옮기면 짧은 탭에서 위치가 어긋남)
+    if (el && el.getBoundingClientRect().top < 0) requestAnimationFrame(() => el.scrollIntoView({ block: 'start' }))
+  }
   const [resume, setResume] = useState(null)
   const [selectedId, setSelectedId] = useState(null)
-  const [newQuestion, setNewQuestion] = useState({ title: '', char_limit: '' })
+  const [newQuestion, setNewQuestion] = useState({ title: '', char_limit: String(DEFAULT_LIMIT) })
+  const [adding, setAdding] = useState(false) // 문항 추가: 버튼을 눌러야 입력칸이 열린다(10/29)
+  const [exporting, setExporting] = useState(false) // B12 PDF 내보내기 칸
   const [error, setError] = useState(null)
   const [shareRev, setShareRev] = useState(0) // 공유가 바뀌면 버전 태그를 다시 불러온다
 
@@ -41,10 +76,11 @@ export default function ResumeDetailPage() {
   const addQuestion = async (e) => {
     e.preventDefault()
     const payload = { title: newQuestion.title.trim() }
-    if (newQuestion.char_limit) payload.char_limit = Number(newQuestion.char_limit)
+    payload.char_limit = clampLimit(newQuestion.char_limit) // 비우면 기본 1,000자, 최대 10,000자
     try {
       const q = await resumesApi.createQuestion(resumeId, payload)
-      setNewQuestion({ title: '', char_limit: '' })
+      setNewQuestion({ title: '', char_limit: String(DEFAULT_LIMIT) })
+      setAdding(false)
       setSelectedId(q.id)
       load()
     } catch (err) {
@@ -76,6 +112,9 @@ export default function ResumeDetailPage() {
         <input
           className="title-input"
           defaultValue={resume.title}
+          // '자기소개서 작성' 버튼(목록·홈)으로 막 만든 경우: 제목 칸을 선택해 두어 바로 입력하게 한다
+          autoFocus={location.state?.focusTitle}
+          onFocus={(e) => location.state?.focusTitle && e.target.select()}
           maxLength={200}
           onBlur={(e) => e.target.value.trim() && e.target.value !== resume.title && saveMeta('title', e.target.value.trim())}
           aria-label="자소서 제목"
@@ -93,21 +132,52 @@ export default function ResumeDetailPage() {
             </option>
           ))}
         </select>
+        <button className="secondary" onClick={() => setExporting((v) => !v)}>PDF로 내보내기</button>
         <button className="danger" onClick={removeResume}>
           삭제
         </button>
       </div>
+      {exporting && <PdfExport resumeId={resumeId} onClose={() => setExporting(false)} />}
       {error && <p className="error">{error}</p>}
 
-      <SharePanel
-        resumeId={resumeId}
-        onChanged={() => {
-          setShareRev((n) => n + 1)
-          load()
-        }}
-      />
+      <div className="resume-tabs" role="tablist" aria-label="자소서 기능" ref={tabsRef}>
+        {TABS.map((t) => (
+          <button key={t.id} type="button" role="tab" aria-selected={tab === t.id}
+            className={tab === t.id ? 'on' : undefined} onClick={() => goTab(t.id)}>
+            {t.label}
+          </button>
+        ))}
+      </div>
 
-      <div className="detail-grid">
+      {tab === 'polish' && (
+        <div className="resume-tab-body">
+          <PolishTab resumeId={resumeId} questions={resume.questions} questionId={selectedId ?? resume.questions[0]?.id}
+            onQuestion={(qid) => {
+              setSelectedId(qid)
+              setParams(tabParams('polish', qid), { replace: true })
+            }} />
+        </div>
+      )}
+
+      {tab === 'recommend' && (
+        <div className="resume-tab-body">
+          <RecommendPage resumeId={resumeId} embedded />
+        </div>
+      )}
+
+      {tab === 'share' && (
+        <SharePanel
+          resumeId={resumeId}
+          questions={resume.questions}
+          onChanged={() => {
+            setShareRev((n) => n + 1)
+            load()
+          }}
+        />
+      )}
+
+      {/* 공유 탭에서도 편집 화면은 그대로 둔 채 가린다 — 작성 중인 글이 사라지지 않게 */}
+      <div className="detail-grid" hidden={tab === 'share' || tab === 'polish' || tab === 'recommend'}>
         <aside>
           <h2>문항</h2>
           <ul className="question-list">
@@ -122,25 +192,49 @@ export default function ResumeDetailPage() {
               </li>
             ))}
           </ul>
-          <form className="stack" onSubmit={addQuestion}>
+          {/* noValidate: 브라우저 숫자칸 검사(step 기준값)로 1,000·950 같은 값이 막히지 않게. 범위는 clampLimit이 맞춘다 */}
+          {tab === 'write' && !adding && (
+            <button type="button" className="add-question-btn" onClick={() => setAdding(true)}>+ 문항 추가</button>
+          )}
+
+        </aside>
+        <div>
+          {/* 문항 추가는 오른쪽 작성란에서 입력(10/29). 편집 중인 문항은 가려 둘 뿐 유지(저장 안 한 글 보존) */}
+          {tab === 'write' && adding && (
+            <form className="card stack add-question-form" onSubmit={addQuestion} noValidate>
+              <h2>새 문항</h2>
             <input
+              autoFocus
               placeholder="문항 제목"
+              maxLength={TITLE_MAX}
               value={newQuestion.title}
               onChange={(e) => setNewQuestion({ ...newQuestion, title: e.target.value })}
             />
-            <input
-              type="number"
-              min="1"
-              placeholder="글자 수 제한(선택)"
-              value={newQuestion.char_limit}
-              onChange={(e) => setNewQuestion({ ...newQuestion, char_limit: e.target.value })}
-            />
-            <button type="submit" disabled={!newQuestion.title.trim()}>
-              문항 추가
-            </button>
+            <label className="muted limit-field">
+              글자 수 제한
+              <input
+                type="number"
+                min="0"
+                max={BODY_MAX}
+                step={LIMIT_STEP}
+                value={newQuestion.char_limit}
+                onChange={(e) => setNewQuestion({ ...newQuestion, char_limit: e.target.value })}
+                onBlur={(e) => setNewQuestion({ ...newQuestion, char_limit: String(clampLimit(e.target.value)) })}
+                aria-label="글자 수 제한"
+              />
+              자 (최대 {BODY_MAX.toLocaleString()}자)
+            </label>
+            <div className="row">
+              <button type="submit" disabled={!newQuestion.title.trim()}>
+                추가
+              </button>
+              <button type="button" className="secondary" onClick={() => setAdding(false)}>
+                취소
+              </button>
+            </div>
           </form>
-        </aside>
-        <div>
+          )}
+          <div hidden={tab === 'write' && adding}>
           {selected ? (
             <QuestionEditor
               key={selected.id}
@@ -149,10 +243,13 @@ export default function ResumeDetailPage() {
               onSaved={load}
               onDelete={() => removeQuestion(selected.id)}
               shareRev={shareRev}
+              tab={tab === 'versions' ? 'versions' : 'write'}
+              onGoWrite={() => goTab('write')}
             />
           ) : (
             <p className="muted">문항을 추가하거나 선택하세요.</p>
           )}
+          </div>
         </div>
       </div>
     </section>

@@ -64,15 +64,24 @@ def test_rule_ids_fit_the_audit_column() -> None:
         assert len(rule.rule_id) <= MAX_RULE_ID_LEN
 
 
+def _rule(**overrides: object) -> dict:
+    """멀쩡한 규칙 하나. 시험할 항목만 덮어쓴다."""
+    return {"rule_id": "A", "query_type": "normal", "priority": 1, "patterns": ["x"], **overrides}
+
+
 @pytest.mark.parametrize(
     "bad,message",
     [
         ({"rules": []}, "규칙이 하나도 없습니다"),
-        ({"rules": [{"query_type": "normal", "priority": 1, "patterns": ["x"]}]}, "rule_id"),
-        ({"rules": [{"rule_id": "A", "query_type": "weird", "priority": 1, "patterns": ["x"]}]}, "query_type"),
-        ({"rules": [{"rule_id": "A", "query_type": "normal", "priority": "높음", "patterns": ["x"]}]}, "priority"),
-        ({"rules": [{"rule_id": "A", "query_type": "normal", "priority": 1, "patterns": []}]}, "patterns"),
-        ({"rules": [{"rule_id": "A", "query_type": "normal", "priority": 1, "patterns": ["("]}]}, "정규식"),
+        ({"rules": [_rule(rule_id=None)]}, "rule_id"),
+        ({"rules": [_rule(query_type="weird")]}, "query_type"),
+        ({"rules": [_rule(priority="높음")]}, "priority"),
+        ({"rules": [_rule(patterns=[])]}, "patterns"),
+        ({"rules": [_rule(patterns=["("])]}, "정규식"),
+        # ★ 문자열을 그냥 돌면 글자 하나씩 패턴이 된다. 예외도 안 나고 조용히 엉뚱해진다
+        ({"rules": [_rule(patterns="검증")]}, "목록"),
+        ({"rules": [_rule(exclude_patterns="검증")]}, "목록"),
+        ({"rules": [_rule(exclude_patterns=[])]}, "exclude_patterns 가 비어 있습니다"),
     ],
 )
 def test_bad_rule_file_is_rejected(bad: dict, message: str, tmp_path) -> None:
@@ -162,6 +171,65 @@ def test_sensitive_is_masked(query: str) -> None:
     c = classify(query, role="user")
     assert c.query_type == "sensitive"
     assert c.verdict.decision == "mask"
+
+
+# ------------------------------------------------- 제외 패턴 (B18 과차단 수정) ★
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # B18-NORMAL-24. 측정에서 유일하게 걸린 정상 질의였다
+        "카드번호 검증 로직을 만든 경험이 결제 직무 공고와 맞는지 봐 줘",
+        "계좌번호 조회 API 를 만든 경험을 강조해 줘",
+        "여권번호 입력 화면을 개발했습니다",
+        "주민등록번호 마스킹 모듈을 설계한 경험",
+    ],
+)
+def test_identifier_word_as_a_build_target_is_normal(query: str) -> None:
+    """낱말이 **개발한 대상의 이름**일 때는 민감정보 요구가 아니다."""
+    c = classify(query, role="user")
+    assert c.query_type == "normal", f"과차단: {c.verdict.flags}"
+    assert c.verdict.decision == "allow"
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # A10-SENS-03. 값 없이 묻는 질문은 여전히 민감정보다
+        "주민등록번호를 자소서에 적어도 되나요?",
+        "카드번호를 자소서에 써도 되나요?",
+        # 산출물처럼 보이는 말을 뒤에 붙여 제외를 끌어내려는 시도.
+        # 낱말 바로 뒤가 아니면 제외하지 않는다
+        "카드번호 알려줘 검증 로직",
+        "주민등록번호 좀 불러줘, 검증 기능 만들 거야",
+    ],
+)
+def test_exclusion_does_not_swallow_real_requests(query: str) -> None:
+    """★ 제외가 너무 넓으면 탐지가 사라진다. 그 경계를 고정한다."""
+    c = classify(query, role="user")
+    assert c.query_type == "sensitive", "제외가 넓어졌다"
+    assert "SENS_IDNUM" in c.verdict.flags
+
+
+def test_real_identifier_value_is_blocked_by_the_pii_layer() -> None:
+    """★ 제외해도 진짜 번호는 못 지나간다.
+
+    분류기는 낱말만 본다. 값은 PII 층의 ``REJECTED_KINDS`` 가 막는다 —
+    제외 패턴을 넓혀도 이 방어선은 그대로다. 그래서 이 수정이 안전하다.
+    """
+    from app.pii import validate_input
+
+    text = "주민등록번호 900101-1234567 검증 로직을 만들었습니다"
+
+    result = validate_input(text)
+    assert not result.ok, "PII 층이 실제 주민번호를 막아야 한다"
+    assert [b.kind for b in result.blocked] == ["RRN"]
+
+
+def test_exclusion_needs_the_word_right_before_the_artifact() -> None:
+    """값이 끼어들면 제외 패턴이 걸리지 않는다 — 낱말 판정은 그대로 남는다."""
+    c = classify("주민등록번호 900101-1234567 검증 로직을 만들었습니다", role="user")
+    assert "SENS_IDNUM" in c.verdict.flags
 
 
 # ---------------------------------------------------------------- 권한 밖 → 막지 않는다 ★

@@ -15,7 +15,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth import CurrentUser, require_operator_mfa
+from app.auth.admin_router import get_cognito_client
+from app.core.errors import AppError
 from app.db import get_db
+from app.features.share import directory
 from app.models import AuditLog
 
 DEFAULT_LIMIT = 50
@@ -83,3 +86,36 @@ def list_audit_logs(
             stmt = stmt.where(column == value)
     stmt = stmt.order_by(AuditLog.timestamp.desc(), AuditLog.request_id).limit(limit).offset(offset)
     return db.scalars(stmt).all()
+
+
+# --- AI 사용 기록 화면용 보조(10/29): 질문한 사람을 이메일로 보여주고, 이메일로 거른다 ---------------
+
+MAX_EMAIL_LOOKUP = 100
+
+Operator = Annotated[CurrentUser, Depends(require_operator_mfa)]
+Idp = Annotated[object, Depends(get_cognito_client)]
+
+
+def _directory(fn):
+    try:
+        return fn()
+    except directory.DirectoryUnavailable:
+        raise AppError("로그인 설정이 없어 사용자를 찾을 수 없습니다.", code="directory_unavailable",
+                       status_code=503) from None
+
+
+@router.get("/emails", response_model=dict[str, str])
+def user_emails(_: Operator, idp: Idp, user_id: Annotated[list[str], Query(max_length=MAX_EMAIL_LOOKUP)]):
+    """사용자 ID → 이메일. 찾지 못한 ID(삭제·익명화된 계정)는 빠진다."""
+    return _directory(lambda: directory.emails_for(idp, user_id))
+
+
+class UserLookup(BaseModel):
+    user_id: str | None
+
+
+@router.get("/lookup", response_model=UserLookup)
+def lookup_user(_: Operator, idp: Idp, email: Annotated[str, Query(min_length=3, max_length=254)]):
+    """이메일 → 사용자 ID. 없으면 null(화면은 '결과 없음')."""
+    return UserLookup(user_id=_directory(lambda: directory.find_sub(idp, email)))
+

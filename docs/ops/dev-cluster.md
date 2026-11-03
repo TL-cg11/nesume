@@ -4,8 +4,8 @@
 
 ## 1. 언제 켜져 있나
 
-- 평일 낮에만. 매일 00:00 KST 자동 종료(D11). 올리는 데 15~20분, 내리는 데 10분.
-- 필요하면 D에게 요청. Actions `infra-up` 버튼은 D11에서 제공.
+- 상시 가동(2026-11-02~). 자동 종료 스케줄은 없다. 내려가 있을 때 올리는 데 15~20분, 내리는 데 10분.
+- 올리기: 저장소 **Actions → infra → Run workflow → `up`**. 저장소 write 권한이면 누구나 누를 수 있다. 끝나면 그 run 의 Summary 에 ALB 주소가 나온다. 같은 화면에서 `down` 을 고르면 바로 내린다. 안 되면 D에게 요청.
 - 내리면 **dev DB도 같이 사라진다.** 다음 날은 빈 DB에서 마이그레이션만 적용된 상태. 테스트 데이터는 시드(D6)로 다시 만든다.
 - 노드는 스팟이라 가끔 회수된다. 파드가 재시작되는 건 정상이다. app은 2개라 서비스는 끊기지 않는다.
 
@@ -64,6 +64,8 @@ kubectl -n dev describe pod <이름>                         # Pending·CrashLoo
 kubectl top pods -n dev                                   # CPU·메모리
 helm -n dev history nesume                                # 배포 이력
 kubectl -n dev get externalsecret,secret                  # 비밀값 동기화 상태
+kubectl -n dev get pods -l app.kubernetes.io/component=embedder   # D20 임베딩 서비스(1/1). 전용 노드가 뜨고 모델 로드까지 3~5분
+kubectl -n dev port-forward svc/nesume-embedder 8081:8080         # 로컬에서 POST :8081/embed 로 직접 확인
 ```
 
 DB에 직접 붙어야 하면 app 파드를 통한다(RDS는 클러스터 SG에서만 열려 있다):
@@ -83,6 +85,7 @@ kubectl -n dev rollout restart deploy/nesume-app
 ```
 
 - 배치 파드(`nesume-batch` SA)는 Secrets Manager만 접근 가능하다. S3가 필요하면 D에게 역할 정책 추가 요청.
+- 임베딩(D20): `EMBEDDING_URL`(`http://nesume-embedder:8080`)·`EMBEDDING_MODEL`(`bge-m3`)이 ConfigMap으로 들어간다. 서비스는 클러스터 안에서만 열려 있고 `POST /embed {"inputs":[...]}`로 1024차원 벡터를 준다. 전용 노드(`nesume-dev-embedding`, 온디맨드 1대)에서만 돌며 다른 파드는 그 노드에 올라가지 않는다. 자세한 것은 `embedder/README.md`.
 - 로그는 D14 전까지 `kubectl logs`. 이후 CloudWatch `/nesume/dev/app`.
 
 ## 7. 자주 나는 오류
@@ -102,7 +105,9 @@ kubectl -n dev rollout restart deploy/nesume-app
 
 ## 8. 배포 흐름(참고)
 
-- main push → `ci.yml`(D11)이 app·web 이미지를 ECR `nesume/{app,web}:<git sha>`로 올리고 `helm upgrade`.
-- D11 전까지는 D가 로컬에서 빌드·푸시·`infra/scripts/up.ps1`.
+- 클러스터 올리기·내리기 → `infra.yml`(D11). `up` 은 Terraform compute apply → 애드온 대기 → ECR 태그(main sha 우선, 없으면 최신) → `helm upgrade --install` → `/api/health` 확인. `down` 은 `helm uninstall` → ALB 소멸 대기 → `terraform destroy` → NAT·EIP·EKS·RDS·ALB 잔존 확인(남으면 실패로 표시). 둘 다 수동 실행만.
+- main push → `ci.yml`(D11)이 app·web 이미지를 ECR `nesume/{app,web}:<git sha>`로 올리고, 클러스터가 켜져 있으면 `helm upgrade`(꺼져 있으면 skip, 다음 `up` 이 그 태그를 집는다). `ci.yml` 과 `infra.yml` 은 concurrency 그룹 `infra` 를 공유해 동시에 클러스터를 만지지 않는다.
+- `infra/scripts/up.ps1`·`deploy.ps1`·`down.ps1`은 **로컬 체크아웃 상태와 무관하게 origin/main 최신본**으로 동작한다(`_main-src.ps1`이 임시 worktree를 만들어 차트·Terraform·빌드 컨텍스트를 거기서 읽고 끝나면 지운다). 이미지 태그는 origin/main sha를 우선하고, CI가 아직 안 올렸으면 ECR 최신 태그로 내려가며 경고한다. `deploy.ps1`은 ECR에 main sha가 없으면 **CI가 올릴 때까지 기다린다**(기본 20분). 로컬 빌드·푸시는 CI가 고장났을 때 `-LocalBuild`로만 한다(집 회선에서 느리고 타임아웃이 났다, 10-29).
 - 마이그레이션은 `pre-upgrade` hook으로 앱보다 먼저 돈다. 되돌릴 수 없는 마이그레이션은 사전에 B와 합의(`docs/dev/backend-guide.md`).
 - 롤백은 `helm -n dev rollback nesume <REVISION>`. 마이그레이션은 되돌리지 않는다.
+- embedder 이미지(D20)는 별도 워크플로 `embedder.yml`이 `embedder/` 변경 시에만 `nesume/embedder:<sha>`로 올린다. `up.ps1`/`deploy.ps1`은 ECR 최신 embedder 태그를 자동으로 집고, 저장소가 비어 있으면 `embedder.enabled=false`로 배포한다.

@@ -1,4 +1,4 @@
-# dev compute: 쓸 때만 올리고 매일 내린다. base 출력은 remote_state로 읽는다. base가 compute를 읽는 일은 없다.
+# dev compute: 올리고 내리는 단위(상시 가동, 필요할 때만 내린다). base 출력은 remote_state로 읽는다. base가 compute를 읽는 일은 없다.
 locals {
   name   = "nesume-dev"
   region = "ap-northeast-2"
@@ -49,6 +49,10 @@ module "eks" {
   ci_role_arn        = local.base.ci_role_arn
   team_user_arns     = [for u in var.team_user_names : "arn:aws:iam::${local.base.account_id}:user/${u}"]
 
+  # D20 임베딩 노드(bge-m3 embedder 전용, 온디맨드 1대). 비용만 쓸 때는 -var embedding_node_enabled=false
+  embedding_node_enabled  = var.embedding_node_enabled
+  embedding_capacity_type = var.embedding_capacity_type
+
   # SA 이름은 D5 차트 helpers(nesume.appServiceAccountName = <fullname>-app)와 글자 하나까지 같아야 한다.
   # release 이름이 nesume 이므로 fullname = nesume.
   pod_identities = {
@@ -82,4 +86,23 @@ module "addons" {
   external_secrets_chart_version = var.external_secrets_chart_version
 
   depends_on = [module.eks] # 노드그룹·애드온·Pod Identity 연결이 전부 끝난 뒤
+}
+
+# ---------- D14 로그·모니터링: Fluent Bit → CloudWatch Logs(app/audit 분리), Container Insights, 알람·SNS, 대시보드 ----------
+# base 출력 fluent_bit_role_arn·cloudwatch_agent_role_arn 이 필요하다(base 를 먼저 apply).
+module "observability" {
+  source                    = "../../../modules/observability"
+  project                   = "nesume"
+  env                       = "dev"
+  region                    = local.region
+  cluster_name              = module.eks.cluster_name
+  app_log_group             = local.base.app_log_group
+  audit_log_group           = local.base.audit_log_group
+  fluent_bit_role_arn       = local.base.fluent_bit_role_arn
+  cloudwatch_agent_role_arn = local.base.cloudwatch_agent_role_arn
+  fluent_bit_chart_version  = var.fluent_bit_chart_version
+  rds_identifier            = local.name
+  alert_email               = var.alert_email
+
+  depends_on = [module.eks]
 }

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import uuid
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -94,6 +96,30 @@ async def test_asks_once_more_when_the_length_misses() -> None:
     assert result.attempts == 2
     assert result.rewrite is not None
     assert result.rewrite.count.total <= 50
+
+
+async def test_retry_writes_audit_under_a_new_request_id() -> None:
+    """★ 감사 로그 PK 는 request_id 다. 재시도가 같은 값을 쓰면 실DB 에서
+    UniqueViolation → 요청 전체가 500 이 된다 (실모델 연결 후 발견, 2026-10-28)."""
+
+    class _Recorder:
+        def __init__(self) -> None:
+            self.ids: list[object] = []
+
+        async def write(self, **fields: object) -> None:
+            self.ids.append(fields["request_id"])
+
+    audit = _Recorder()
+    guard = Guardrail(
+        llm=LlmClient(provider=_Scripted(["가" * 300, "짧게 줄였습니다."])),
+        vault=InMemoryVaultStore(), audit=audit,
+    )
+    first = uuid.uuid4()
+    await adjust(LONG, guard=guard, user_id="u1", role="user", limit=50, request_id=first)
+
+    assert len(audit.ids) == 2
+    assert audit.ids[0] == first  # 첫 시도는 HTTP X-Request-ID 와 이어진다
+    assert len(set(audit.ids)) == 2
 
 
 async def test_attempts_are_capped() -> None:

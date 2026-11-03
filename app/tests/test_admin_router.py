@@ -1,6 +1,7 @@
 """D6 운영자 역할 변경 API 단위 테스트. Cognito 는 가짜 클라이언트로 대체한다."""
 import time
 import uuid
+from datetime import UTC, datetime
 
 import jwt
 import pytest
@@ -20,9 +21,17 @@ CLIENT_ID = "test-client"
 class FakeIdp:
     """AWS(username == sub) 모드의 cognito-idp 흉내. 호출 기록을 남긴다."""
 
-    def __init__(self, groups: dict[str, set[str]]):
+    def __init__(self, groups: dict[str, set[str]], emails: dict[str, str] | None = None):
         self.groups = groups  # username -> group set
+        self.emails = emails or {}  # username -> email
         self.signed_out: list[str] = []
+        self.filters: list[str] = []
+
+    def _user(self, username):
+        attrs = [{"Name": "sub", "Value": username}]
+        if username in self.emails:
+            attrs.append({"Name": "email", "Value": self.emails[username]})
+        return {"Username": username, "Attributes": attrs, "UserStatus": "CONFIRMED", "Enabled": True}
 
     def admin_get_user(self, UserPoolId, Username):
         if Username not in self.groups:
@@ -32,7 +41,15 @@ class FakeIdp:
         return {"Username": Username}
 
     def list_users(self, UserPoolId, Filter, Limit):
-        return {"Users": []}
+        self.filters.append(Filter)
+        if not Filter.startswith('email ^= "'):
+            return {"Users": []}
+        prefix = Filter.removeprefix('email ^= "').removesuffix('"')
+        hits = [u for u, e in self.emails.items() if e.startswith(prefix)]
+        return {"Users": [self._user(u) for u in hits[:Limit]]}
+
+    def list_users_in_group(self, UserPoolId, GroupName, Limit):
+        return {"Users": [self._user(u) for u, g in self.groups.items() if GroupName in g]}
 
     def admin_list_groups_for_user(self, UserPoolId, Username):
         return {"Groups": [{"GroupName": g} for g in sorted(self.groups[Username])]}
@@ -75,7 +92,10 @@ def setup(rsa_key, db_session, monkeypatch):
     db_session.add(User(id=target_sub))
     db_session.flush()
 
-    idp = FakeIdp({operator_sub: {"operator", "test"}, target_sub: {"test"}})
+    idp = FakeIdp(
+        {operator_sub: {"operator", "test"}, target_sub: {"test"}},
+        {operator_sub: "op@example.com", target_sub: "target@example.com"},
+    )
     verifier = TokenVerifier(ISSUER, CLIENT_ID, key_resolver=lambda _t: rsa_key.public_key())
     app.dependency_overrides[get_token_verifier] = lambda: verifier
     app.dependency_overrides[get_cognito_client] = lambda: idp
@@ -148,6 +168,73 @@ def test_unknown_user_not_found(setup):
     assert r.json()["code"] == "not_found"
 
 
+def test_cognito_user_without_users_row_gets_row(setup, db_session):
+    """가입만 하고 아무것도 저장하지 않은 사용자(users 행 없음)도 역할을 바꿀 수 있다."""
+    fresh = str(uuid.uuid4())
+    setup["idp"].groups[fresh] = {"test"}
+    r = _put(setup, fresh, "operator", setup["operator"])
+    assert r.status_code == 200, r.text
+    assert setup["idp"].groups[fresh] == {"operator", "test"}
+    row = db_session.get(User, fresh)
+    assert row is not None and row.token_not_before is not None
+
+
+def test_deleted_user_not_found(setup, db_session):
+    row = db_session.get(User, setup["target_sub"])
+    row.deleted_at = datetime.now(UTC)
+    db_session.flush()
+    assert _put(setup, setup["target_sub"], "mentor", setup["operator"]).status_code == 404
+
+
 def test_unauthenticated(setup):
     r = setup["client"].put(f"/admin/users/{setup['target_sub']}/role", json={"role": "mentor"})
     assert r.status_code == 401
+
+
+def test_system_account_role_protected(setup, db_session):
+    batch_sub = str(uuid.uuid4())
+    db_session.add(User(id=batch_sub))
+    db_session.flush()
+    setup["idp"].groups[batch_sub] = {"system", "test"}
+    r = _put(setup, batch_sub, "operator", setup["operator"])
+    assert r.status_code == 403
+    assert r.json()["code"] == "system_account_protected"
+    assert setup["idp"].groups[batch_sub] == {"system", "test"}
+
+
+def _list(ctx, token: str, **params):
+    return ctx["client"].get("/admin/users", params=params, headers={"Authorization": f"Bearer {token}"})
+
+
+def test_list_without_query_returns_role_holders(setup):
+    setup["idp"].groups[setup["target_sub"]] = {"mentor", "test"}
+    r = _list(setup, setup["operator"])
+    assert r.status_code == 200, r.text
+    got = {(u["email"], u["role"]) for u in r.json()}
+    assert got == {("op@example.com", "operator"), ("target@example.com", "mentor")}
+
+
+def test_search_by_email_prefix(setup):
+    r = _list(setup, setup["operator"], email=" target")
+    assert r.status_code == 200, r.text
+    assert r.json() == [
+        {
+            "user_id": setup["target_sub"],
+            "email": "target@example.com",
+            "role": "user",
+            "status": "CONFIRMED",
+            "enabled": True,
+        }
+    ]
+    assert setup["idp"].filters[-1] == 'email ^= "target"'
+
+
+@pytest.mark.parametrize("bad", ['a" or sub ^= "', "a" + chr(92) + "b", "x" * 129])
+def test_search_rejects_filter_injection(setup, bad):
+    r = _list(setup, setup["operator"], email=bad)
+    assert r.status_code == 422
+    assert setup["idp"].filters == []
+
+
+def test_list_requires_operator(setup):
+    assert _list(setup, setup["user"]).status_code == 403

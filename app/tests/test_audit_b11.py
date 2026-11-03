@@ -267,3 +267,24 @@ def test_pagination_limits(seeded):
     assert len(c.get("/audit-logs", params={"feature": tag, "limit": 2}).json()) == 2
     assert len(c.get("/audit-logs", params={"feature": tag, "limit": 2, "offset": 2}).json()) == 1
     assert c.get("/audit-logs", params={"limit": 501}).status_code == 422
+
+
+# --- AI 사용 기록 화면 보조(10/29): 사용자 ID ↔ 이메일 ------------------------------------
+
+def test_emails_and_lookup_for_operator(monkeypatch):
+    from app.auth.admin_router import get_cognito_client
+    from app.features.share import directory
+    from tests.test_share_select import FakeIdp
+
+    monkeypatch.setattr(directory, "_pool", lambda: "local_test")
+    c = _client()
+    app.dependency_overrides[get_cognito_client] = lambda: FakeIdp([("a@x.com", "alice-sub", [])])
+    assert c.get("/audit-logs/emails", params={"user_id": ["alice-sub", "gone"]}).json() == {"alice-sub": "a@x.com"}
+    assert c.get("/audit-logs/lookup", params={"email": "A@x.com"}).json() == {"user_id": "alice-sub"}
+    assert c.get("/audit-logs/lookup", params={"email": "none@x.com"}).json() == {"user_id": None}
+    app.dependency_overrides.pop(get_cognito_client)
+
+
+@pytest.mark.parametrize("path", ["/audit-logs/emails?user_id=x", "/audit-logs/lookup?email=a@x.com"])
+def test_email_helpers_operator_only(path):
+    assert _client(Role.USER).get(path).status_code == 403

@@ -55,3 +55,98 @@ def get_posting_fields(
     if posting.owner_user_id is not None and posting.owner_user_id != user_id:
         return None
     return {name: getattr(posting, name) for name in POSTING_FIELDS}
+
+
+def get_posting_link(
+    session: Session, posting_id: uuid.UUID, *, user_id: str
+) -> dict[str, str | None] | None:
+    """추천 화면용 출처·원문 링크·회사명(`source`, `source_url`, `company_name`).
+
+    권한 규칙은 `get_posting_fields`와 같다.
+
+    `POSTING_FIELDS`에 넣지 않고 따로 둔다 — A11은 그 dict로 `PostingIn(**fields)`(extra="forbid")를
+    만들어서, 키를 늘리면 A 쪽이 깨진다. 링크는 서울시 공고엔 없어 None(공채속보만 있음).
+    """
+    posting = session.get(JobPosting, posting_id)
+    if posting is None:
+        return None
+    if posting.owner_user_id is not None and posting.owner_user_id != user_id:
+        return None
+    return {"source": posting.source, "source_url": posting.source_url, "company_name": posting.company_name}
+
+
+#: 공고 상세 화면에 보여줄 원문 필드(라벨, 컬럼) — 화면 순서.
+#: 매칭용 키워드(A11)가 아니라 **공고에 적힌 글 그대로**.
+DETAIL_FIELDS = (
+    ("고용형태", "emp_type_text"),
+    ("경력", "career_text"),
+    ("학력", "edu_text"),
+    ("근무지역", "region_name"),
+    ("근무지", "work_address"),
+    ("급여", "salary_text"),
+    ("근무시간", "work_hours_text"),
+    ("마감", "close_text"),
+    ("자격", "certificates"),
+    ("우대", "preferred"),
+    ("전공", "major"),
+    ("컴퓨터 활용", "computer_skills"),
+    ("전형", "selection_method"),
+    ("접수방법", "apply_method"),
+    ("제출서류", "required_docs"),
+)
+
+
+def get_posting_detail(session: Session, posting_id: uuid.UUID, *, user_id: str) -> dict | None:
+    """공고 상세(원문). 권한 규칙은 `get_posting_fields`와 같다 — 없거나 볼 권한이 없으면 None.
+
+    `fields`는 값이 있는 항목만 `[{"label", "value"}]`(화면 순서), `job_content`는 직무내용 원문.
+    A1 mask는 수집 때 `job_content`에 이미 적용됐다(collect.run_collection). 화면은 텍스트로만 렌더링한다.
+    """
+    posting = session.get(JobPosting, posting_id)
+    if posting is None:
+        return None
+    if posting.owner_user_id is not None and posting.owner_user_id != user_id:
+        return None
+    rows = []
+    for label, col in DETAIL_FIELDS:
+        value = getattr(posting, col)
+        if value is not None and str(value).strip():
+            rows.append({"label": label, "value": str(value).strip()})
+    return {
+        "id": posting.id,
+        "source": posting.source,
+        "company_name": posting.company_name,
+        "title": posting.title,
+        "job_name": posting.job_name,
+        "job_content": posting.job_content,
+        "fields": rows,
+        "url": posting.source_url,
+        "is_active": posting.is_active,
+    }
+
+
+def get_recruit_fields(session: Session, posting_id: uuid.UUID, *, user_id: str) -> list[dict]:
+    """모집분야 목록(2개 이상일 때만, 아니면 빈 목록). 권한 규칙은 `get_posting_fields`와 같다."""
+    posting = session.get(JobPosting, posting_id)
+    if posting is None or (posting.owner_user_id is not None and posting.owner_user_id != user_id):
+        return []
+    rf = posting.recruit_fields or []
+    return rf if len(rf) >= 2 else []
+
+
+def narrow_to_field(
+    fields: dict[str, str | None], recruit: list[dict], index: int | None
+) -> dict[str, str | None]:
+    """A11용 공고 필드를 **모집분야 하나로 좁힌다** — 직무내용·자격증을 그 분야 것으로(나머지 공통 필드 유지).
+
+    분야가 하나뿐이거나 번호가 범위 밖이면 그대로 돌려준다(합본 분석, 기존 동작).
+    """
+    if index is None or not (0 <= index < len(recruit)):
+        return fields
+    f = recruit[index]
+    body = "\n".join(v for v in (f.get("name"), f.get("job_content")) if v)
+    return {
+        **fields,
+        "job_content": body or fields.get("job_content"),
+        "certificates": f.get("certificates") or fields.get("certificates"),
+    }

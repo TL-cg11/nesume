@@ -113,7 +113,8 @@ erDiagram
         uuid job_posting_id FK "C4 공고, RESTRICT"
         uuid resume_id FK
         uuid[] version_ids "지원 시점 문항별 버전"
-        string status "applied | document_passed | interview | final | rejected"
+        string status "applied | document_passed | interview | final"
+        int position "열 안 순서(C15 드래그)"
         string grade "personal"
     }
     templates {

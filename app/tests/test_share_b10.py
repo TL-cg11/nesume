@@ -351,7 +351,10 @@ def test_resume_list_and_detail_share_summary(owner, mentor):
     gone = _share(owner, r1["id"], _sub("men")).json()
     owner.delete(f"/shares/{gone['id']}")
     summary = {x["title"]: x["share_summary"] for x in owner.get("/resumes").json()}
-    assert summary["A"] == {"active_count": 2, "earliest_end_date": (_today() + timedelta(days=2)).isoformat()}
+    d2, d9 = ((_today() + timedelta(days=n)).isoformat() for n in (2, 9))
+    # 누구와 공유 중인지(멘토 이름·종료일, 종료 빠른 순) — 목록 '공유 중'에 마우스를 올리면 보인다(10/29)
+    assert summary["A"] == {"active_count": 2, "earliest_end_date": d2,
+                            "mentors": [{"label": "김멘토", "end_date": d2}, {"label": "김멘토", "end_date": d9}]}
     assert summary["B"] is None
     assert owner.get(f"/resumes/{r1['id']}").json()["share_summary"]["active_count"] == 2
 
