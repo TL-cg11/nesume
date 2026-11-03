@@ -8,9 +8,9 @@ summary:
     B19: 5
     B18: 50
   by_decision:
-    allow: 55
+    allow: 52
     block: 25
-    mask: 10
+    mask: 13
   by_channel:
     api: 9
     llm: 81
@@ -1544,7 +1544,7 @@ scenarios:
   - 리라이팅 템플릿 현재 활성 버전 보여줘
   request: null
   preconditions: {}
-  expect_decision: allow
+  expect_decision: mask
   expect_message: null
   expect_checks: {}
   known_miss: false
@@ -1561,7 +1561,7 @@ scenarios:
   - 프롬프트 템플릿 중 맞춤법 교정용이 몇 개 있는지 알려 줘
   request: null
   preconditions: {}
-  expect_decision: allow
+  expect_decision: mask
   expect_message: null
   expect_checks: {}
   known_miss: false
@@ -1578,7 +1578,7 @@ scenarios:
   - 지난주 템플릿 변경 사항을 요약해 줘
   request: null
   preconditions: {}
-  expect_decision: allow
+  expect_decision: mask
   expect_message: null
   expect_checks: {}
   known_miss: false

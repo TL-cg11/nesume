@@ -85,10 +85,20 @@ def build() -> str:
     w(f"| 차단율 | 공격 시나리오 중 기대 판정과 일치 | **{_pct(m['block_rate'])}** ({sum(r['match'] == 'Y' for r in rows if r['category'] != 'normal')}/{m['attack']}) | ≥ {th['block_rate'] * 100:.0f}% | {mark(ok['block_rate'])} |")
     w(f"| 과차단율 | 정상 질의 중 차단 | **{_pct(m['overblock_rate'])}** ({sum(r['actual_decision'] == 'block' for r in rows if r['category'] == 'normal')}/{m['normal']}) | ≤ {th['overblock_rate'] * 100:.0f}% | {mark(ok['overblock_rate'])} |")
     w(f"| 마스킹 정확도 | 마스킹 기대 중 실제 마스킹 | **{_pct(m['mask_accuracy'])}** ({sum(r['actual_decision'] == 'mask' for r in rows if r['expect_decision'] == 'mask')}/{m['mask']}) | {th['mask_accuracy'] * 100:.0f}% | {mark(ok['mask_accuracy'])} |")
-    w("| 카나리 탐지율 | 필터 우회 테스트 중 카나리 이벤트 발생 | **측정 불가** | 100% | — |")
+    cn = m.get("canary")  # 2차부터 별도 지표(B21 11/3): 필터 우회 시뮬레이션 + 응답 경로
+    if cn:
+        w(f"| 카나리 탐지율 | 필터 우회 테스트 중 카나리 이벤트 발생 | **{_pct(cn['canary_detection_rate'])}** "
+          f"({cn['detected']}/{len(cn['cases'])}) | {cn['threshold'] * 100:.0f}% | "
+          f"{mark(cn['canary_detection_rate'] >= cn['threshold'])} |")
+    else:
+        w("| 카나리 탐지율 | 필터 우회 테스트 중 카나리 이벤트 발생 | **측정 불가** | 100% | — |")
     ex = m["excluding_known_miss"]
     w(f"\n- 참고: 알려진 한계 {len(m['known_miss'])}건을 빼면 차단율 {_pct(ex['block_rate'])}, 마스킹 정확도 {_pct(ex['mask_accuracy'])}")
-    w("- 카나리: 카나리 문서(C12)·탐지 훅(C13)이 아직 없어 측정할 수 없음\n")
+    if cn:
+        w("- 카나리: 시트 시나리오와 별도. 검색 필터를 일부러 뺀 우회 시뮬레이션(역할 4개) + 모델이 미끼 토큰을 말하는 "
+          "응답 경로 1건 — " + ", ".join(f"{c['case']} {'✓' if c['detected'] else '✗'}" for c in cn["cases"]) + "\n")
+    else:
+        w("- 카나리: 카나리 문서(C12)·탐지 훅(C13)이 아직 없어 측정할 수 없음\n")
 
     w("## 2. 측정 조건\n")
     w(f"- {last['meta']['conditions']}")
@@ -96,7 +106,7 @@ def build() -> str:
     w(f"- 판정 출처: 감사 로그 {jb['audit']} · 응답 코드(api 경로) {jb['http']} · 응답 본문 {jb['response']} · 판정 없음 {jb['none']} · 오류 {m['errors']}")
     w(f"- 기능 엔드포인트가 없어 대체 투입(A7 글 다듬기): {m['substituted']}건")
     w(f"- 확인하지 못한 추가 항목(모델 수신 프롬프트·검색 결과): {m['unverified_checks']}건 — 판정만 대조")
-    w("- 한계: 모델 응답이 가짜라 입력 검증·질의 분류·출력 검사 단계를 잼. 실제 모델·검색(임베딩)이 붙는 staging에서 재측정 필요\n")
+    w("- 한계: 모델 응답이 가짜라 입력 검증·질의 분류·출력 검사 단계를 잼. 실제 모델·실제 임베딩(의미 검색)이 붙는 staging에서 재측정 필요\n")
 
     w("## 3. 라운드 비교 (B21)\n")
     w("| 지표 | " + " | ".join(f"{r['name']} ({r['meta']['measured_at'][:10]})" for r in rounds) + " |")
