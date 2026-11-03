@@ -11,7 +11,7 @@
 | CloudWatch 대시보드 **`nesume-dev`** | 환경 전체 요청 수·5xx 비율·p50/p95/p99·차단·노드 CPU/메모리·파드 재시작·RDS·최근 5xx·배치 결과·운영자 조치 | Fluent Bit 메트릭 필터 + Container Insights + RDS |
 | CloudWatch Logs `/nesume/dev/app` (30일) | 앱·웹·배치·애드온 파드 stdout. 접근 로그 1줄/요청 | Fluent Bit |
 | CloudWatch Logs `/nesume/dev/audit` (90일, KMS) | `log_type=audit` 줄: 운영자 조치(역할 변경 등). B11 이 로그 스트림에도 남기면 가드레일 판정도 여기 | Fluent Bit `rewrite_tag` |
-| SNS `nesume-dev-alerts` | 아래 알람 전부. 이메일(선택)·Slack/자동 차단(D16) | CloudWatch 알람 |
+| SNS `nesume-dev-alerts` | 아래 알람 전부 + 앱 보안 이벤트(카나리·탈취 임계치·세션 차단). 이메일(선택)·Discord/Slack(Lambda). 자동 차단과 대응 절차는 `alerts.md` | CloudWatch 알람, `app/app/core/alerts.py` |
 
 웹 대시보드의 **트래픽 패널은 응답한 파드 1개의 프로세스 집계**다(`app/app/core/metrics.py`, 24시간 링 버퍼, 재시작하면 비워짐). 환경 전체 수치·추세·알람은 CloudWatch 가 기준이다. 둘 다 평가 러너(`is_test=true`)와 헬스 프로브는 뺀다.
 
@@ -34,8 +34,9 @@
 | `nesume-dev-node-cpu` / `-node-memory` | 노드 평균 > 85% (10분) | `kubectl top nodes`, HPA(`hpa.enabled`) |
 | `nesume-dev-rds-connections` | 연결 > 60 (t4g.micro 상한 ~80) | app 레플리카 수 × 풀 크기 |
 | `nesume-dev-rds-free-storage` | 여유 < 2GB | 감사 로그 보존 배치(B11 retention), 스토리지 확장 |
+| `nesume-dev-collector-failed` (D16) | jobs-collector 로그 `FAILED` 가 3일 연속 | `alerts.md` 3장 |
 
-이메일을 받으려면 `infra/envs/dev/compute` apply 때 `-var alert_email=<주소>`(또는 tfvars). 구독 확인 메일의 링크를 눌러야 활성화된다. Slack 웹훅·자동 세션 차단 구독은 D16 이 같은 토픽(`terraform output alerts_topic_arn`)에 붙인다.
+이메일을 받으려면 `infra/envs/dev/compute` apply 때 `-var alert_email=<주소>`(또는 tfvars). 구독 확인 메일의 링크를 눌러야 활성화된다. Discord/Slack 은 `-var webhook_alerts_enabled=true`(웹훅 URL 은 Secrets Manager) — 설정 절차는 `alerts.md` 4장.
 
 ## 4. 올리기 · 확인
 

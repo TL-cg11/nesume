@@ -5,7 +5,7 @@
 #     - 스트림 이름 = <namespace>.<pod>. request_id 로 한 요청의 로그를 두 그룹에서 모두 찾을 수 있다.
 #  2. Container Insights: amazon-cloudwatch-observability 애드온(cloudwatch-agent 만. 컨테이너 로그 수집은 1번이 하므로 끈다)
 #  3. 메트릭 필터(네임스페이스 nesume/<env>): 요청 수·5xx·duration_ms·차단 수. is_test 트래픽은 전부 제외.
-#  4. 알람 → SNS nesume-<env>-alerts (이메일 선택. Slack·자동 차단 구독은 D16)
+#  4. 알람 → SNS nesume-<env>-alerts (이메일 선택. Discord/Slack·자동 차단 구독은 D16)
 #  5. CloudWatch 대시보드 + Logs Insights 저장 쿼리(docs/ops/observability.md 와 같은 내용)
 
 locals {

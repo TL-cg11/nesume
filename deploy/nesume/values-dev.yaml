@@ -24,6 +24,9 @@ config:
   COGNITO_WEB_CLIENT_ID: ldgp7rgsjbhnoiha00gt250lv
   COGNITO_ISSUER: https://cognito-idp.ap-northeast-2.amazonaws.com/ap-northeast-2_jFqNdpDUg
   COGNITO_JWKS_URL: https://cognito-idp.ap-northeast-2.amazonaws.com/ap-northeast-2_jFqNdpDUg/.well-known/jwks.json
+  # D16: compute 출력 alerts_topic_arn(토픽 이름 고정). D19: dev 는 레일 켬(끄려면 "false" 한 줄)
+  ALERTS_SNS_TOPIC_ARN: arn:aws:sns:ap-northeast-2:852138520969:nesume-dev-alerts
+  LLAMA_GUARD_ENABLED: "true"
 
 externalSecrets:
   enabled: true

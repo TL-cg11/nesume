@@ -25,6 +25,7 @@ import AuditLogsPage from '../features/audit/AuditLogsPage.jsx'
 import RequireAuth from '../features/auth/RequireAuth.jsx'
 import AdminUsersPage from '../features/admin/AdminUsersPage.jsx'
 import AdminDashboardPage from '../features/admin/AdminDashboardPage.jsx'
+import AdminSessionsPage from '../features/admin/AdminSessionsPage.jsx'
 // C: 공고 추천(C8)·학습 로드맵(C14)·지원 현황(C15) — nesumeC에서 이식(docs C-frontend-wiring.md 6절)
 import LearningPage from '../features/learning/LearningPage.jsx'
 import ApplicationsPage from '../features/applications/ApplicationsPage.jsx'
@@ -58,6 +59,8 @@ export const featureRoutes = [
   { path: 'ai-logs', element: <AuditLogsPage />, nav: 'AI 사용 기록', roles: ['operator'] },
   // D6 역할 관리(운영자 전용). 운영자 부여·회수
   { path: 'admin/users', element: <RequireAuth roles={['operator']}><AdminUsersPage /></RequireAuth>, nav: '역할 관리', roles: ['operator'] },
+  // D16 세션 차단(운영자 전용): 자동 차단 목록 확인·수동 차단·해제
+  { path: 'admin/sessions', element: <RequireAuth roles={['operator']}><AdminSessionsPage /></RequireAuth>, nav: '세션 차단', roles: ['operator'] },
 ]
 
 export const routes = [
