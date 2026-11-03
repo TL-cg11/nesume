@@ -85,3 +85,25 @@ export function maskedCounts(...texts) {
   }
   return counts
 }
+
+// 기능 이름(D15 대시보드 FEATURE와 같은 값. 11/3 대화 묶어 보기, part2_guide 4.77)
+const FEATURE = {
+  interview: '면접 연습',
+  'rewrite.generate': '자소서 리라이팅',
+  'writing.proofread': '글 다듬기(맞춤법)',
+  'writing.star': 'STAR 점검',
+  'writing.star_complete': 'STAR 보완',
+  'github.intro': 'GitHub 소개',
+  'matching.analyze': '공고 매칭',
+  'style.adjust': '문체 조정',
+  'share.view': '멘토 공유 열람',
+}
+export const featureText = (f) => FEATURE[f] ?? f
+
+// 대화 이름: 기능 + 세션 ID 앞 8자(면접은 'interview-<면접 ID>' → 면접 ID 앞 8자). 세션 없는 단발 요청은 null
+export const conversationName = (log) => {
+  const id = (log.session_id ?? '').trim()
+  if (!id) return null
+  const short = id.replace(/^[a-z_]+-(?=[0-9a-f]{8})/i, '').slice(0, 8)
+  return `${featureText(log.feature)} · ${short}`
+}

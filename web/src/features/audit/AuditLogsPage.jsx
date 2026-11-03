@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import { auditApi, errorText } from './api.js'
-import { BLOCK_WHEN, MASK_WHEN, STAGE, maskedCounts, ruleText, splitMasked } from './labels.js'
+import { BLOCK_WHEN, MASK_WHEN, STAGE, conversationName, featureText, maskedCounts, ruleText, splitMasked } from './labels.js'
 import './audit.css'
 
 // AI 사용 기록(B11 화면, 10/29): 누가·언제·어떤 기능으로 무엇을 물었고 어떻게 판정됐는지. 운영자(MFA) 전용.
 // 질문·답변은 개인정보를 가린 형태로만 저장된다(spec 10.1). 11/3: 답변 기록, 가린 자리 강조, 판정 상세(4.74)
+// 11/3: 같은 대화(세션)의 기록에 대화 이름을 붙이고, 누르면 그 대화만 시간순으로 모아 본다(4.77)
 const PAGE = 50
+const CONVERSATION_MAX = 500
 const DECISION = { allow: '허용', mask: '가림', block: '차단' }
 
 const fmt = (iso) => new Date(iso).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'medium' })
@@ -45,7 +47,7 @@ function Detail({ log }) {
   )
 }
 
-function Row({ log, email }) {
+function Row({ log, email, onConversation }) {
   const [open, setOpen] = useState(false)
   return (
     <li className="aud-row">
@@ -53,10 +55,14 @@ function Row({ log, email }) {
         <span className="aud-who">{email ?? `${log.user_id.slice(0, 8)}…`}</span>
         <span className="muted">{log.role}</span>
         <span className="muted">· {fmt(log.timestamp)}</span>
-        <span className="muted">· {log.feature}</span>
+        <span className="muted">· {featureText(log.feature)}</span>
         <span className={`aud-pill ${log.decision}`}>{DECISION[log.decision] ?? log.decision}</span>
         {log.query_type && <span className="muted">· {log.query_type}</span>}
         {log.is_test && <span className="muted">· 평가</span>}
+        {onConversation && conversationName(log) && (
+          <button type="button" className="aud-conv" title="이 대화의 기록만 모아 보기"
+            onClick={() => onConversation(log)}>대화 {conversationName(log)}</button>
+        )}
       </div>
       <dl className="aud-qa">
         <dt>질문</dt>
@@ -80,6 +86,7 @@ export default function AuditLogsPage() {
   const [emails, setEmails] = useState({})
   const [more, setMore] = useState(false)
   const [error, setError] = useState(null)
+  const [conv, setConv] = useState(null) // 모아 보는 대화: { id, name, logs }
 
   const fetchPage = useCallback(async (q, offset) => {
     let userId
@@ -117,6 +124,18 @@ export default function AuditLogsPage() {
     load(applied)
   }, [applied])
 
+  // 한 대화의 기록 전부(필터와 무관, 평가 트래픽 포함)를 시간순으로
+  const openConversation = async (log) => {
+    try {
+      const rows = await auditApi.list({ session_id: log.session_id, limit: CONVERSATION_MAX })
+      setConv({ id: log.session_id, name: conversationName(log), logs: [...rows].reverse(), more: rows.length === CONVERSATION_MAX })
+      setError(null)
+      window.scrollTo?.(0, 0)
+    } catch (e) {
+      setError(errorText(e))
+    }
+  }
+
   const set = (k) => (e) => setF({ ...f, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value })
 
   return (
@@ -124,7 +143,7 @@ export default function AuditLogsPage() {
       <h1>AI 사용 기록</h1>
       <p className="muted">AI 기능을 쓴 기록입니다. 질문·답변의 개인정보는 가려서 저장됩니다. 운영자(MFA)만 볼 수 있습니다.</p>
 
-      <form className="aud-filters" onSubmit={(e) => { e.preventDefault(); setApplied(f) }}>
+      <form className="aud-filters" onSubmit={(e) => { e.preventDefault(); setConv(null); setApplied(f) }}>
         <input type="date" value={f.from} onChange={set('from')} aria-label="시작일" />
         <span className="muted">~</span>
         <input type="date" value={f.to} onChange={set('to')} aria-label="종료일" />
@@ -139,12 +158,24 @@ export default function AuditLogsPage() {
       </form>
 
       {error && <p className="error">{error}</p>}
-      {logs === null && !error && <p className="muted">불러오는 중...</p>}
-      {logs?.length === 0 && !error && <div className="card aud-card"><p className="muted">기록이 없습니다.</p></div>}
-      {logs?.length > 0 && (
+      {conv && (
+        <div className="card aud-card">
+          <div className="aud-conv-head">
+            <strong>대화 {conv.name}</strong>
+            <span className="muted">기록 {conv.logs.length}건 · 시간순{conv.more ? ` (앞 ${CONVERSATION_MAX}건까지)` : ''}</span>
+            <button type="button" className="secondary" onClick={() => setConv(null)}>전체 기록으로</button>
+          </div>
+          <ul className="aud-list">
+            {conv.logs.map((l) => <Row key={l.request_id} log={l} email={emails[l.user_id]} />)}
+          </ul>
+        </div>
+      )}
+      {!conv && logs === null && !error && <p className="muted">불러오는 중...</p>}
+      {!conv && logs?.length === 0 && !error && <div className="card aud-card"><p className="muted">기록이 없습니다.</p></div>}
+      {!conv && logs?.length > 0 && (
         <div className="card aud-card">
           <ul className="aud-list">
-            {logs.map((l) => <Row key={l.request_id} log={l} email={emails[l.user_id]} />)}
+            {logs.map((l) => <Row key={l.request_id} log={l} email={emails[l.user_id]} onConversation={openConversation} />)}
           </ul>
           {more && (
             <div className="aud-more">

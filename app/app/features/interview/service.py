@@ -51,6 +51,10 @@ EXPERIENCE_MAX = 3000
 TRANSCRIPT_MAX = 8000  # 프롬프트에 넣는 대화 기록 상한(오래된 것부터 뺌)
 REPLY_MAX = 500  # 면접관 말 한 번(질문은 짧게 — 11/2 dev에서 꼬리 질문이 점점 길어지던 문제)
 CLOSING = "오늘 면접은 여기서 마치겠습니다. 수고하셨습니다."
+# 주 질문 주제 순서(11/3): 자소서 문항 → 연결 경험 → 아래 일반 주제. 서버가 다음 주 질문 주제를 정해 준다.
+# 모델에 맡기면 방금 답변에 끌려 첫 주제만 계속 파고들었다(새 주 질문으로 저장돼도 내용은 같은 주제)
+GENERIC_TOPICS = ("지원 동기와 입사 후 계획", "협업과 갈등 해결", "실패하거나 어려웠던 경험과 극복",
+                  "직무 역량과 강점")
 # 면접관 페르소나: (이름, 설정, 꼬리 질문 예시). 11/2 상세화
 # - 설정(배경·말투·질문 초점·꼬리 질문·부실한 답)은 면접관 시스템 프롬프트(_SYSTEM)로 묶는다.
 #   A8 기본 "자소서 도우미" 시스템 프롬프트와 충돌해 면접관이 답변을 대신 써 주던 문제(11/2 dev).
@@ -119,6 +123,7 @@ _SYSTEM = """당신은 모의 면접의 {label}입니다.
 
 _OPENING_PROMPT = """면접을 시작합니다. 한 문장으로 인사하고 첫 번째 주 질문을 하세요.
 이번 면접은 주 질문 {main_count}개로 진행하지만, 질문 계획이나 주제 목록은 미리 말하지 마세요.
+첫 번째 주 질문 주제: {next_topic}
 
 """ + _DATA + """
 
@@ -135,7 +140,7 @@ _TURN_PROMPT = """지원자가 방금 답했습니다. 면접관으로서 다음
 - 지금 주 질문: {current}
 - 이 주 질문에서 한 꼬리 질문:
 {follows}
-
+{must_next}
 고를 수 있는 것: {choices}
 꼬리 질문 말투 예시(그대로 베끼지 말고 참고만): {examples}
 
@@ -145,6 +150,8 @@ _TURN_PROMPT = """지원자가 방금 답했습니다. 면접관으로서 다음
   그 점을 짧게 짚고 같은 요지를 간단히 다시 물으세요. 꼬리 질문을 다 썼으면 다음 주제로 넘어가세요.
 - 꼬리 질문은 지금 주 질문과 방금 답변에 대해서만 하세요. 이전 주제로 돌아가지 마세요.
 - 이미 한 질문을 반복하거나 앞 질문에 조건을 덧붙여 길게 만들지 마세요.
+- [다음]을 고르면 지금 주 질문과 방금 답변의 주제를 이어 가지 마세요.
+  방금 답변에는 반응하지 않거나 한마디만 하세요.
 
 """ + _DATA + """
 
@@ -157,11 +164,12 @@ _TURN_PROMPT = """지원자가 방금 답했습니다. 면접관으로서 다음
 답변 끝>>>
 
 마지막으로 확인: 첫 줄에는 {tags} 중 하나만 쓰고, 둘째 줄부터 면접관의 말을 1~3문장으로 쓰세요.
-질문은 하나만 하고, 지원자의 답을 대신 쓰지 마세요."""
+{next_rule} 질문은 하나만 하고, 지원자의 답을 대신 쓰지 마세요."""
 
 _FOLLOW = ("[꼬리] 방금 답변을 파고드는 질문"
            "(근거·수치·본인 역할·앞뒤가 맞지 않는 부분, 또는 답이 부실하면 다시 묻기)")
-_NEXT = "[다음] 아직 다루지 않은 주제로 새 주 질문"
+_NEXT = "[다음] 새 주 질문 — 다음 주 질문 주제: {topic}"
+_MUST_NEXT = "- 이 주 질문의 꼬리 질문을 모두 했습니다. 이번에는 반드시 [다음]으로 새 주제를 물으세요.\n"
 _LAST = "[다음] 면접을 마무리(둘째 줄에 짧은 마무리 인사만)"
 
 _FEEDBACK_PROMPT = """다음 모의 면접 기록을 보고 지원자의 답변을 평가하세요.
@@ -605,6 +613,15 @@ async def _run(guard: Guardrail, query: str, ctx: RequestContext, build: PromptB
     return out.text
 
 
+def topic_for(resume: str, experiences: str, main_no: int) -> str:
+    """main_no번째(1부터) 주 질문 주제. 자소서 문항 → 연결 경험 → 일반 주제를 차례로 돌린다."""
+    topics = [f"자기소개서 문항 '{t.strip()}'" for t in re.findall(r"^\[문항\] (.+)$", resume, re.M)]
+    topics += [f"경험 '{line[2:].split(' / ')[0].strip()}'" for line in experiences.splitlines()
+               if line.startswith("- ")]
+    topics += list(GENERIC_TOPICS)
+    return topics[(main_no - 1) % len(topics)]
+
+
 def _bullets(items: list[str]) -> str:
     return "\n".join(f"  {i}. {x}" for i, x in enumerate(items, 1)) or "  (없음)"
 
@@ -614,7 +631,7 @@ async def ask_opening(
 ) -> Outcome | str:
     """인사 + 첫 주 질문."""
     build = _builder(_OPENING_PROMPT, system_prompt(t.persona), main_count=main_count, resume=t.resume,
-                     experiences=t.experiences)
+                     experiences=t.experiences, next_topic=topic_for(t.resume, t.experiences, 1))
     got = await _run(guard, _REQ_OPENING.format(main_count=main_count), ctx, build)
     if isinstance(got, Outcome):
         return got
@@ -631,13 +648,17 @@ async def ask_next(guard: Guardrail, ctx: RequestContext, t: TurnContext) -> Out
     last = p.main_no >= t.main_count
     if last and not follow_allowed:
         return "closing", None
-    options = ([_FOLLOW] if follow_allowed else []) + [_LAST if last else _NEXT]
+    next_topic = topic_for(t.resume, t.experiences, p.main_no + 1)
+    options = ([_FOLLOW] if follow_allowed else []) + [_LAST if last else _NEXT.format(topic=next_topic)]
     build = _builder(
         _TURN_PROMPT, system_prompt(t.persona),
         examples=" / ".join(f'"{x}"' for x in PERSONAS[t.persona][2]),
         main_count=t.main_count, main_no=p.main_no, follow_used=p.follow_used,
         follow_max=FOLLOW_MAX, asked=_bullets(t.asked), current=t.asked[-1] if t.asked else "(없음)",
-        follows=_bullets(t.follows), choices=" / ".join(options),
+        follows=_bullets(t.follows), choices=" / ".join(options), next_topic=next_topic,
+        must_next="" if follow_allowed or last else _MUST_NEXT,
+        next_rule=("[다음]이면 짧은 마무리 인사만 하세요." if last
+                   else f"[다음]이면 반드시 '{next_topic}'에 대해 물으세요."),
         tags=" 또는 ".join(o.split(" ", 1)[0] for o in options), resume=t.resume, experiences=t.experiences,
         transcript=t.transcript)
     got = await _run(guard, t.answer, ctx, build)
