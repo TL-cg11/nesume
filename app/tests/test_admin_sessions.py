@@ -69,11 +69,17 @@ def audit_messages():
     """`nesume.audit.admin` 로거에 직접 붙인다(앱 setup_logging 이 루트 핸들러를 바꾸므로 caplog 대신)."""
     handler = _Collect()
     logger = logging.getLogger("nesume.audit.admin")
+    previous_level, previous_disable = logger.level, logging.root.manager.disable
+    logger.setLevel(logging.DEBUG)  # 전체 스위트에서 루트 레벨·logging.disable 이 바뀌어 있어도 이 로거는 연다
+    logging.disable(logging.NOTSET)
+    logger.disabled = False  # alembic env.py 의 fileConfig 가 기존 로거를 disabled=True 로 만든다
     logger.addHandler(handler)
     try:
         yield handler.messages
     finally:
         logger.removeHandler(handler)
+        logger.setLevel(previous_level)
+        logging.disable(previous_disable)
 
 
 def test_block_list_release_flow(setup, audit_messages):

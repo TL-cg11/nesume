@@ -68,14 +68,21 @@ def collect():
     def attach(name: str) -> _Collect:
         handler = _Collect()
         logger = logging.getLogger(name)
+        # 전체 스위트에서는 다른 테스트가 루트 레벨·logging.disable 을 바꿔 둘 수 있다 → 이 로거만 강제로 연다
+        attached.append((logger, handler, logger.level))
+        logger.setLevel(logging.DEBUG)
+        logger.disabled = False  # alembic env.py 의 fileConfig 가 기존 로거를 disabled=True 로 만든다
         logger.addHandler(handler)
-        attached.append((logger, handler))
         return handler
 
-    attached: list[tuple[logging.Logger, _Collect]] = []
+    attached: list[tuple[logging.Logger, _Collect, int]] = []
+    previous_disable = logging.root.manager.disable
+    logging.disable(logging.NOTSET)
     yield attach
-    for logger, handler in attached:
+    for logger, handler, level in attached:
         logger.removeHandler(handler)
+        logger.setLevel(level)
+    logging.disable(previous_disable)
 
 
 def test_emit_writes_audit_line_and_delivers(collect):
