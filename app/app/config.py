@@ -47,6 +47,28 @@ class Settings(BaseSettings):
     bedrock_secret_access_key: str | None = None
     bedrock_session_token: str | None = None
 
+    # D19 출력 레일(Llama Guard 계열 안전 분류 모델, guardrail/rails/llama_guard.py). 기본 꺼짐.
+    # 이 계정의 Bedrock 에는 meta.llama-guard-* 가 없어(11-03 서울·버지니아·오레곤 확인) Llama 3.1 8B 에
+    # Llama Guard 3 프롬프트 템플릿을 얹어 쓴다. 모델이 열리면 ID 만 바꾼다. 서울에는 meta 모델이 없어
+    # 리전 별도.
+    llama_guard_enabled: bool = False
+    llama_guard_model_id: str = "us.meta.llama3-1-8b-instruct-v1:0"
+    llama_guard_region: str = "us-east-1"
+    llama_guard_timeout_s: float = 3.0
+    # 비용·지연 가드: 검사 대상 응답 길이 상한(초과분은 자름)과 샘플링 비율(1.0 = 전부 검사)
+    llama_guard_max_chars: int = 4000
+    llama_guard_sample_rate: float = 1.0
+    # 모델 오류·타임아웃 시 통과(fail-open)+표식. false 면 차단(fail-closed). docs/policy/block-policy.md
+    # 2장 #15
+    llama_guard_fail_open: bool = True
+
+    # D16 알림. 비우면 로그만 남긴다. SNS 토픽(IRSA sns:Publish) 우선, 없으면 Slack 웹훅 직접 POST(로컬·kind).
+    # Slack 웹훅 URL 은 Secrets Manager nesume/<env>/app 의 ALERTS_SLACK_WEBHOOK_URL 키(ExternalSecret 로
+    # 주입).
+    alerts_sns_topic_arn: str = ""
+    alerts_slack_webhook_url: str = ""
+    alerts_timeout_s: float = 2.0
+
     # D20/C3 임베딩 서비스(TEI + bge-m3). 비우면 임베딩 없음 → C6 리트리버 미주입·추천 빈 결과.
     # 운영은 Helm ConfigMap 이 채운다(클러스터 내부 http://<release>-embedder:8080).
     embedding_url: str = ""

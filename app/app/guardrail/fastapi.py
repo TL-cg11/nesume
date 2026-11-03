@@ -41,18 +41,29 @@ def _shared() -> Guardrail:
     from app.features.audit.sink import DbAuditSink
     from app.guardrail.bedrock import build_provider
     from app.guardrail.llm_client import LlmClient
+    from app.guardrail.rails.llama_guard import build_output_rail
 
+    settings = get_settings()
     # A2 제공자 주입 지점. LLM_PROVIDER=none(기본)이면 지금까지와 같은 NotConfiguredProvider 다
-    llm = LlmClient(provider=build_provider(get_settings()))
-    return Guardrail(llm=llm, audit=DbAuditSink(), history=InMemoryTurnStore())
+    llm = LlmClient(provider=build_provider(settings))
+    # D19 출력 레일. LLAMA_GUARD_ENABLED=false(기본)면 None → A5 출력 검사만(기존 동작)
+    return Guardrail(
+        llm=llm, audit=DbAuditSink(), history=InMemoryTurnStore(), output_rail=build_output_rail(settings)
+    )
 
 
 @lru_cache(maxsize=1)
 def _limited() -> Guardrail:
-    """C7 레이트리밋 래퍼를 씌운 것. LLM 엔드포인트는 모두 이 의존성으로 받아 한도를 피할 수 없다."""
+    """C7 레이트리밋 래퍼 + D16 세션 차단 래퍼를 씌운 것. LLM 엔드포인트는 모두 이 의존성으로 받아 둘 다
+    피할 수 없다.
+
+    바깥이 D16 이다: 차단 목록 조회 → C7 한도 → 가드레일 → C7 기록(위반 누적) → D16 (카나리·임계치면 자동
+    차단+알림).
+    """
+    from app.core.session_block import SessionBlockGuardrail
     from app.features.ratelimit.guard import RateLimitedGuardrail
 
-    return RateLimitedGuardrail(_shared())  # type: ignore[return-value]  # run·run_split 같은 모양
+    return SessionBlockGuardrail(RateLimitedGuardrail(_shared()))  # type: ignore[return-value]  # run·run_split 같은 모양
 
 
 def get_guardrail() -> Guardrail:

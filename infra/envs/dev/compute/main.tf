@@ -103,6 +103,9 @@ module "observability" {
   fluent_bit_chart_version  = var.fluent_bit_chart_version
   rds_identifier            = local.name
   alert_email               = var.alert_email
+  # D16: Slack 구독(Lambda). 앱 시크릿에 ALERTS_SLACK_WEBHOOK_URL 을 넣은 뒤 -var slack_alerts_enabled=true
+  app_secret_arn = local.base.app_secret_arn
+  slack_enabled  = var.slack_alerts_enabled
 
   depends_on = [module.eks]
 }

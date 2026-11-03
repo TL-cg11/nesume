@@ -28,3 +28,8 @@ variable "alert_email" {
   type        = string
   default     = ""
 }
+variable "slack_alerts_enabled" {
+  description = "D16 SNS → Lambda → Slack 웹훅 구독. 앱 시크릿(nesume/dev/app) JSON 에 ALERTS_SLACK_WEBHOOK_URL 을 넣은 뒤 true"
+  type        = bool
+  default     = false
+}
