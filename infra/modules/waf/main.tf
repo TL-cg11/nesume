@@ -43,7 +43,7 @@ resource "aws_secretsmanager_secret_version" "eval_token" {
 
 resource "aws_wafv2_web_acl" "this" {
   name        = "${var.name}-alb"
-  description = "nesume ALB (D17)"
+  description = "nesume ALB - D17"
   scope       = "REGIONAL"
 
   default_action {
