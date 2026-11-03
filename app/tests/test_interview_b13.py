@@ -27,10 +27,14 @@ EXPECTED = "1. 지원 동기는?\n2. 가장 어려웠던 문제는?"
 
 
 class Script:
-    """프롬프트를 기록하고, 프롬프트 종류(시작·진행·피드백·예상 질문)에 맞는 답을 돌려주는 가드레일 대역."""
+    """조립 함수로 만든 프롬프트를 기록하고, 종류(시작·진행·피드백·예상 질문)에 맞게 답하는 가드레일 대역.
+
+    prompts: (system + 사용자 프롬프트, ctx), queries: A8에 넘긴 query(감사 로그 '질문'에 남는 것)
+    """
 
     def __init__(self, turns=("[꼬리]\n그때 본인 역할은?",), *, blocked=False, unavailable=False):
         self.turns, self.blocked, self.unavailable, self.prompts = list(turns), blocked, unavailable, []
+        self.queries = []
 
     def reply(self, prompt):
         if "모의 면접 기록을 보고" in prompt:
@@ -41,9 +45,12 @@ class Script:
             return "[다음]\n안녕하세요. 자기소개 부탁드립니다."
         return self.turns.pop(0) if len(self.turns) > 1 else self.turns[0]
 
-    async def run(self, prompt, ctx, **kwargs):
+    async def run(self, query, ctx, *, prompt, retrieve=True):
+        assert retrieve is False, "면접은 검색(C6)을 쓰지 않는다"
+        req = prompt(query, ())
+        prompt = f"{req.system}\n\n{req.prompt}"
+        self.queries.append(query)
         self.prompts.append((prompt, ctx))
-        assert kwargs.get("retrieve") is False, "면접은 검색(C6)을 쓰지 않는다"
         if self.unavailable:
             raise LlmUnavailable("no model")
         verdict = SimpleNamespace(decision="block" if self.blocked else "allow",
@@ -199,8 +206,40 @@ def test_start_with_real_guardrail_pipeline_masks_phone():
     r = _resume(c)
     res = _start(c, r["id"])
     assert res.status_code == 201, res.text
-    assert PHONE not in provider.calls[0].prompt
-    assert provider.calls[0].prompt.startswith("당신은 모의 면접의"), "A8을 거쳐 면접관 설정이 모델에 도달"
+    call = provider.calls[0]
+    assert PHONE not in call.prompt and PHONE not in (call.system or "")
+    assert call.system.startswith("당신은 모의 면접의"), "면접관 설정은 시스템 프롬프트로 모델에 도달"
+    assert "면접을 시작합니다" in call.prompt
+
+
+def test_audit_question_is_only_what_the_user_asked_and_answer_is_model_reply():
+    """감사 로그 '질문'에는 사용자가 이번에 요청한 것(이번 턴 답변·요청 문구)만, '답변'에는 모델의 말(11/3).
+
+    템플릿·면접관 설정·자소서·대화는 질문에 남지 않는다. 답변 속 전화번호는 가려진다.
+    """
+    class Audit:
+        rows = []
+
+        async def write(self, **fields):
+            self.rows.append(fields)
+
+    provider = FakeProvider(reply="[꼬리]\n그때 본인 역할은?")
+    audit = Audit()
+    c = _client(f"iv-{uuid.uuid4()}", Guardrail(llm=LlmClient(provider=provider), vault=InMemoryVaultStore(),
+                                                 audit=audit))
+    r = _resume(c)
+    s = _start(c, r["id"], main_count=3).json()["session"]
+    res = _say(c, r["id"], s["id"], f"캐시를 도입해 응답 시간을 줄였습니다. 연락처 {PHONE}")
+    assert res.status_code == 200, res.text
+    start, turn = audit.rows[-2:]
+    assert start["query_masked"] == "모의 면접 시작(주 질문 3개)"
+    assert turn["query_masked"].startswith("캐시를 도입해 응답 시간을 줄였습니다. 연락처 ")
+    assert PHONE not in turn["query_masked"]
+    for row in (start, turn):
+        assert "면접관" not in row["query_masked"] and "자기소개서" not in row["query_masked"]
+    assert turn["response_masked"] == "[꼬리]\n그때 본인 역할은?"
+    # 모델에는 템플릿과 자료가 그대로 간다(가린 채로)
+    assert "방금 지원자 답변" in provider.calls[-1].prompt and PHONE not in provider.calls[-1].prompt
 
 
 def test_start_skips_retrieval_even_when_guardrail_has_retriever():
