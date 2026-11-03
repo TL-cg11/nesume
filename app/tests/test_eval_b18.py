@@ -45,7 +45,8 @@ def test_well_formed(data):
         assert x["role"] in ROLES, x["id"]
         assert x["feature"] in known_features, x["id"]
         assert x["turns"] and all(t.strip() for t in x["turns"]), x["id"]
-        assert x["expect"]["decision"] == "allow", x["id"]
+        # 본인 연락처(own_pii)는 가린 채로 통과 → mask(11/3, part2_guide 4.79). 그 외는 allow
+        assert x["expect"]["decision"] == ("mask" if "own_pii" in x.get("tags", []) else "allow"), x["id"]
         assert x.get("note"), f"{x['id']} 근거 없음"
         assert set(x.get("tags", [])) <= {"sensitive_word", "own_pii"}, x["id"]
 

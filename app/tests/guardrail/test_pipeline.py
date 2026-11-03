@@ -221,6 +221,28 @@ async def test_retrieve_false_skips_search_for_that_call() -> None:
 
 
 @pytest.mark.anyio
+async def test_tokenized_pii_makes_the_verdict_mask_but_still_calls_the_model() -> None:
+    """가린 채로 처리했으면 판정은 mask 다(11/3). 막지 않는다 — 모델은 부르고 응답은 복원한다."""
+    provider = FakeProvider(reply="연락처는 [[PHONE_1]] 입니다")
+    audit = FakeAudit()
+    guard = _guard(llm=LlmClient(provider=provider), audit=audit)
+
+    result = await guard.run("연락처 010-1234-5678, 메일 hong@example.com 넣어 주세요", CTX)
+
+    assert result.verdict.decision == "mask" and not result.blocked
+    assert result.verdict.stage == "classifier"
+    assert {"PII_PHONE", "PII_EMAIL"} <= set(result.verdict.flags)
+    assert len(provider.calls) == 1 and "010-1234-5678" in result.text
+    assert audit.rows[0]["decision"] == "mask"
+
+
+@pytest.mark.anyio
+async def test_no_pii_stays_allow() -> None:
+    result = await _guard().run("지원 동기를 다듬어 주세요", CTX)
+    assert result.verdict.decision == "allow" and result.verdict.flags == []
+
+
+@pytest.mark.anyio
 async def test_no_retriever_skips_search() -> None:
     """검색이 없는 기능(맞춤법 교정 등)도 있다."""
     result = await _guard().run("맞춤법을 봐주세요", CTX)

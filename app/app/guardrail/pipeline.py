@@ -423,7 +423,15 @@ class Guardrail:
             return verdict, None
 
         # 3. 치환 (A1). 여기부터 원문은 사라진다
-        return verdict, await tokenize(query, owner_id=ctx.user_id, store=self.vault)
+        tokenized = await tokenize(query, owner_id=ctx.user_id, store=self.vault)
+        if tokenized.counts:
+            # ★ 가린 것이 있으면 판정도 '가림'이다 (11/3, part2_guide 4.79). 전에는 치환만 하고
+            #   판정은 allow 로 남아 AI 사용 기록이 "허용"으로 보였다. 판정 표시만 바뀌고
+            #   처리는 같다 — mask 는 모델 호출을 막지 않는다
+            verdict = verdict.merge(Verdict("mask", "classifier", tuple(
+                Finding(f"PII_{kind}", "warn", n) for kind, n in tokenized.counts.items()
+            )))
+        return verdict, tokenized
 
     async def _run(
         self,
