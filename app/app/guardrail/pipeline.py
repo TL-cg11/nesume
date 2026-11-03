@@ -58,6 +58,17 @@ from app.pii import (
     validate_input,
 )
 
+#: 조각의 등급 판정을 가드레일 판정으로 옮기는 표.
+#:
+#: ★ 표에 없는 값은 **block 으로 친다.** C6 가 돌려주는 값은 allow·mask 뿐이지만
+#:   (C2 matrix), 모르는 값을 allow 로 흘리면 새 등급이 생긴 날 조용히 통과한다.
+#: (규칙 ID, 심각도). 심각도 값은 `Finding` 이 생성 시 검사한다 —
+#: 여기서 Severity 를 import 하면 #14 와 같은 줄을 건드려 충돌이 는다.
+_GRADE_DECISIONS: dict[str, tuple[str, str]] = {
+    "mask": ("AUTHZ_GRADE_MASK", "warn"),
+    "block": ("AUTHZ_GRADE_BLOCK", "critical"),
+}
+
 #: 검색 결과 개수 기본값
 DEFAULT_TOP_K = 5
 
@@ -98,6 +109,15 @@ class Chunk:
     doc_id: str
     grade: str
     text: str
+    #: 이 조각에 대한 **역할 × 등급 판정** (C2 matrix). C6 가 채운다.
+    #:
+    #: ★ 검색은 WHERE 에서 이미 걸렀으므로 여기서 다시 거르지 않는다 —
+    #:   거르는 곳이 둘이면 한쪽이 바뀔 때 구멍이 난다. 이 값은 **판정 신호**다.
+    #:   본문도 이미 치환돼 있어 다시 가리지 않는다. 빠져 있던 것이 mask 판정뿐이라
+    #:   그것만 싣는다 (C6 `PolicyChunk`, spec 8.4·9.1).
+    #:
+    #: 포트에 선언해 둔다. 숨은 속성으로 두면 **규약인지 우연인지 구분되지 않는다.**
+    decision: str | None = None
 
 
 class Retriever(Protocol):
@@ -198,6 +218,37 @@ PromptBuilder = Callable[[str, Sequence[Chunk]], LlmRequest]
 #: 받는 것은 **치환이 끝난 글**이다 — 호출자가 원문을 다시 만지지 않게 하려는 것이다.
 #: 돌려주는 것은 조각 수만큼의 프롬프트고, 개수가 그대로 모델 호출 횟수가 된다.
 PartsBuilder = Callable[[str], Sequence[str]]
+
+
+def _grade_verdict(chunks: Sequence[Chunk]) -> Verdict:
+    """C6 가 조각마다 실어 보낸 **역할 × 등급 판정**을 가드레일 판정으로 옮긴다.
+
+    운영자가 개인 등급 자소서를 읽는 경우가 이것이다. 검색은 되지만 원문 그대로는
+    아니다 — "운영자는 무제한" 이 아니라는 뜻이고, C2 matrix 가 `mask` 로 정해 둔다.
+
+    ★ 여기서 본문을 **다시 가리지 않는다.** 본문은 이미 치환돼 있어 원문 PII 가
+      나가지 않는다. 빠져 있던 것은 **판정 신호**뿐이라 그것만 싣는다. 가리는 일을
+      두 곳에서 하면 한쪽이 바뀔 때 어긋난다.
+
+    ★ 조각이 여럿이면 **가장 무거운 판정**을 쓴다. 하나라도 가려야 하면 응답 전체가
+      그 조건 아래 있다 — 가려야 할 조각만 빼고 답을 만들면 그 조각은 모델에게
+      이미 간 뒤다.
+    """
+    counts: dict[str, int] = {}
+    for chunk in chunks:
+        decision = chunk.decision
+        if decision and decision != "allow":
+            counts[decision] = counts.get(decision, 0) + 1
+    if not counts:
+        return allow("retriever")
+
+    findings = []
+    worst = "allow"
+    for decision, count in counts.items():
+        rule_id, severity = _GRADE_DECISIONS.get(decision, _GRADE_DECISIONS["block"])
+        findings.append(Finding(rule_id, severity, count))  # type: ignore[arg-type]
+        worst = worse_decision(worst, decision if decision in _GRADE_DECISIONS else "block")
+    return Verdict(worst, "retriever", tuple(findings))  # type: ignore[arg-type]
 
 
 def build_prompt(query: str, chunks: Sequence[Chunk]) -> LlmRequest:
@@ -378,6 +429,17 @@ class Guardrail:
             chunks = await self.retriever.search(
                 mask(query), role=ctx.role, user_id=ctx.user_id, top_k=self.top_k
             )
+            verdict = verdict.merge(_grade_verdict(chunks))
+            if verdict.decision == "block":
+                # ★ 볼 수 없는 자료가 섞였다. 모델을 부르지 않는다 — 부르고 나서
+                #   막으면 그 조각은 **이미 모델에게 간 뒤**다. 분류 단계가 탈취를
+                #   막을 때와 같은 판단이고, 그쪽에만 있던 검사를 여기에도 둔다
+                return PipelineResult(
+                    text="",
+                    verdict=verdict,
+                    doc_ids=tuple(c.doc_id for c in chunks),
+                    doc_grades=tuple(c.grade for c in chunks),
+                )
 
         # 5·6. 프롬프트 조립과 호출 (A2).
         #    ★ 조립은 **여기서** 한다. 호출자가 조립해 넘기면 A3·A12 가 템플릿까지
