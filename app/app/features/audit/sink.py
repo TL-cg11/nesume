@@ -34,6 +34,7 @@ class AuditRecord(BaseModel):
     role: str
     feature: str = Field(min_length=1, max_length=50)
     query_masked: str | None = None
+    response_masked: str | None = None
     query_hash: str | None = None
     query_type: str | None = None
     flags: list[str] = Field(default_factory=list)

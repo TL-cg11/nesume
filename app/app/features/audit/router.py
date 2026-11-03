@@ -37,6 +37,7 @@ class AuditLogOut(BaseModel):
     timestamp: datetime
     feature: str
     query_masked: str | None
+    response_masked: str | None  # 사용자에게 돌려준 답변(개인정보 가림). 차단·이전 기록은 None
     query_hash: str | None
     query_type: str | None
     flags: list[str]

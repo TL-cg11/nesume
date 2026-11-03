@@ -178,6 +178,9 @@ class PipelineResult:
     doc_ids: tuple[str, ...] = ()
     #: 참조한 문서들의 등급. doc_ids 와 같은 순서다 (audit_logs.doc_grades)
     doc_grades: tuple[str, ...] = ()
+    #: 감사 로그용 응답 — 출력 검사를 통과한 **복원 전** 글(PII 는 토큰 상태). B11 이 가려 저장한다.
+    #: 차단되면 비어 있다(막힌 응답은 기록하지 않는다 — 유출 내용을 다시 남기지 않게)
+    audit_response: str = ""
 
     @property
     def blocked(self) -> bool:
@@ -304,6 +307,7 @@ class Guardrail:
                 doc_grades=result.doc_grades,
                 latency_ms=int((time.monotonic() - started) * 1000),
                 suppress=failure is not None,
+                response=result.audit_response,
             )
 
     def _multiturn(self, query: str, ctx: RequestContext, single_turn: Verdict) -> Verdict:
@@ -422,6 +426,7 @@ class Guardrail:
             unresolved=tuple(restored.unresolved),
             doc_ids=doc_ids,
             doc_grades=doc_grades,
+            audit_response=checked.text,
         )
 
     async def _run_split(
@@ -485,6 +490,7 @@ class Guardrail:
             verdict=verdict,
             usage=usage,
             unresolved=tuple(dict.fromkeys(unresolved)),
+            audit_response="\n\n".join(checked_texts),
         )
 
     async def _write_audit(
@@ -497,6 +503,7 @@ class Guardrail:
         doc_grades: tuple[str, ...],
         latency_ms: int,
         suppress: bool,
+        response: str = "",
     ) -> None:
         if self.audit is None:
             return
@@ -511,6 +518,9 @@ class Guardrail:
             #   뒷자리도 남기지 않는다 — 대조는 바로 아래 query_hash 가 맡는다
             "query_masked": mask(query),
             "query_hash": hashlib.sha256(query.encode("utf-8")).hexdigest(),
+            # 사용자에게 돌려준 답변(B11 AI 사용 기록, part2_guide 4.74). 복원 전 글이라 PII 는
+            # 토큰 상태이고, 모델이 지어낸 PII 까지 질문과 같은 방식으로 한 번 더 가린다
+            "response_masked": mask(response) if response else None,
             "doc_ids": list(doc_ids),
             # 등급별 차단율 집계(B21)에 쓴다. doc_ids 와 같은 순서다
             "doc_grades": list(doc_grades),

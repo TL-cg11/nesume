@@ -171,12 +171,16 @@ def test_webhook_payload_by_host():
     d = webhook_payload(discord, e)
     assert set(d) == {"username", "embeds"} and d["username"] == "NESUME RADAR"
     embed = d["embeds"][0]
-    assert embed["title"].endswith("알람") and embed["color"] == 0xF59E0B and embed["description"] == "x"
+    assert embed["title"] == "⚠️ 주의 · 알람" and embed["color"] == 0xF59E0B and embed["description"] == "> x"
+    assert embed["author"]["name"] == "nesume · 알람"
     rich = webhook_payload(discord, AlertEvent(type="canary_hit", severity="critical", summary="s",
                                                session_id="sess", user_id="u", env="dev"))["embeds"][0]
-    assert rich["color"] == 0xE53935 and rich["title"].startswith("🚨")
-    assert [f["name"] for f in rich["fields"]][:2] == ["세션", "사용자"]
-    assert rich["footer"]["text"] == "nesume-dev · critical · canary_hit"
+    assert rich["color"] == 0xE53935 and rich["title"] == "🚨 긴급 · 카나리 적중"
+    assert rich["author"]["name"] == "nesume · 보안 이벤트"
+    names = [f["name"] for f in rich["fields"]]
+    assert names[:2] == ["🧭 세션", "👤 사용자"] and names[-1] == "📌 처리 필요"
+    assert rich["fields"][-1]["inline"] is False
+    assert rich["footer"]["text"] == "canary_hit"
     assert set(webhook_payload(slack, e)) == {"text"} and "*[nesume]" in webhook_payload(slack, e)["text"]
     assert WebhookTransport(discord, timeout_s=1).name == "discord"
 
