@@ -68,13 +68,15 @@ class FakeGuard:
     def __init__(self, verdict: Verdict = ALLOW) -> None:
         self.verdict = verdict
         self.calls = 0
+        self.kwargs: list[dict] = []  # 호출마다 받은 추가 키워드 인자
 
-    async def run(self, query, ctx):
+    async def run(self, query, ctx, **kwargs):
         self.calls += 1
+        self.kwargs.append(kwargs)
         return PipelineResult(text="", verdict=self.verdict, usage=Usage(1, 0, "m"))
 
-    async def run_split(self, query, ctx, *, parts):
-        return await self.run(query, ctx)
+    async def run_split(self, query, ctx, *, parts, **kwargs):
+        return await self.run(query, ctx, parts=parts, **kwargs)
 
 
 def _ctx(session="sess-1", **kw) -> RequestContext:
@@ -232,6 +234,39 @@ def test_system_role_bypasses(factory):
         block(db, "sess-1", user_id="u-1", reason="operator", blocked_by="op", now=NOW)
     asyncio.run(guard.run("q", _ctx(role="system")))
     assert inner.calls == 1
+
+
+def test_run_passes_extra_kwargs_to_inner(factory):
+    """A #18: guard.run(query, ctx, prompt=build) — 래퍼가 인자를 삼키면 TypeError."""
+    inner = FakeGuard()
+    guard, _ = _wrap(inner, factory)
+
+    def build(text):
+        return f"<p>{text}</p>"
+
+    asyncio.run(guard.run("q", _ctx(), prompt=build))
+    assert inner.kwargs == [{"prompt": build}]
+
+
+def test_run_split_passes_parts_and_extra_kwargs(factory):
+    inner = FakeGuard()
+    guard, _ = _wrap(inner, factory)
+
+    def parts(t):
+        return [t]
+
+    asyncio.run(guard.run_split("q", _ctx(), parts=parts, extra=1))
+    assert inner.kwargs == [{"parts": parts, "extra": 1}]
+
+
+def test_block_still_applies_with_extra_kwargs(factory):
+    inner = FakeGuard()
+    guard, _ = _wrap(inner, factory)
+    with factory() as db:
+        block(db, "sess-1", user_id="u-1", reason="operator", blocked_by="op", now=NOW)
+    with pytest.raises(RateLimitedError):
+        asyncio.run(guard.run("q", _ctx(), prompt=str))
+    assert inner.calls == 0  # 차단된 세션은 인자가 있어도 안쪽을 부르지 않는다
 
 
 def test_wrapper_exposes_inner_attributes(factory):
