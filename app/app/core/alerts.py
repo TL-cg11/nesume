@@ -174,10 +174,10 @@ CATEGORIES: dict[str, str] = {
     "collector_failed": "배치", "alarm": "알람",
     "session_blocked": "운영자 조치", "session_released": "운영자 조치",
 }
-#: 유형별 "바로 할 일" 한 줄(docs/ops/alerts.md 3장 요약). 받는 사람이 문서를 열지 않아도 첫 행동을 알게
+#: 유형별 "처리 필요" 한 줄(docs/ops/alerts.md 3장 요약). 받는 사람이 문서를 열지 않아도 첫 행동을 알게
 ACTIONS: dict[str, str] = {
     "canary_hit": (
-        "즉시 운영 대시보드 → 최근 이벤트의 사용자 확인. 원인(검색 필터·매트릭스)을 찾기 전엔 세션을 풀지 않음"
+        "즉시 운영 대시보드 → 최근 이벤트의 사용자 확인. 원인(검색 필터·매트릭스) 확인 전엔 세션 해제 금지"
     ),
     "exfil_threshold": (
         "AI 사용 기록에서 이 세션의 질의 확인. 반복이면 /admin/sessions 에서 해제까지 차단 또는 역할 회수"
@@ -196,27 +196,26 @@ def discord_embed(event: AlertEvent) -> dict[str, object]:
     """Discord 임베드 한 장.
 
     author(분류) → title(심각도 라벨 · 유형) → description(요약, 인용 블록)
-    → fields(세션·사용자·요청, 바로 할 일)
-    → footer(환경 · 유형 코드) + timestamp. 색은 심각도.
+    → fields(세션·사용자·요청, 처리 필요)
+    → footer(유형 코드) + timestamp. 색은 심각도.
     """
-    env = event.env or "?"
     pairs = (("🧭 세션", event.session_id), ("👤 사용자", event.user_id), ("🔗 요청", event.request_id))
     fields: list[dict[str, object]] = [
         {"name": name, "value": f"`{value}`", "inline": True} for name, value in pairs if value
     ]
     action = ACTIONS.get(event.type)
     if action:
-        fields.append({"name": "📌 바로 할 일", "value": action, "inline": False})
+        fields.append({"name": "📌 처리 필요", "value": action, "inline": False})
     quoted = "\n".join(f"> {line}" for line in event.summary[:1800].splitlines() or [""])
     icon = DISCORD_ICONS.get(event.severity, "🔔")
     severity = SEVERITY_LABELS.get(event.severity, event.severity)
     return {
-        "author": {"name": f"nesume · {env} · {CATEGORIES.get(event.type, '알림')}"},
+        "author": {"name": f"nesume · {CATEGORIES.get(event.type, '알림')}"},
         "title": f"{icon} {severity} · {TYPE_LABELS.get(event.type, event.type)}",
         "description": quoted,
         "color": DISCORD_COLORS.get(event.severity, 0x6B7280),
         "fields": fields,
-        "footer": {"text": f"{event.type} · D16"},
+        "footer": {"text": event.type},
         "timestamp": event.ts,
     }
 

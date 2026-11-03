@@ -5,7 +5,7 @@
   2. CloudWatch 알람: JSON {AlarmName, NewStateValue, OldStateValue, NewStateReason, AlarmDescription, StateChangeTime, ...}
 웹훅 URL 은 Secrets Manager(앱 시크릿 JSON)의 WEBHOOK_SECRET_KEY 필드. 호출마다 읽지 않고 컨테이너 수명 동안 캐시.
 URL 호스트가 slack.com 이면 Slack 형식({text}), 아니면 Discord 임베드(앱의 discord_embed 와 같은 구성:
-author 분류 → title 심각도·유형 → 인용 요약 → 필드(세션·사용자·요청, 바로 할 일) → footer).
+author 분류 → title 심각도·유형 → 인용 요약 → 필드(세션·사용자·요청, 처리 필요) → footer).
 URL 이 비어 있으면 아무것도 보내지 않는다(설정 전 단계) — 실패로 처리하지 않아 SNS 재시도가 쌓이지 않는다.
 """
 import json
@@ -35,7 +35,7 @@ CATEGORIES = {
     "collector_failed": "배치", "alarm": "알람", "session_blocked": "운영자 조치", "session_released": "운영자 조치",
 }
 ACTIONS = {
-    "canary_hit": "즉시 운영 대시보드 → 최근 이벤트의 사용자 확인. 원인(검색 필터·매트릭스) 찾기 전엔 세션을 풀지 않는다",
+    "canary_hit": "즉시 운영 대시보드 → 최근 이벤트의 사용자 확인. 원인(검색 필터·매트릭스) 확인 전엔 세션 해제 금지",
     "exfil_threshold": "AI 사용 기록에서 이 세션의 질의 확인. 반복이면 /admin/sessions 에서 해제까지 차단 또는 역할 회수",
     "block_spike": "운영 대시보드 상위 사용자·유형 확인. 특정 세션이면 수동 차단",
     "collector_failed": "대시보드 '배치 결과' 패널 → 파드 로그의 FAILED 소스 확인(API 키 만료·임베더 다운이 흔한 원인)",
@@ -43,7 +43,7 @@ ACTIONS = {
     "session_blocked": "기록용. 차단 사유는 /admin/sessions 메모",
     "session_released": "기록용",
 }
-#: 알람 설명은 "조건. 먼저 볼 것" 꼴로 적혀 있다(observability/main.tf). 마지막 문장을 '바로 할 일'로 뽑는다
+#: 알람 설명은 "조건. 먼저 볼 것" 꼴로 적혀 있다(observability/main.tf). 마지막 문장을 '처리 필요'로 뽑는다
 _ALARM_HINT = re.compile(r"[.。]\s*(?=[^.。]+$)")
 
 
@@ -91,14 +91,14 @@ def alarm_embed(body):
         fields.append({"name": "📊 이유 (CloudWatch)", "value": reason[:900], "inline": False})
     hint = _ALARM_HINT.split(description.strip(), maxsplit=1)
     if state == "ALARM" and len(hint) == 2 and hint[1].strip():
-        fields.append({"name": "📌 바로 할 일", "value": hint[1].strip(), "inline": False})
+        fields.append({"name": "📌 처리 필요", "value": hint[1].strip(), "inline": False})
     return {
-        "author": {"name": f"nesume · {ENV} · CloudWatch"},
+        "author": {"name": "nesume · CloudWatch"},
         "title": f"{icon} {label} · {short}",
         "description": quote(description) if description else None,
         "fields": fields,
         "color": color,
-        "footer": {"text": f"{name} · D14"},
+        "footer": {"text": name},
         "timestamp": body.get("StateChangeTime"),
     }
 
@@ -106,21 +106,20 @@ def alarm_embed(body):
 def app_embed(body):
     sev = body.get("severity", "warn")
     typ = body.get("type", "")
-    env = body.get("env") or ENV or "?"
     fields = [
         {"name": name, "value": f"`{body[key]}`", "inline": True}
         for name, key in (("🧭 세션", "session_id"), ("👤 사용자", "user_id"), ("🔗 요청", "request_id"))
         if body.get(key)
     ]
     if ACTIONS.get(typ):
-        fields.append({"name": "📌 바로 할 일", "value": ACTIONS[typ], "inline": False})
+        fields.append({"name": "📌 처리 필요", "value": ACTIONS[typ], "inline": False})
     return {
-        "author": {"name": f"nesume · {env} · {CATEGORIES.get(typ, '알림')}"},
+        "author": {"name": f"nesume · {CATEGORIES.get(typ, '알림')}"},
         "title": f"{ICONS.get(sev, '🔔')} {SEVERITY_LABELS.get(sev, sev)} · {TYPE_LABELS.get(typ, typ)}",
         "description": quote(body.get("summary")),
         "fields": fields,
         "color": COLORS.get(sev, COLORS["unknown"]),
-        "footer": {"text": f"{typ} · D16"},
+        "footer": {"text": typ},
         "timestamp": body.get("ts"),
     }
 
