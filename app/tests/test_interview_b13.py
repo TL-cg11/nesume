@@ -288,6 +288,34 @@ def test_follow_up_limit_then_next_main_then_auto_finish_with_feedback():
     assert _say(c, r["id"], s["id"]).status_code == 409, "끝난 면접에는 답할 수 없다"
 
 
+def test_topic_rotates_resume_questions_then_experiences_then_generic():
+    resume = "[문항] 지원 동기\n본문\n\n[문항] 협업 경험\n본문"
+    exp = "- 결제 API 개선 / 프로젝트 / 백엔드\n- 사내 해커톤 / 대회"
+    got = [service.topic_for(resume, exp, n) for n in range(1, 9)]
+    assert got[:4] == ["자기소개서 문항 '지원 동기'", "자기소개서 문항 '협업 경험'",
+                       "경험 '결제 API 개선'", "경험 '사내 해커톤'"]
+    assert got[4:] == list(service.GENERIC_TOPICS)
+    assert service.topic_for("", "(연결한 경험 없음)", 1) == service.GENERIC_TOPICS[0]
+
+
+def test_new_main_question_gets_a_different_topic_from_server():
+    """꼬리 질문을 다 쓰면 '반드시 [다음]'과 다음 주제를 알려 준다. 첫 주제만 계속 파고들던 문제(11/3 dev)."""
+    g = Script(turns=["[꼬리]\n근거는?"])
+    c = _client(f"iv-{uuid.uuid4()}", g)
+    r = _resume(c)  # 문항0, 문항1
+    s = _start(c, r["id"], main_count=3).json()["session"]
+    assert "첫 번째 주 질문 주제: 자기소개서 문항 '문항0'" in g.prompts[0][0]
+    _say(c, r["id"], s["id"])
+    first = g.prompts[-1][0]
+    assert "다음 주 질문 주제: 자기소개서 문항 '문항1'" in first and "반드시 [다음]으로" not in first
+    _say(c, r["id"], s["id"])
+    _say(c, r["id"], s["id"])  # 꼬리 2개를 다 쓴 뒤의 호출
+    exhausted = g.prompts[-1][0]
+    assert "반드시 [다음]으로 새 주제를 물으세요" in exhausted
+    assert "[다음]이면 반드시 '자기소개서 문항 '문항1''에 대해 물으세요" in exhausted
+    assert "[꼬리]" not in exhausted.split("고를 수 있는 것:", 1)[1].split("\n", 1)[0]
+
+
 def test_next_on_last_main_closes_with_model_greeting():
     owner = f"iv-{uuid.uuid4()}"
     g = Script(turns=["[다음]\n두 번째 질문입니다.", "[다음]\n다음 질문입니다.",

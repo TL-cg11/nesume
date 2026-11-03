@@ -249,6 +249,8 @@ def test_operator_lists_newest_first(seeded):
     ({"decision": "block"}, 1),
     ({"is_test": "true"}, 1),
     ({"is_test": "false"}, 2),
+    ({"session_id": "test-r1"}, 1),
+    ({"session_id": "sess-1"}, 2),
 ])
 def test_filters(seeded, params, expected):
     tag, _, _ = seeded

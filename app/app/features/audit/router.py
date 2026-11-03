@@ -1,6 +1,7 @@
 """감사 로그 조회 API (B11, spec 10.3). 운영자 전용.
 
-필터: 기간·user_id·role·feature·query_type·decision·is_test (tasks B11) + request_id(B16 러너).
+필터: 기간·user_id·role·feature·query_type·decision·is_test (tasks B11) + request_id(B16 러너)
++ session_id(한 대화의 기록을 모아 보기, 11/3).
 D15 대시보드와 B16 평가 러너가 같은 API를 쓴다. 집계 API는 두지 않는다(문서대로).
 운영자 판정은 토큰 역할만 확인한다. MFA 세션 확인은 D7 공통 모듈로 교체 예정.
 doc_ids는 문서 삭제의 "참조"에 포함하지 않으므로 고아 ID일 수 있다(A·C 합의). 문서 테이블과 조인하지 않는다.
@@ -66,6 +67,8 @@ def list_audit_logs(
     is_test: Annotated[bool | None, Query()] = None,
     # 요청 1건의 로그(B16 평가 러너가 X-Request-ID로 찾는다, part2_guide 4.50)
     request_id: Annotated[uuid.UUID | None, Query()] = None,
+    # 한 대화(같은 세션)의 기록 모아 보기(11/3, part2_guide 4.77). 예: 면접 한 번 = interview-<면접 ID>
+    session_id: Annotated[str | None, Query(min_length=1, max_length=128)] = None,
     limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
     offset: Annotated[int, Query(ge=0)] = 0,
 ):
@@ -82,6 +85,7 @@ def list_audit_logs(
         (AuditLog.decision, decision),
         (AuditLog.is_test, is_test),
         (AuditLog.request_id, request_id),
+        (AuditLog.session_id, session_id),
     ):
         if value is not None:
             stmt = stmt.where(column == value)
