@@ -76,3 +76,34 @@ resource "aws_vpc_endpoint" "s3" {
   route_table_ids   = [aws_route_table.public.id, aws_route_table.private.id]
   tags              = { Name = "${var.name}-s3" }
 }
+
+# ALB 프런트엔드 SG. 80 은 CloudFront 오리진용 IP 대역(관리형 프리픽스 리스트)에서만 연다 — HTTPS 는 CloudFront 가 끝낸다
+# (envs/dev/edge). Ingress 주석 alb.ingress.kubernetes.io/security-groups 가 이름(Name 태그)으로 찾아 붙이고,
+# 노드 쪽 규칙은 컨트롤러의 공유 백엔드 SG(manage-backend-security-group-rules)가 맡는다. 남의 CloudFront 배포도
+# 이 대역에서 오므로 이것만으로는 부족하다 — WAF origin-verify 규칙(비밀 헤더)이 나머지를 막는다.
+data "aws_ec2_managed_prefix_list" "cloudfront" {
+  name = "com.amazonaws.global.cloudfront.origin-facing"
+}
+
+resource "aws_security_group" "alb" {
+  name        = "${var.name}-alb"
+  description = "ALB frontend - HTTP from CloudFront origin-facing only"
+  vpc_id      = aws_vpc.this.id
+  tags        = { Name = "${var.name}-alb" }
+}
+
+resource "aws_vpc_security_group_ingress_rule" "alb_cloudfront" {
+  security_group_id = aws_security_group.alb.id
+  description       = "HTTP from CloudFront"
+  prefix_list_id    = data.aws_ec2_managed_prefix_list.cloudfront.id
+  ip_protocol       = "tcp"
+  from_port         = 80
+  to_port           = 80
+}
+
+resource "aws_vpc_security_group_egress_rule" "alb_vpc" {
+  security_group_id = aws_security_group.alb.id
+  description       = "To targets (pod IPs) in the VPC"
+  cidr_ipv4         = var.cidr
+  ip_protocol       = "-1"
+}

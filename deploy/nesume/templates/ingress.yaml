@@ -9,7 +9,7 @@ metadata:
   annotations:
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
-    {{- /* 인증서가 있을 때만 443 + HTTP->HTTPS 리다이렉트. dev 는 도메인·인증서가 없어 HTTP 80 만 연다. */ -}}
+    {{- /* 인증서가 있을 때만 443 + HTTP->HTTPS 리다이렉트. dev 는 도메인·인증서가 없어 HTTP 80 만 열고 HTTPS 는 앞단 CloudFront(infra/envs/dev/edge)가 맡는다. */ -}}
     {{- if .Values.ingress.certificateArn }}
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
     alb.ingress.kubernetes.io/ssl-redirect: "443"
