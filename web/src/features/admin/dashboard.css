@@ -1,14 +1,17 @@
 /* 운영 대시보드(D14·D15, 운영자). 값은 theme.css 변수만 쓰고, 차트 색은 여기서 --ops-* 로 한 번 정한다. 접두사 ops- */
 .ops {
+  /* 차트·막대 색은 테마와 무관하게 고정한다(11-03 요청: 라이트 모드에서 탁해 보임 → 다크 모드 값으로 통일).
+     theme.css 다크 토큰과 같은 값: success #5fc98a, warning #e3b04b, danger #f28b82, accent #1684b5, violet #b79be6.
+     글자·배경은 그대로 테마 토큰을 쓰므로 대비 규칙(WCAG)은 글자 쪽에서 지켜진다. 막대 옆 수치는 항상 글자색으로 적는다. */
   /* 판정(상태) 색: 허용=성공, 가림=주의, 차단=위험. 의미가 고정된 색이라 다른 시리즈에 다시 쓰지 않는다 */
-  --ops-allow: var(--success);
-  --ops-mask: var(--warning);
-  --ops-block: var(--danger);
-  /* 범주 색(순서 고정): 청록 → 바이올렛 → 남회색 → 주의색 */
-  --ops-c1: var(--accent);
-  --ops-c2: var(--violet);
-  --ops-c3: var(--navy-3);
-  --ops-c4: var(--warning);
+  --ops-allow: #5fc98a;
+  --ops-mask: #e3b04b;
+  --ops-block: #f28b82;
+  /* 범주 색(순서 고정): 청록 → 바이올렛 → 청회색 → 주의색. 청회색은 두 테마 모두에서 보이도록 중간 밝기 */
+  --ops-c1: #1684b5;
+  --ops-c2: #b79be6;
+  --ops-c3: #7f93b3;
+  --ops-c4: #e3b04b;
 }
 
 .ops-toolbar { display: flex; justify-content: space-between; gap: var(--space-4); align-items: flex-start; flex-wrap: wrap; }
