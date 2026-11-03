@@ -119,7 +119,6 @@
 
 .c-custom-skill-form button { display:flex; align-items:center; justify-content:center; gap:7px; border:1px dashed var(--border); border-radius:9px; background:var(--bg); padding:12px; color:var(--muted); font-size:11px; font-weight:750; }
 
-.c-roadmap-edit-label { color:var(--muted); font-size:11px; }
 
 .c-roadmap-progress { display:flex; flex-direction:column; align-items:center; border-radius:10px; background:var(--accent-soft); padding:9px 13px; color:var(--accent); }
 

@@ -338,7 +338,7 @@ def test_domain_gap_label_tidied_and_deduped(monkeypatch):
     class _KW:
         def __init__(self, text):
             self.text, self.key, self.importance = text, text, "required"
-            self.category, self.fields = "other", ("preferred",)
+            self.category, self.fields, self.term = "other", ("preferred",), None
 
     class _M:
         def __init__(self, text):
@@ -458,3 +458,107 @@ def test_gaps_split_skill_domain_conditions_covered(monkeypatch):
     assert {c.kind for c in out.conditions} >= {"병역"}
     assert any("IFRS17" in g.label for g in out.domain_gaps)
     assert any(c.label == "Python" and c.status == "covered" for c in out.covered)
+
+
+# --------------------------------------------------------------------------
+# C10 근거 "원문 위치" (docs/C10.md, 11-03) — A11이 안 주는 원문 줄을 C가 찾는다
+# --------------------------------------------------------------------------
+
+def test_gap_evidence_line_is_the_posting_line(monkeypatch):
+    posting = {**_POSTING, "preferred": "우대사항\nKubernetes 운영 경험 우대\n야간 근무 가능자"}
+    out = _call(monkeypatch, UserEvidence(), posting=posting)
+    k8s = next(g for g in out.gaps if g.key == "kubernetes")
+    assert k8s.evidence_line in ("Kubernetes 운영 경험 우대", "AWS, Docker, Linux, Kubernetes")
+    # 그 요건이 나온 필드를 먼저 본다
+    first = k8s.evidence_fields[0]
+    assert k8s.evidence_line in (posting[first] or "").splitlines()
+
+
+def test_evidence_line_none_when_not_found():
+    from app.features.skill_gap.classify import source_line
+
+    assert source_line("Rust", {"job_content": "Python 개발"}) is None
+    assert source_line("", {"job_content": "Python"}) is None
+
+
+def test_evidence_line_ignores_case_spacing_and_zero_width():
+    from app.features.skill_gap.classify import source_line
+
+    fields = {"job_content": "담당 업무\n  PLC  프로그래밍​ 가능자 우대  \n기타"}
+    assert source_line("plc프로그래밍", fields) == "PLC 프로그래밍 가능자 우대"
+
+
+def test_evidence_line_prefers_its_own_field():
+    from app.features.skill_gap.classify import source_line
+
+    fields = {"title": "Python 개발자", "preferred": "Python 3년 이상 우대"}
+    assert source_line("Python", fields) == "Python 개발자"  # 순서대로면 제목
+    assert source_line("Python", fields, prefer=("preferred",)) == "Python 3년 이상 우대"
+
+
+def test_evidence_line_is_cut_to_120_chars():
+    from app.features.skill_gap.classify import SOURCE_LINE_MAX, source_line
+
+    line = "Kubernetes " + "가" * 200
+    got = source_line("Kubernetes", {"job_content": line})
+    assert len(got) == SOURCE_LINE_MAX and got.endswith("…")
+
+
+def test_domain_gap_line_found_with_untidied_fragment(monkeypatch):
+    """직무 역량은 화면용으로 다듬어(끝말 제거) 원문과 글자가 달라진다 → 원래 조각으로 찾는다."""
+    from app.features.skill_gap import router as r
+
+    class _KW:
+        def __init__(self, text):
+            self.text, self.key, self.importance = text, text, "required"
+            self.category, self.fields, self.term = "other", ("preferred",), None
+
+    class _M:
+        def __init__(self, text):
+            self.keyword, self.status, self.experiences = _KW(text), "missing", ()
+
+    class _Report:
+        matches = [_M("협력업체와 원활하게 소통할 수 있는 분")]
+
+        @staticmethod
+        def counts():
+            return {}
+
+    posting = {"preferred": "[우대]\n협력업체와 원활하게 소통할 수 있는 분"}
+    monkeypatch.setattr(r, "gather_evidence", lambda *a, **k: object())
+    monkeypatch.setattr(r, "get_posting_fields", lambda *a, **k: posting)
+    monkeypatch.setattr(r, "extract", lambda f: [])
+    monkeypatch.setattr(r, "compare", lambda kws, ev: _Report())
+    req = r.LearningGapsRequest(resume_id=uuid.uuid4(), posting_id=uuid.uuid4())
+    out = r.learning_gaps_for(req, USER, db=None)
+    (g,) = out.domain_gaps
+    assert g.label != "협력업체와 원활하게 소통할 수 있는 분"  # 다듬어졌다
+    assert g.evidence_line == "협력업체와 원활하게 소통할 수 있는 분"
+
+
+def test_evidence_line_never_comes_from_resume(monkeypatch):
+    """원문 줄은 공고에서만 — 자소서 글은 응답에 싣지 않는다."""
+    secret = "Kubernetes 클러스터를 우리 회사 비밀 프로젝트에서 운영"
+    out = _call(monkeypatch, UserEvidence(resume_text=secret))
+    assert all(secret not in (g.evidence_line or "") for g in [*out.gaps, *out.domain_gaps])
+
+
+def test_evidence_line_found_by_vocab_alias():
+    """원문은 "MS Excel", A11 키는 "엑셀" — 사전 별칭으로 찾는다(11-03 실측: 못 찾은 것 대부분이 이 경우)."""
+    from app.features.matching.vocab import lookup
+    from app.features.skill_gap.classify import source_line
+
+    fields = {"computer_skills": "MS Excel 중급 이상"}
+    term = lookup("엑셀")
+    assert term is not None
+    assert source_line("엑셀", fields, forms=term.all_forms) == "MS Excel 중급 이상"
+
+
+def test_short_alias_needs_word_boundary():
+    from app.features.matching.vocab import lookup
+    from app.features.skill_gap.classify import source_line
+
+    term = lookup("프로젝트관리")  # 별칭 "PM"
+    fields = {"job_content": "Web development 담당"}
+    assert source_line("프로젝트관리", fields, forms=term.all_forms) is None  # development 안의 pm 아님
+

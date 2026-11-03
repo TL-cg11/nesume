@@ -42,13 +42,25 @@ def _shared() -> Guardrail:
     from app.guardrail.bedrock import build_provider
     from app.guardrail.llm_client import LlmClient
     from app.guardrail.rails.llama_guard import build_output_rail
+    from app.retrieval.embedder import get_embedder
+    from app.retrieval.search import build_retriever
 
     settings = get_settings()
     # A2 제공자 주입 지점. LLM_PROVIDER=none(기본)이면 지금까지와 같은 NotConfiguredProvider 다
     llm = LlmClient(provider=build_provider(settings))
+    # C6 개인 검색 주입 지점 (C 요청 2026-11-02). EMBEDDING_URL 이 비면 get_embedder() 가
+    # None → build_retriever() 도 None → 검색 단계 생략(지금까지와 같은 동작).
+    #
+    # ★ 인자 없는 build_retriever() 를 쓰지 않는다. 기본값이 embedder=None 이라
+    #   설정과 무관하게 **항상** None 이 되어, 붙여도 개인 검색이 영원히 켜지지 않는다.
+    #   설정을 읽는 get_embedder() 를 거쳐야 EMBEDDING_URL 이 있을 때 실제로 켜진다.
     # D19 출력 레일. LLAMA_GUARD_ENABLED=false(기본)면 None → A5 출력 검사만(기존 동작)
     return Guardrail(
-        llm=llm, audit=DbAuditSink(), history=InMemoryTurnStore(), output_rail=build_output_rail(settings)
+        llm=llm,
+        retriever=build_retriever(get_embedder()),
+        audit=DbAuditSink(),
+        history=InMemoryTurnStore(),
+        output_rail=build_output_rail(settings),
     )
 
 

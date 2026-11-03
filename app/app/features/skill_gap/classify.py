@@ -17,9 +17,9 @@ A11 조각은 문장을 자른 것이라 끝이 덜 닫히거나 조사가 붙�
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 
-from app.features.matching.vocab import squash
+from app.features.matching.vocab import found_in, squash
 
 SKILL, DOMAIN, CONDITION, NOISE = "skill", "domain", "condition", "noise"
 
@@ -136,17 +136,56 @@ def is_noise(text: str) -> bool:
     return False
 
 
-def _source_line(text: str, fields: Mapping[str, str | None]) -> str | None:
+def _source_line(
+    text: str, fields: Mapping[str, str | None], prefer: Iterable[str] = ()
+) -> str | None:
     """조각이 나온 공고 원문 줄. A11은 줄을 쉼표·가운뎃점으로 잘라 결과를 가나다순으로 내므로,
-    "관련전공 : 자동화시스템과, 메카트로닉스과" 같은 줄의 문맥은 첫 조각에만 남는다 → 원문 줄로 되찾는다."""
+    "관련전공 : 자동화시스템과, 메카트로닉스과" 같은 줄의 문맥은 첫 조각에만 남는다 → 원문 줄로 되찾는다.
+    `prefer`(그 요건이 나온 필드)를 먼저 보고, 없으면 나머지 필드를 본다."""
     needle = squash(_ZERO_WIDTH.sub("", text))
     if not needle:
         return None
-    for value in fields.values():
-        for line in (value or "").splitlines():
+    first = [n for n in prefer if n in fields]
+    for name in [*first, *(n for n in fields if n not in first)]:
+        for line in (fields[name] or "").splitlines():
             if needle in squash(_ZERO_WIDTH.sub("", line)):
                 return line
     return None
+
+
+#: 근거 원문 줄을 화면에 보일 때 최대 길이(docs/C10.md "원문 위치")
+SOURCE_LINE_MAX = 120
+
+
+def _alias_line(forms: Iterable[str], fields: Mapping[str, str | None], prefer: Iterable[str]) -> str | None:
+    """사전 별칭으로 찾기(원문은 "MS Excel", 키는 "엑셀"). A11과 같은 낱말 경계 검사(`found_in`)라
+    "PM"이 "development" 안에서 잡히지 않는다."""
+    forms = [f for f in forms if f]
+    first = [n for n in prefer if n in fields]
+    for name in [*first, *(n for n in fields if n not in first)]:
+        for line in (fields[name] or "").splitlines():
+            if any(found_in(f, line) for f in forms):
+                return line
+    return None
+
+
+def source_line(
+    text: str,
+    fields: Mapping[str, str | None],
+    prefer: Iterable[str] = (),
+    forms: Iterable[str] = (),
+) -> str | None:
+    """C10 근거 "원문 위치" — 요건 조각이 나온 공고 줄을 화면용으로(공백 정리, 120자). 못 찾으면 None.
+    A11은 원문 위치를 주지 않아 C가 같은 글(추출기가 본 손질본)에서 다시 찾는다.
+    조각 글자 그대로 먼저, 없으면 사전 별칭(`forms`, A11 `Term.all_forms`)으로."""
+    prefer = tuple(prefer)
+    line = _source_line(text, fields, prefer) or _alias_line(forms, fields, prefer)
+    if line is None:
+        return None
+    line = " ".join(_ZERO_WIDTH.sub("", line).split())
+    if not line:
+        return None
+    return line if len(line) <= SOURCE_LINE_MAX else line[: SOURCE_LINE_MAX - 1] + "…"
 
 
 def kind_of(

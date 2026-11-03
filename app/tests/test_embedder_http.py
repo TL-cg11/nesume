@@ -106,3 +106,92 @@ def test_get_embedder_none_without_url(monkeypatch):
     assert em.get_embedder() is None
     monkeypatch.setattr(get_settings(), "embedding_url", "http://embedder:8080")
     assert isinstance(em.get_embedder(), em.HttpEmbedder)
+
+
+# ---- 요청 경로 정책 (11-03, docs/C6.md "요청 경로 임베더는 짧게") ----
+
+def _refused(*a, **k):
+    raise urllib.error.URLError(ConnectionRefusedError(61, "refused"))
+
+
+def test_query_policy_retries_refused_once_quickly(monkeypatch):
+    calls, sleeps = [], []
+
+    def flaky(req, timeout):
+        calls.append(timeout)
+        if len(calls) == 1:
+            _refused()
+        return _Resp(json.dumps([[0.0] * em.EMBED_DIM]).encode())
+
+    monkeypatch.setattr(em.urllib.request, "urlopen", flaky)
+    q = em.HttpEmbedder("http://embedder:8080", sleep=sleeps.append).with_query_policy()
+    assert len(q.embed(["a"])) == 1
+    assert calls == [em.QUERY_TIMEOUT_S, em.QUERY_TIMEOUT_S] and sleeps == [0.2]
+
+
+def test_query_policy_does_not_retry_timeout_or_5xx(monkeypatch):
+    sleeps = []
+    q = em.HttpEmbedder("http://embedder:8080", sleep=sleeps.append).with_query_policy()
+
+    def timeout(req, timeout):
+        raise TimeoutError()
+
+    monkeypatch.setattr(em.urllib.request, "urlopen", timeout)
+    with pytest.raises(em.EmbeddingError):
+        q.embed(["a"])
+
+    def http500(req, timeout):
+        raise urllib.error.HTTPError("http://embedder:8080/embed", 503, "busy", {}, None)
+
+    monkeypatch.setattr(em.urllib.request, "urlopen", http500)
+    with pytest.raises(em.EmbeddingError):
+        q.embed(["a"])
+    assert sleeps == []  # 기다리지 않는다 — 최악 = 시간 제한 한 번
+
+
+def test_query_policy_refused_twice_gives_up_after_one_retry(monkeypatch):
+    calls, sleeps = [], []
+
+    def always_refused(req, timeout):
+        calls.append(1)
+        _refused()
+
+    monkeypatch.setattr(em.urllib.request, "urlopen", always_refused)
+    with pytest.raises(em.EmbeddingError):
+        em.HttpEmbedder("http://embedder:8080", sleep=sleeps.append).with_query_policy().embed(["a"])
+    assert len(calls) == 2 and sleeps == [0.2]
+
+
+def test_batch_default_unchanged(monkeypatch):
+    """배치 기본(긴 재시도)은 그대로 — 카나리 시드 훅이 임베더 기동 중에도 버틴다."""
+    sleeps = []
+    monkeypatch.setattr(em.urllib.request, "urlopen", _refused)
+    with pytest.raises(em.EmbeddingError):
+        em.HttpEmbedder("http://embedder:8080", sleep=sleeps.append).embed(["a"])
+    assert tuple(sleeps) == em.RETRY_DELAYS
+
+
+def test_get_query_embedder(monkeypatch):
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "embedding_url", "")
+    assert em.get_query_embedder() is None
+    monkeypatch.setattr(get_settings(), "embedding_url", "http://embedder:8080")
+    q = em.get_query_embedder()
+    assert isinstance(q, em.HttpEmbedder) and q._timeout_s == em.QUERY_TIMEOUT_S
+
+
+def test_build_retriever_forces_query_policy():
+    """A가 배치용 get_embedder()를 넘겨도 검색은 짧은 정책으로 돈다."""
+    from app.retrieval.search import build_retriever
+
+    r = build_retriever(em.HttpEmbedder("http://embedder:8080"))
+    assert r is not None
+    assert r._embedder._timeout_s == em.QUERY_TIMEOUT_S and r._embedder._retry_delays == em.QUERY_RETRY_DELAYS
+
+
+def test_tests_do_not_read_local_embedding_url():
+    from app.config import get_settings
+
+    assert get_settings().embedding_url == ""  # conftest가 끈다
+
