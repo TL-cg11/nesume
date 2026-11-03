@@ -212,6 +212,26 @@ async def test_detokenize_fixes_particles() -> None:
     assert d.text == "김철수는 지원했습니다"
 
 
+@pytest.mark.anyio
+async def test_detokenize_fixes_only_particles_right_after_tokens() -> None:
+    """토큰과 무관한 낱말은 건드리지 않는다. 전에는 "있는"·"먹는" 이 "있은"·"먹은" 이 됐다(11/3)."""
+    store = InMemoryVaultStore()
+    t = await tokenize("이름: 김철수 / 이름: 김동현", owner_id="u1", store=store)
+    a, b = (h.token for h in t.hits)
+    llm_output = f"{a}은 진로 상담 경험이 있는 지원자, {b}는 먹는 일에 진심, {a}로 정했다, {b}와 함께"
+    d = await detokenize(llm_output, t.vault_id, "u1", store=store)
+    assert d.text == "김철수는 진로 상담 경험이 있는 지원자, 김동현은 먹는 일에 진심, 김철수로 정했다, 김동현과 함께"
+
+
+@pytest.mark.anyio
+async def test_detokenize_leaves_particle_after_non_hangul_value() -> None:
+    """숫자·영문으로 끝나는 값(전화번호·이메일) 뒤 조사는 모델이 쓴 대로 둔다."""
+    store = InMemoryVaultStore()
+    t = await tokenize("메일 hong@example.com", owner_id="u1", store=store)
+    d = await detokenize(f"{t.hits[0].token}로 연락하세요", t.vault_id, "u1", store=store)
+    assert d.text == "hong@example.com로 연락하세요"
+
+
 # ---------------------------------------------------------------- 만료 없는 치환표 (B7)
 
 @pytest.mark.anyio

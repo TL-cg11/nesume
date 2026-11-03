@@ -214,20 +214,29 @@ async def _load_vault(store: VaultStore, vault_id: str, owner_id: str) -> Vault:
     return vault
 
 
+#: 토큰 + 바로 뒤에 붙은 조사. 조사 보정은 **이 자리에만** 한다(11/3).
+_TOKEN_PARTICLE_RE = re.compile(
+    rf"(?P<token>{_TOKEN_RE.pattern})(?:(?P<particle>으로|로|은|는|이|가|을|를|과|와)(?![가-힣]))?"
+)
+
+
 def _restore(text: str, vault: Vault, fix_particles: bool) -> tuple[str, list[str]]:
     unresolved: list[str] = []
 
     def replace(match: re.Match[str]) -> str:
-        token = match.group(0)
+        token = match.group("token")
+        particle = match.group("particle") or ""
         value = vault.entries.get(token)
         if value is None:
             unresolved.append(token)
-            return token  # 그대로 둔다. 호출자가 unresolved 를 보고 판단한다
-        return value
+            return match.group(0)  # 그대로 둔다. 호출자가 unresolved 를 보고 판단한다
+        # ★ 복원한 값 바로 뒤의 조사만 고친다. 전에는 복원한 글 전체에 보정을 돌려
+        #   토큰과 무관한 "있는"·"먹는" 이 "있은"·"먹은" 으로 바뀌었다
+        if fix_particles and particle and value and _is_hangul(value[-1]):
+            particle = _fit_particle(value[-1], particle)
+        return value + particle
 
-    restored = _TOKEN_RE.sub(replace, text)
-    if fix_particles:
-        restored = fix_korean_particles(restored)
+    restored = _TOKEN_PARTICLE_RE.sub(replace, text)
 
     # 중복 제거하되 순서는 유지한다
     return restored, list(dict.fromkeys(unresolved))
@@ -334,26 +343,32 @@ def _is_rieul_final(ch: str) -> bool:
     return (code - 0xAC00) % 28 == 8  # 8 = ㄹ
 
 
-def fix_korean_particles(text: str) -> str:
-    """복원된 단어의 받침에 맞게 뒤따르는 조사를 고른다.
+def _is_hangul(ch: str) -> bool:
+    return 0xAC00 <= ord(ch) <= 0xD7A3
 
-    토큰이 아닌 원래 문장의 조사도 함께 검사하게 되지만, 올바른 조사는 그대로
-    유지되므로 결과가 달라지지 않는다.
+
+def _fit_particle(last_char: str, particle: str) -> str:
+    """앞 글자의 받침에 맞는 조사."""
+    has_final = _has_final_consonant(last_char)
+    if particle in {"으로", "로"}:
+        # ㄹ 받침은 '로', 그 외 받침은 '으로', 받침 없으면 '로'
+        return "로" if (not has_final or _is_rieul_final(last_char)) else "으로"
+    for with_final, without_final in _PARTICLE_PAIRS:
+        if particle in (with_final, without_final):
+            return with_final if has_final else without_final
+    return particle
+
+
+def fix_korean_particles(text: str) -> str:
+    """글 전체에서 낱말 끝 조사를 받침에 맞게 고른다.
+
+    ★ 복원(``detokenize``)은 이 함수를 쓰지 않는다 — 조사가 아닌 어미까지 조사로 읽어
+      "있는" 을 "있은" 으로 바꾼다(11/3). 복원은 토큰 바로 뒤 조사만 고친다(``_restore``).
+      이 함수는 받침 판정을 확인하는 용도로만 남긴다.
     """
 
     def pick(match: re.Match[str]) -> str:
         last_char, particle = match.group(1), match.group(2)
-        has_final = _has_final_consonant(last_char)
-
-        if particle in {"으로", "로"}:
-            # ㄹ 받침은 '로', 그 외 받침은 '으로', 받침 없으면 '로'
-            correct = "로" if (not has_final or _is_rieul_final(last_char)) else "으로"
-            return f"{last_char}{correct}"
-
-        for with_final, without_final in _PARTICLE_PAIRS:
-            if particle in (with_final, without_final):
-                return f"{last_char}{with_final if has_final else without_final}"
-
-        return match.group(0)
+        return f"{last_char}{_fit_particle(last_char, particle)}"
 
     return _PARTICLE_RE.sub(pick, text)
