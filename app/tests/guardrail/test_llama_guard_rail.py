@@ -17,6 +17,7 @@ from app.guardrail.rails.llama_guard import (
     build_output_rail,
     build_prompt,
     parse_assessment,
+    parse_ignore_categories,
 )
 from app.guardrail.schema import Verdict, allow
 from tests.guardrail.fakes import FakeProvider
@@ -187,3 +188,49 @@ class _Settings:
 
 def test_build_output_rail_disabled_by_default():
     assert build_output_rail(_Settings()) is None
+
+
+# ---------- 기록 전용·범주 제외 (#15-2, 11-03 대역 모델 오탐) ----------
+
+
+async def test_record_only_allows_but_keeps_flags_as_warn():
+    """LLAMA_GUARD_ENFORCE=false: unsafe 여도 통과. 표식은 남아 감사 로그·대시보드에서 셀 수 있다."""
+    rail = LlamaGuardRail(FakeProvider(reply="unsafe\nS2, S6"), enforce=False)
+    v = await rail.check("모의해킹에서 ../../etc/passwd 입력으로 LFI 를 확인했습니다.")
+    assert v.decision == "allow" and v.stage == "output_guard"
+    assert v.flags == [RULE_UNSAFE, f"{RULE_UNSAFE}.S2", f"{RULE_UNSAFE}.S6"]
+    assert {f.severity for f in v.findings} == {"warn"}
+
+
+async def test_ignored_categories_only_become_record_only():
+    rail = LlamaGuardRail(FakeProvider(reply="unsafe\nS6, S12"), ignore_categories="s6, S12")
+    v = await rail.check("본문")
+    assert v.decision == "allow" and v.flags == [RULE_UNSAFE, f"{RULE_UNSAFE}.S6", f"{RULE_UNSAFE}.S12"]
+
+
+async def test_unignored_category_still_blocks():
+    rail = LlamaGuardRail(FakeProvider(reply="unsafe\nS6, S9"), ignore_categories=("S6",))
+    v = await rail.check("본문")
+    assert v.decision == "block" and v.rule_id == RULE_UNSAFE
+    assert {f.severity for f in v.findings} == {"critical"}
+
+
+async def test_refusal_cannot_be_ignored_and_bare_unsafe_blocks():
+    rail = LlamaGuardRail(FakeProvider(reply="I can't help with that."), ignore_categories="REFUSAL")
+    assert (await rail.check("본문")).decision == "block"
+    # 범주를 하나도 안 적은 unsafe 는 제외 대상이 아니다
+    rail = LlamaGuardRail(FakeProvider(reply="unsafe"), ignore_categories="S1,S2,S3")
+    assert (await rail.check("본문")).decision == "block"
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("", ()),
+        ("S5, s6,S8", ("S5", "S6", "S8")),
+        ("S6,S6,S99,foo", ("S6",)),
+        (["S1", "REFUSAL"], ("S1", "REFUSAL")),
+    ],
+)
+def test_parse_ignore_categories(value, expected):
+    assert parse_ignore_categories(value) == expected
