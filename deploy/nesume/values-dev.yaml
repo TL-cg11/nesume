@@ -27,6 +27,9 @@ config:
   # D16: compute 출력 alerts_topic_arn(토픽 이름 고정). D19: dev 는 레일 켬(끄려면 "false" 한 줄)
   ALERTS_SNS_TOPIC_ARN: arn:aws:sns:ap-northeast-2:852138520969:nesume-dev-alerts
   LLAMA_GUARD_ENABLED: "true"
+  # 11-03: 대역 모델(Llama 3.1 8B)이 보안 직무 자소서 문장을 unsafe 로 찍어 5건 오차단 → 기록 전용(판정·표식·로그는 남고
+  # 응답은 통과). 정식 Llama Guard 로 바꾸거나 B16 러너로 과차단율을 확인한 뒤 "true" 로. docs/ops/output-rail.md 5장
+  LLAMA_GUARD_ENFORCE: "false"
   # C16: 질의·검색 조각 모두 관찰(shadow — 판정·지연 그대로, 로그만). 끄려면 "off"
   NEMO_QUERY_MODE: "shadow"
   NEMO_CHUNK_MODE: "shadow"

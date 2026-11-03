@@ -61,6 +61,13 @@ class Settings(BaseSettings):
     # 모델 오류·타임아웃 시 통과(fail-open)+표식. false 면 차단(fail-closed). docs/policy/block-policy.md
     # 2장 #15
     llama_guard_fail_open: bool = True
+    # 집행 여부. false 면 **기록 전용**: unsafe 판정도 통과시키고 표식(UNSAFE_CONTENT, warn)·로그만 남긴다.
+    # 대역 모델(Llama 3.1 8B)이 보안 직무 자소서 문장(../../etc/passwd, SQLi 페이로드)을 unsafe 로 찍는 오탐이
+    # 11-03 dev 에서 5건 나와 dev 는 기록 전용. block-policy 2장 #15-2
+    llama_guard_enforce: bool = True
+    # 막지 않을 범주(쉼표 구분, 예 "S5,S6,S8"). 이 범주만 찍힌 unsafe 는 기록 전용으로 처리.
+    # REFUSAL 은 제외 불가
+    llama_guard_ignore_categories: str = ""
 
     # C16 NeMo 의도 레일(guardrails_nemo/). off·shadow(로그만, 기다리지 않음)·enforce. 기본 꺼짐.
     # nemoguardrails 는 runtime 이미지에만 있다(requirements-nemo.txt). 질의·검색 조각을 따로 켠다.

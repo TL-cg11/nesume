@@ -18,6 +18,10 @@ Llama Guard 3 의 **프롬프트 템플릿과 범주 체계를 그대로 두고*
     safe          → allow
     오류·타임아웃  → fail-open(기본): allow + 표식 OUTRAIL_ERROR(info). LLAMA_GUARD_FAIL_OPEN=false 면 block.
     형식 불명     → 오류와 같이 처리(모델이 지시를 안 따른 것)
+    기록 전용     → LLAMA_GUARD_ENFORCE=false 이거나 찍힌 범주가 전부 LLAMA_GUARD_IGNORE_CATEGORIES 안이면
+                    unsafe 여도 allow + 표식 UNSAFE_CONTENT(warn) + 로그 enforced=false (#15-2).
+                    대역 모델이 보안 직무 자소서 문장(../../etc/passwd, SQLi·XSS 페이로드)을 unsafe 로 찍는
+                    오탐이 11-03 dev 에서 5건(S2·S5·S6·S11·S12 뒤섞임) 나와 dev 는 기록 전용으로 둔다.
 
 비용·지연 가드
     - LLAMA_GUARD_MAX_CHARS: 검사 대상 응답 앞부분만(기본 4000자). 유해 응답은 앞에서 드러나고, 긴 꼬리는
@@ -36,11 +40,12 @@ import logging
 import random
 import re
 import time
+from collections.abc import Iterable
 from typing import Any, Protocol
 
 from app.guardrail.errors import LlmError
 from app.guardrail.llm_client import LlmProvider, LlmRequest
-from app.guardrail.schema import Finding, Verdict, allow
+from app.guardrail.schema import Finding, Severity, Verdict, allow
 
 log = logging.getLogger("nesume.guardrail.rail")
 
@@ -133,6 +138,8 @@ class LlamaGuardRail:
         max_chars: int = 4000,
         sample_rate: float = 1.0,
         fail_open: bool = True,
+        enforce: bool = True,
+        ignore_categories: Iterable[str] = (),
         rng: random.Random | None = None,
     ) -> None:
         self._provider = provider
@@ -140,6 +147,9 @@ class LlamaGuardRail:
         self._max_chars = max(1, max_chars)
         self._sample_rate = min(1.0, max(0.0, sample_rate))
         self._fail_open = fail_open
+        self._enforce = enforce
+        # 거절문(REFUSAL)은 제외할 수 없다 — 분류기가 거절할 만큼 노골적인 본문이다
+        self._ignore = frozenset(parse_ignore_categories(ignore_categories)) - {REFUSAL_CATEGORY}
         self._rng = rng or random.Random()
 
     @property
@@ -169,13 +179,19 @@ class LlamaGuardRail:
         if parsed is None:
             return self._failed("unparseable", response.text[:40], started)
         unsafe, cats = parsed
-        self._log("unsafe" if unsafe else "safe", started, categories=",".join(cats) or "-",
-                  tokens=response.usage.total_tokens)
         if not unsafe:
+            self._log("safe", started, categories="-", tokens=response.usage.total_tokens)
             return allow(STAGE)
-        by_category = (Finding(f"{RULE_UNSAFE}.{c}", "critical") for c in cats)
-        findings = (Finding(RULE_UNSAFE, "critical"), *by_category)
-        return Verdict("block", STAGE, findings)
+
+        # 제외 범주만 찍혔으면 기록 전용. 범주가 하나도 안 적힌 unsafe 는 제외 대상이 아니다(막는다)
+        ignored = bool(cats) and all(c in self._ignore for c in cats)
+        enforced = self._enforce and not ignored
+        self._log("unsafe", started, categories=",".join(cats) or "-", tokens=response.usage.total_tokens,
+                  enforced=enforced, ignored=ignored)
+        severity: Severity = "critical" if enforced else "warn"
+        by_category = (Finding(f"{RULE_UNSAFE}.{c}", severity) for c in cats)
+        findings = (Finding(RULE_UNSAFE, severity), *by_category)
+        return Verdict("block" if enforced else "allow", STAGE, findings)
 
     def _failed(self, why: str, detail: str, started: float) -> Verdict:
         self._log("error", started, why=why, detail=detail, fail_open=self._fail_open)
@@ -222,7 +238,16 @@ def build_output_rail(settings: Any) -> OutputRail | None:
         max_chars=settings.llama_guard_max_chars,
         sample_rate=settings.llama_guard_sample_rate,
         fail_open=settings.llama_guard_fail_open,
+        enforce=getattr(settings, "llama_guard_enforce", True),
+        ignore_categories=getattr(settings, "llama_guard_ignore_categories", ""),
     )
+
+
+def parse_ignore_categories(value: Iterable[str] | str) -> tuple[str, ...]:
+    """`LLAMA_GUARD_IGNORE_CATEGORIES` ("S5, s6,S8") → ("S5", "S6", "S8"). 모르는 코드는 버린다."""
+    items = value.split(",") if isinstance(value, str) else value
+    cleaned = (item.strip().upper() for item in items)
+    return tuple(dict.fromkeys(c for c in cleaned if c in CATEGORIES or c == REFUSAL_CATEGORY))
 
 
 __all__ = [
@@ -235,4 +260,5 @@ __all__ = [
     "build_output_rail",
     "build_prompt",
     "parse_assessment",
+    "parse_ignore_categories",
 ]

@@ -69,6 +69,7 @@
 | 14 | **검색 결과**에 그 역할이 받을 수 없는 행이 섞임(C13. 예: user에게 남의 자소서, mentor에게 개인 행) | `AUTHZ_FILTER_BYPASS` | block | ✗ | 없음 | ✗ | `MSG_BLOCK_INTERNAL` |
 | 15 | 출력이 **유해 콘텐츠**(폭력·무기·자해·혐오·성적 내용 등 Llama Guard 3 범주 S1~S13. D19 레일, `LLAMA_GUARD_ENABLED`) | `UNSAFE_CONTENT`(+ `UNSAFE_CONTENT.S9` 같은 범주 표식) | block | (이미 호출됨) | 없음, **복원하지 않음** | ✗ | `MSG_BLOCK_UNSAFE` |
 | 15-1 | D19 레일 오류·타임아웃(3s)·판정 형식 불명 | `OUTRAIL_ERROR` | **allow + 표식**(fail-open 기본). `LLAMA_GUARD_FAIL_OPEN=false` 면 block | (이미 호출됨) | 정상 | ✗ | 없음 / 차단 시 `MSG_BLOCK_UNSAFE` |
+| 15-2 | D19 레일 **기록 전용**: `LLAMA_GUARD_ENFORCE=false` 이거나 찍힌 범주가 전부 `LLAMA_GUARD_IGNORE_CATEGORIES` 안(대역 모델이 보안 직무 자소서 문장을 unsafe 로 찍는 오탐, 11-03 dev 5건) | `UNSAFE_CONTENT`(+범주 표식, 심각도 warn) | **allow + 표식**. dev 는 기록 전용 | (이미 호출됨) | 정상(복원함) | ✗ | 없음 |
 
 원칙
 - **1·2·3·4·7·13·14는 LLM을 부르지 않는다.** 부르면 그 자체가 비용이고 유출 경로다.
@@ -251,5 +252,6 @@ C7의 요청/분(기본 60), 토큰/일(기본 100,000)은 **비용·남용 방�
 | 날짜 | 버전 | 내용 |
 |---|---|---|
 | 2026-10-27 | v0 | 최초 작성. 판정 3값 확정, 유형별 처리 표 12행, 하드 차단 3규칙, 권한 외 빈 결과 안내 결정, 문구 ID 9종(A10 초안 기준), 탈취 제한 5회/600초·카운트 대상 확정, 응답에서 규칙 ID 제거 결정 |
+| 2026-11-03 | v0.3 | 2장 #15-2 추가: D19 레일 기록 전용(`LLAMA_GUARD_ENFORCE=false`)·범주 제외(`LLAMA_GUARD_IGNORE_CATEGORIES`). 대역 모델이 보안 직무 자소서 문장을 unsafe 로 찍는 오탐(dev 5건)으로 dev 는 기록 전용. `docs/ops/output-rail.md` 5장 |
 | 2026-11-03 | v0.2 | D16·D19 반영. 2장 #15(`UNSAFE_CONTENT`, D19 레일)·#15-1(`OUTRAIL_ERROR` fail-open) 추가, 문구 `MSG_BLOCK_UNSAFE` 추가, 1.3 output_guard 단계에 레일 명시, 6장에 D16 차단 목록·자동 차단, 9장 #8 즉시 차단, 11장 요청 추가 |
 | 2026-11-03 | v0.1 | C12·C13 반영. 2장에 검색 단계 행 #13(`LEAK_CANARY`)·#14(`AUTHZ_FILTER_BYPASS`, 신규 ID) 추가: block·LLM 미호출·결과 전체 폐기·탈취 카운트 ✗·`MSG_BLOCK_INTERNAL`. 미끼 시드 helm 훅 Job 기록, A8/C13 합산 요청 추가 |
