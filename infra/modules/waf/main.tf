@@ -15,8 +15,14 @@ locals {
 
   # Block 모드에서도 Count 로만 두는 규칙(오탐이 확인된 것만 여기에 더한다)
   count_only_rules = {
-    AWSManagedRulesCommonRuleSet = ["SizeRestrictions_BODY"] # 8KB 넘는 자소서 본문 저장·다듬기
+    AWSManagedRulesCommonRuleSet = [
+      "SizeRestrictions_BODY", # 8KB 넘는 자소서 본문 저장·다듬기
+      "GenericLFI_BODY",       # 보안 직무 문장(`../../etc/passwd`) — 글 입력 경로 밖은 아래 lfi-body-outside-text 가 막는다
+    ]
   }
+
+  # GenericLFI_BODY 를 풀어 주는 글 입력 경로(관찰 7건이 난 곳, 결정11). 앱은 이 본문을 파일 경로로 쓰지 않는다.
+  lfi_text_paths = ["/api/writing/", "/api/resumes/", "/api/experiences"]
 }
 
 # ---------------------------------------------------------------- 평가 러너 비밀 헤더
@@ -139,6 +145,65 @@ resource "aws_wafv2_web_acl" "this" {
         metric_name                = "${var.name}-${rule.value.name}"
         sampled_requests_enabled   = true
       }
+    }
+  }
+
+  # 결정11: GenericLFI_BODY 는 Count 로 라벨만 남기고, 글 입력 경로 밖에서만 막는다.
+  # 라벨은 앞 규칙(CommonRuleSet, 30)이 붙이므로 그 뒤(40)에 둔다.
+  rule {
+    name     = "lfi-body-outside-text"
+    priority = 40
+
+    action {
+      dynamic "block" {
+        for_each = local.block ? [1] : []
+        content {}
+      }
+      dynamic "count" {
+        for_each = local.block ? [] : [1]
+        content {}
+      }
+    }
+
+    statement {
+      and_statement {
+        statement {
+          label_match_statement {
+            scope = "LABEL"
+            key   = "awswaf:managed:aws:core-rule-set:GenericLFI_Body"
+          }
+        }
+        statement {
+          not_statement {
+            statement {
+              or_statement {
+                dynamic "statement" {
+                  for_each = local.lfi_text_paths
+                  content {
+                    byte_match_statement {
+                      search_string         = statement.value
+                      positional_constraint = "STARTS_WITH"
+                      field_to_match {
+                        uri_path {}
+                      }
+                      text_transformation {
+                        priority = 0
+                        type     = "NONE"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "${var.name}-lfi-body-outside-text"
+      sampled_requests_enabled   = true
     }
   }
 
