@@ -15,7 +15,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.auth import AuthenticatedUser, CurrentUser, require_interactive
+from app.auth import CurrentUser, require_interactive
 from app.db import get_db
 from app.features.profile.router import get_store as get_profile_store
 from app.features.profile.store import ProfileStore
@@ -61,7 +61,10 @@ Db = Annotated[Session, Depends(get_db)]
 @router.post("/proofread", response_model=ProofreadResponse)
 async def proofread(
     payload: ProofreadRequest,
-    user: AuthenticatedUser,
+    # ★ 대화형 엔드포인트다. 시스템 계정은 호출할 수 없다 —
+    #   matrix.yaml 의 "system 대화형 불가" 를 D7 require_interactive 가 막는다.
+    #   C11 권한 우회 시나리오가 이것을 403(interactive_only)으로 확인한다.
+    user: CurrentUser = Depends(require_interactive),
     guard: Guardrail = Depends(get_guardrail),
     session_id: str | None = Depends(session_header),
 ) -> ProofreadResponse:
@@ -90,7 +93,7 @@ async def proofread(
 @router.post("/star", response_model=StarReviewResponse)
 async def review_star(
     payload: StarReviewRequest,
-    user: AuthenticatedUser,
+    user: CurrentUser = Depends(require_interactive),  # 모델 호출 — 시스템 계정 차단(#11과 같은 규칙)
     guard: Guardrail = Depends(get_guardrail),
     session_id: str | None = Depends(session_header),
 ) -> StarReviewResponse:
@@ -124,7 +127,10 @@ async def complete_star(
 
 
 @router.post("/apply", response_model=ApplyResponse)
-def apply(payload: ApplyRequest, user: AuthenticatedUser) -> ApplyResponse:
+def apply(
+    payload: ApplyRequest,
+    user: CurrentUser = Depends(require_interactive),
+) -> ApplyResponse:
     """수락한 제안만 반영해 돌려준다. 저장하지 않는다.
 
     모델을 부르지 않으므로 동기 함수다.

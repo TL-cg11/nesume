@@ -8,7 +8,7 @@ B16 평가 러너 요청(2026-10-26)으로 세 가지를 연결한다.
 
     감사 로그   Guardrail(audit=DbAuditSink()) — 지금까지 기본값이라 한 줄도 안 남았다
     요청 ID     감사 로그 request_id 를 HTTP X-Request-ID 와 같게
-    평가 트래픽  세션 접두어로 is_test 를 정해 지표에서 분리
+    평가 트래픽  토큰(D7 test 그룹)으로 is_test 를 정해 지표에서 분리
 """
 
 from __future__ import annotations
@@ -87,26 +87,40 @@ def build_context(
     user_id: str,
     role: str,
     session_id: str | None,
+    is_test: bool,
 ) -> RequestContext:
     """요청 하나를 식별하는 값을 모은다.
 
-    ★ ``is_test`` 는 **세션 접두어에서 끌어낸다.** ``audit_logs`` 의 CHECK 제약이
-      ``(session_id LIKE 'test-%') = is_test`` 라 둘이 항상 같아야 하고, 한쪽만
-      받으면 어긋날 수 있다. 하나에서 둘을 만들면 어긋날 수가 없다.
+    ★ ``is_test`` 는 **토큰에서 온다** (D7 `cognito:groups` 의 test 그룹).
+      2026-10-26 에는 D7 이 없어 세션 접두어로 판단했는데, 그러면 **일반 사용자가
+      헤더를 흉내 내 자기 트래픽을 지표에서 뺄 수 있었다.** 이제 사용자가 못 고치는
+      값(토큰)이 정한다.
 
-      원래 의도는 D7 토큰의 test 그룹으로 정하는 것이다(B 요청). 그 전까지는
-      접두어로 정하므로 **일반 사용자가 헤더를 흉내 내면 자기 트래픽을 지표에서
-      뺄 수 있다.** 평가 지표에만 영향이 있고 권한과는 무관하지만, D7 이 붙으면
-      토큰 쪽으로 옮겨야 한다.
+    ★ 세션 접두어는 그 값에 **맞춰 준다.** ``audit_logs`` 의 CHECK 제약이
+      ``(session_id LIKE 'test-%') = is_test`` 로 양방향이라 둘이 어긋나면 INSERT 가
+      거부되고, 그 거부는 요청이 끝난 뒤 `finally` 에서 터진다. 받은 헤더를 그대로
+      믿지 않고 여기서 맞추면 어긋날 수가 없다.
+
+      평가 계정이 아닌 사람이 ``test-`` 로 시작하는 세션을 보내면 **접두어를 떼고**,
+      평가 계정인데 접두어가 없으면 **붙인다.**
     """
-    session = session_id or ""
+    request_id = _as_uuid(get_request_id())
+    base = (session_id or "").strip().removeprefix(TEST_SESSION_PREFIX)
+
+    if is_test:
+        # 평가 트래픽인데 세션이 비어 있으면 요청 ID 로 하나 만든다 —
+        # 접두어만 있는 세션("test-")은 서로 구분이 안 된다
+        session = TEST_SESSION_PREFIX + (base or request_id.hex[:12])
+    else:
+        session = base
+
     return RequestContext(
         user_id=user_id,
         role=role,
         feature=feature,
         session_id=session,
-        is_test=session.startswith(TEST_SESSION_PREFIX),
-        request_id=_as_uuid(get_request_id()),
+        is_test=is_test,
+        request_id=request_id,
     )
 
 
@@ -126,6 +140,9 @@ def guardrail_kwargs(user: object, session_id: str | None) -> dict[str, object]:
         user_id=getattr(user, "sub", ""),
         role=str(getattr(user, "role", "")),
         session_id=session,
+        # ★ 헤더가 아니라 토큰이 정한다 (D7). 사용자가 고칠 수 없는 값이어야
+        #   평가 지표를 사용자가 흔들 수 없다
+        is_test=bool(getattr(user, "is_test", False)),
     )
     return {
         "user_id": ctx.user_id,
