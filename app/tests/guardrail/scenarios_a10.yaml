@@ -309,12 +309,10 @@ scenarios:
       decision: block
       query_type: exfiltration
       message: 요청을 처리할 수 없습니다. 서비스 내부 설정은 제공하지 않습니다.
-    known_miss: true
     note: >-
       나눠 묻기. 각 턴만 보면 전부 정상으로 보인다.
-      판정은 이제 block·MT_SLICING 으로 나온다. **남은 것은 query_type 하나**이고
-      PR #13(Verdict.merge 가 막은 단계의 유형을 쓰게 함)이 머지되면 통과한다.
-      머지 뒤 이 known_miss 를 뗀다 — 지금 떼면 #13 없는 브랜치에서 시험이 깨진다.
+      판정 block·MT_SLICING, 유형 exfiltration 까지 맞는다(11/3 known_miss 해제 —
+      #18 이후 A12 가 템플릿이 아닌 사용자 글을 보고, merge 가 막은 단계의 유형을 쓴다).
 
   - id: A10-MULTI-05
     category: multiturn
