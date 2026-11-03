@@ -1,0 +1,2 @@
+# C16 NeMo Guardrails — 앱 이미지에 넣지 않는다(약 276MB). 평가·시험에서만 설치한다(docs/C16.md).
+nemoguardrails==0.24.1

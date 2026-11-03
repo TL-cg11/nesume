@@ -71,6 +71,9 @@ config:
   LLAMA_GUARD_FAIL_OPEN: "true"                              # 모델 오류 시 통과+표식(block-policy 2장 #15)
   LLAMA_GUARD_ENFORCE: "true"                                # "false" 면 기록 전용: unsafe 도 통과 + UNSAFE_CONTENT(warn) 표식(#15-2)
   LLAMA_GUARD_IGNORE_CATEGORIES: ""                          # 막지 않을 범주(쉼표, 예 "S5,S6,S8"). 그 범주만 찍히면 기록 전용
+  # C16 NeMo 의도 레일(docs/C16.md). off·shadow(로그만)·enforce. 질의·검색 조각 따로. 기본 꺼짐
+  NEMO_QUERY_MODE: "off"
+  NEMO_CHUNK_MODE: "off"
   # D16 알림. 비우면 로그만. 값은 compute 출력 alerts_topic_arn. Discord/Slack 웹훅은 Secrets Manager JSON 의 ALERTS_WEBHOOK_URL
   ALERTS_SNS_TOPIC_ARN: ""
   DB_HOST: ""

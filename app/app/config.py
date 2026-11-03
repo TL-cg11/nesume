@@ -69,6 +69,14 @@ class Settings(BaseSettings):
     # REFUSAL 은 제외 불가
     llama_guard_ignore_categories: str = ""
 
+    # C16 NeMo 의도 레일(guardrails_nemo/). off·shadow(로그만, 기다리지 않음)·enforce. 기본 꺼짐.
+    # nemoguardrails 는 runtime 이미지에만 있다(requirements-nemo.txt). 질의·검색 조각을 따로 켠다.
+    # docs/C16.md
+    nemo_query_mode: Literal["off", "shadow", "enforce"] = "off"
+    nemo_chunk_mode: Literal["off", "shadow", "enforce"] = "off"
+    nemo_threshold: float = 0.6
+    nemo_timeout_s: float = 3.0
+
     # D16 알림. 비우면 로그만 남긴다. SNS 토픽(IRSA sns:Publish) 우선, 없으면 웹훅 직접 POST(로컬·kind).
     # Discord(기본)·Slack 웹훅 URL 은 Secrets Manager nesume/<env>/app 의 ALERTS_WEBHOOK_URL 키
     # (ExternalSecret 로 주입).

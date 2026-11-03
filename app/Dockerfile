@@ -34,6 +34,10 @@ CMD ["pytest"]
 
 # --- runtime: 기본 빌드 대상(마지막 스테이지) ---
 FROM base AS runtime
+# C16 NeMo 의도 레일(guardrails_nemo/, docs/C16.md). runtime 에만 — test 스테이지 시험은 가짜 판정기로 돈다.
+# 켜는 것은 NEMO_QUERY_MODE·NEMO_CHUNK_MODE(기본 off). 모델은 받지 않는다(임베딩은 우리 bge-m3 서비스).
+COPY requirements-nemo.txt .
+RUN pip install --no-cache-dir -r requirements-nemo.txt
 # CI(D11)가 --build-arg APP_VERSION=<git sha>로 넣는다. /health의 version으로 배포 확인. test 스테이지에는 넣지 않는다.
 ARG APP_VERSION=dev
 ENV APP_VERSION=${APP_VERSION}
