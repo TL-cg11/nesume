@@ -162,7 +162,14 @@ def test_webhook_payload_by_host():
     slack = "https://hooks.slack.com/services/x"
     assert webhook_kind(discord) == "discord" and webhook_kind(slack) == "slack"
     d = webhook_payload(discord, e)
-    assert set(d) == {"content"} and "**[nesume]" in d["content"]
+    assert set(d) == {"username", "embeds"} and d["username"] == "네슘 파수꾼"
+    embed = d["embeds"][0]
+    assert embed["title"].endswith("알람") and embed["color"] == 0xF59E0B and embed["description"] == "x"
+    rich = webhook_payload(discord, AlertEvent(type="canary_hit", severity="critical", summary="s",
+                                               session_id="sess", user_id="u", env="dev"))["embeds"][0]
+    assert rich["color"] == 0xE53935 and rich["title"].startswith("🚨")
+    assert [f["name"] for f in rich["fields"]][:2] == ["세션", "사용자"]
+    assert rich["footer"]["text"] == "nesume-dev · critical · canary_hit"
     assert set(webhook_payload(slack, e)) == {"text"} and "*[nesume]" in webhook_payload(slack, e)["text"]
     assert WebhookTransport(discord, timeout_s=1).name == "discord"
 

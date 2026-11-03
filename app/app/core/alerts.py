@@ -152,10 +152,40 @@ def webhook_kind(url: str) -> str:
     return "slack" if host.endswith("slack.com") else "discord"
 
 
-def webhook_payload(url: str, event: AlertEvent) -> dict[str, str]:
+#: Discord 임베드 색(세로 막대)·제목 아이콘·유형 라벨. 채널에서 심각도가 한눈에 보이게
+DISCORD_COLORS: dict[str, int] = {"critical": 0xE53935, "warn": 0xF59E0B, "info": 0x3B82F6}
+DISCORD_ICONS: dict[str, str] = {"critical": "🚨", "warn": "⚠️", "info": "ℹ️"}
+TYPE_LABELS: dict[str, str] = {
+    "canary_hit": "카나리 적중",
+    "exfil_threshold": "탈취 세션 제한",
+    "block_spike": "차단 급증",
+    "collector_failed": "공고 수집 실패",
+    "alarm": "알람",
+    "session_blocked": "세션 수동 차단",
+    "session_released": "세션 차단 해제",
+}
+DISCORD_USERNAME = "네슘 파수꾼"
+
+
+def discord_embed(event: AlertEvent) -> dict[str, object]:
+    """Discord 임베드 한 장. 제목(아이콘+유형)·본문(summary)·필드(세션·사용자·요청)·색(심각도)·시각."""
+    env_suffix = ("-" + event.env) if event.env else ""
+    pairs = (("세션", event.session_id), ("사용자", event.user_id), ("요청", event.request_id))
+    fields = [{"name": name, "value": f"`{value}`", "inline": True} for name, value in pairs if value]
+    return {
+        "title": f"{DISCORD_ICONS.get(event.severity, '🔔')} {TYPE_LABELS.get(event.type, event.type)}",
+        "description": event.summary[:1900],
+        "color": DISCORD_COLORS.get(event.severity, 0x6B7280),
+        "fields": fields,
+        "footer": {"text": f"nesume{env_suffix} · {event.severity} · {event.type}"},
+        "timestamp": event.ts,
+    }
+
+
+def webhook_payload(url: str, event: AlertEvent) -> dict[str, object]:
     if webhook_kind(url) == "slack":
         return {"text": event.chat_text(bold="*")}
-    return {"content": event.chat_text(bold="**")}
+    return {"username": DISCORD_USERNAME, "embeds": [discord_embed(event)]}
 
 
 class WebhookTransport(Transport):
