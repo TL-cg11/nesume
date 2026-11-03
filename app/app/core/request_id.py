@@ -3,6 +3,7 @@
 - 클라이언트가 보낸 X-Request-ID가 형식에 맞으면 그대로 쓰고, 아니면 새로 만든다.
 - 응답 헤더 X-Request-ID로 돌려준다. 에러 응답 본문에도 같은 값이 들어간다(errors.py).
 - 요청 1건당 접근 로그 1줄(method, path, status, duration_ms, user_id, role, is_test)을 남긴다.
+- 같은 값을 core/metrics.py 트래픽 집계(D14 대시보드)에도 넣는다.
   질의 본문·토큰·이메일은 기록하지 않는다.
   user_id/role/is_test 는 D7 get_current_user 가 scope["state"]에 넣는다.
 """
@@ -15,6 +16,7 @@ from starlette.datastructures import Headers, MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.core.context import request_id_var
+from app.core.metrics import traffic
 
 REQUEST_ID_HEADER = "X-Request-ID"
 _VALID_REQUEST_ID = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
@@ -57,6 +59,15 @@ class RequestIdMiddleware:
             duration_ms = round((time.perf_counter() - started) * 1000, 1)
             client = scope.get("client")
             state = scope.get("state") or {}
+            # D14 운영자 대시보드용 프로세스 내 집계(평가·프로브 트래픽은 본 지표에서 제외)
+            traffic.record(
+                scope.get("method"),
+                scope.get("path"),
+                status_holder["status"],
+                duration_ms,
+                role=state.get("role"),
+                is_test=state.get("is_test"),
+            )
             log.info(
                 "http_request",
                 extra={

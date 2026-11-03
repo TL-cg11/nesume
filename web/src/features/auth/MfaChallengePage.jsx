@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { confirmSignIn } from 'aws-amplify/auth'
 import AuthCard, { authErrorMessage } from './AuthCard.jsx'
+import { safeNext } from './safeNext.js'
 import { useAuth } from './useAuth.jsx'
 
 export default function MfaChallengePage() {
@@ -12,7 +13,7 @@ export default function MfaChallengePage() {
   const [code, setCode] = useState('')
   const [error, setError] = useState(null)
   const [isSubmitting, setSubmitting] = useState(false)
-  const next = new URLSearchParams(location.search).get('next') || '/resumes'
+  const next = safeNext(location.search)
 
   const submit = async (e) => {
     e.preventDefault()
@@ -22,7 +23,7 @@ export default function MfaChallengePage() {
       const result = await confirmSignIn({ challengeResponse: code.trim() })
       if (result.isSignedIn) {
         await completeSignIn(location.state?.email)
-        navigate(next.startsWith('/') ? next : '/resumes', { replace: true })
+        navigate(next, { replace: true })
       } else {
         setError(`추가 단계가 필요합니다: ${result.nextStep?.signInStep}`)
       }

@@ -1,0 +1,99 @@
+﻿# origin/main 최신본을 dev 에 배포: ECR 에 main sha 이미지가 있으면 바로 helm, 없으면 CI(ci.yml build-deploy)가 올릴 때까지 기다린다.
+# 실행: $env:AWS_PROFILE = "nesume"; .\infra\scripts\deploy.ps1               (CI 완료 대기 포함 보통 5분 이내)
+#       .\infra\scripts\deploy.ps1 -LocalBuild    CI 가 고장났을 때만: 이 PC 에서 빌드·푸시(집 회선이라 느리고 끊길 수 있다, 10-29 실측)
+#       .\infra\scripts\deploy.ps1 -SkipBuild     ECR 에 main sha 가 없으면 기다리지 않고 바로 실패
+# 로컬 체크아웃의 브랜치·미커밋 상태와 무관하다. 차트(와 -LocalBuild 의 빌드 컨텍스트)는 origin/main 임시 worktree(_main-src.ps1)에서 읽는다.
+# 클러스터가 꺼져 있으면 이미지 확인까지만 하고 끝난다. 다음 up.ps1 이 main sha 태그를 집어 올린다.
+param([switch]$SkipBuild, [switch]$LocalBuild, [int]$WaitMinutes = 20)
+$ErrorActionPreference = "Stop"
+function Check($step) { if ($LASTEXITCODE) { throw "$step failed (exit $LASTEXITCODE)" } }
+if (-not $env:AWS_PROFILE) { throw "AWS_PROFILE is not set. Run: `$env:AWS_PROFILE = 'nesume'" }
+$Account = "852138520969"; $Region = "ap-northeast-2"; $Cluster = "nesume-dev"
+$Ecr = "$Account.dkr.ecr.$Region.amazonaws.com"
+if ((aws sts get-caller-identity --query Account --output text) -ne $Account) { throw "wrong AWS account (expected $Account)" }
+
+. "$PSScriptRoot\_main-src.ps1"
+$Sha = Get-MainSha
+$Src = Get-MainSource
+Write-Host "deploying origin/main $Sha ($(git -C $Src log -1 --format=%s)) from $Src"
+try {
+$Compute = Join-Path $Src "infra\envs\dev\compute"
+
+# ECR 태그는 IMMUTABLE. 같은 sha 를 다시 push 하면 거부되므로(재실행·부분 실패 뒤) 이미 있는 저장소는 건너뛴다.
+function Has-EcrTag($repo, $tag) {
+  $tags = (cmd /c "aws ecr describe-images --repository-name nesume/$repo --query ""imageDetails[].imageTags[]"" --output text 2>nul" | Out-String)
+  return ($tags -split '\s+') -contains $tag
+}
+$Builds = @(
+  @{ repo = "app"; args = @("-f", (Join-Path $Src "app\Dockerfile"), "--target", "runtime", "--build-arg", "APP_VERSION=$Sha", (Join-Path $Src "app")) },
+  @{ repo = "web"; args = @("-f", (Join-Path $Src "web\Dockerfile"), (Join-Path $Src "web")) }
+)
+$needBuild = @($Builds | Where-Object { -not (Has-EcrTag $_.repo $Sha) })
+if ($SkipBuild -and $needBuild) { throw "ECR nesume/$($needBuild[0].repo) has no tag $Sha. Wait for CI on main (gh run list --workflow ci --branch main), then re-run." }
+
+# 기본 경로: CI 가 main 푸시마다 arm64 이미지를 올리므로 기다린다. 로컬 빌드는 -LocalBuild 로만(CI 장애 시).
+if ($needBuild -and -not $LocalBuild) {
+  Write-Host "ECR has no nesume/$($needBuild[0].repo):$Sha yet. Waiting for CI (ci.yml build-deploy on main, up to $WaitMinutes min)..."
+  $deadline = (Get-Date).AddMinutes($WaitMinutes)
+  while ($true) {
+    $run = (cmd /c "gh run list --repo TL-cg11/nesume --workflow ci --branch main --commit $(git -C $Src rev-parse HEAD) --limit 1 --json status,conclusion,url 2>nul" | Out-String).Trim()
+    $r = if ($run -and $run -ne "[]") { ($run | ConvertFrom-Json)[0] } else { $null }
+    if ($r -and $r.status -eq "completed") {
+      if ($r.conclusion -ne "success") { throw "CI for $Sha finished with '$($r.conclusion)': $($r.url). Fix CI, or run with -LocalBuild if the build itself is fine." }
+      $needBuild = @($Builds | Where-Object { -not (Has-EcrTag $_.repo $Sha) })
+      if (-not $needBuild) { break }
+      throw "CI for $Sha succeeded but ECR still lacks nesume/$($needBuild[0].repo):$Sha. Check the build-deploy job: $($r.url)"
+    }
+    if ((Get-Date) -gt $deadline) { throw "CI for $Sha has not finished in $WaitMinutes min (status: $(if ($r) { $r.status } else { 'no run found' })). Re-run later, or use -LocalBuild." }
+    Write-Host ("  {0:HH:mm:ss} CI {1} ..." -f (Get-Date), $(if ($r) { $r.status } else { "run not started yet" }))
+    Start-Sleep 20
+  }
+  Write-Host "CI pushed nesume/app:$Sha and nesume/web:$Sha."
+}
+if ($needBuild) {
+  # PS 5.1 + $ErrorActionPreference=Stop 에서는 네이티브 명령의 stderr 리다이렉트가 예외로 바뀐다. cmd 로 감싼다.
+  cmd /c "docker info >nul 2>&1"
+  if ($LASTEXITCODE) { throw "docker daemon is not reachable. Start Docker Desktop, wait until the whale icon says Running (30s~1m), then re-run." }
+  # PS 5.1: --password-stdin 파이프는 토큰을 깨뜨려 400. 이 PC 는 ARM64 라 그대로 arm64 이미지(x86 이면 --platform linux/arm64).
+  docker login --username AWS --password (aws ecr get-login-password --region $Region) $Ecr; Check "docker login"
+  foreach ($b in $needBuild) {
+    $image = "$Ecr/nesume/$($b.repo):$Sha"
+    docker build @($b.args) -t $image; Check "docker build $($b.repo)"
+    docker push $image; Check "docker push $($b.repo)"
+  }
+} else {
+  if (-not $LocalBuild) { Write-Host "ECR already has nesume/app:$Sha and nesume/web:$Sha." }
+}
+
+$clusters = aws eks list-clusters --query clusters --output text
+if ($clusters -notmatch $Cluster) {
+  Write-Host "`nPUSHED $Sha. Cluster $Cluster is down; the next up.ps1 will deploy this tag."
+  return
+}
+
+aws eks update-kubeconfig --name $Cluster --region $Region | Out-Null; Check "update-kubeconfig"
+terraform -chdir="$Compute" init -input=false | Out-Null; Check "terraform init"
+$DbHost = terraform -chdir="$Compute" output -raw rds_address; Check "terraform output rds_address"
+# D20 embedder 이미지는 embedder/ 가 바뀔 때만 올라오므로 app 과 태그가 다르다. ECR 최신 태그를 쓰고, 저장소가 비면 끈다.
+# cmd 로 감싼다: PS 5.1 + Stop 에서 네이티브 stderr(저장소 없음 등)가 예외로 바뀐다(deploy.ps1 docker 체크와 같은 이유).
+$EmbTag = (cmd /c "aws ecr describe-images --repository-name nesume/embedder --query ""sort_by(imageDetails,&imagePushedAt)[-1].imageTags[0]"" --output text 2>nul" | Out-String).Trim()
+if ($EmbTag -and $EmbTag -ne "None") { $EmbSet = @("--set-string", "image.embedder.tag=$EmbTag") }
+else { Write-Warning "ECR nesume/embedder is empty. Deploying with embedder.enabled=false (no embeddings until an image is pushed; see embedder/README.md)"; $EmbSet = @("--set", "embedder.enabled=false") }
+# --set-string: sha 가 숫자로만 되면(예: 6462796) --set 은 int 로 읽어 이미지 이름이 %!s(int64=...) 로 깨진다(10-27 실측).
+helm upgrade --install nesume (Join-Path $Src "deploy\nesume") -n dev -f (Join-Path $Src "deploy\nesume\values-dev.yaml") `
+  --set-string config.DB_HOST=$DbHost --set-string image.app.tag=$Sha --set-string image.web.tag=$Sha @EmbSet --wait --timeout 10m
+Check "helm upgrade --install"
+
+$Alb = kubectl -n dev get ingress nesume -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+$ok = $false
+for ($i = 0; $i -lt 18 -and -not $ok; $i++) {
+  try {
+    $body = (Invoke-WebRequest -UseBasicParsing "http://$Alb/api/health" -TimeoutSec 5).Content
+    $ok = $body -match $Sha
+  } catch {}
+  if (-not $ok) { Start-Sleep 10 }
+}
+if (-not $ok) { throw "/api/health at http://$Alb does not report version $Sha yet. Check: kubectl -n dev get pods; helm -n dev history nesume" }
+kubectl -n dev get pods
+Write-Host "`nDEPLOYED $Sha -> http://$Alb  ($body)"
+} finally { Remove-MainSource $Src }

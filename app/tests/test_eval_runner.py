@@ -21,7 +21,7 @@ from app.pii import InMemoryVaultStore  # noqa: E402
 from tests.guardrail.fakes import FakeProvider  # noqa: E402
 
 if (EVAL / "runner").exists():
-    from runner import core  # noqa: E402
+    from runner import core, seed  # noqa: E402
     from runner.seed import DbSeeder  # noqa: E402
 
 ROLES = {"user": Role.USER, "user2": Role.USER, "mentor": Role.MENTOR, "operator": Role.OPERATOR,
@@ -50,9 +50,13 @@ def env():
 
     def current(request: Request):
         role = request.headers["Authorization"].removeprefix("Bearer fake-")
-        return CurrentUser(sub=accounts.sub(role), role=ROLES[role])
+        # 시드 계정은 모두 test 그룹(D6) → is_test는 토큰에서 온다(A PR #11). 가짜 계정도 같게 맞춘다
+        return CurrentUser(sub=accounts.sub(role), role=ROLES[role], is_test=True)
 
     app.dependency_overrides[get_current_user] = current
+    # B11 조회는 운영자 MFA 필수. 러너 테스트는 MFA 검사를 끈다(staging은 TOTP 등록 계정 사용, B16.md)
+    from app.config import get_settings
+    app.dependency_overrides[get_settings] = lambda: get_settings().model_copy(update={"operator_mfa_required": False})
     yield app, accounts
     app.dependency_overrides.clear()
 
@@ -67,7 +71,47 @@ def test_api_channel_b19_against_real_api(env):
     api = {r.id: r for r in results if r.channel == "api"}
     assert {i: (r.actual_decision, r.http_status, r.match) for i, r in api.items()} == {
         "B19-SHARE-01": ("block", 404, True), "B19-SHARE-02": ("block", 404, True),
-        "B19-SHARE-03": ("block", 404, True)}
+        "B19-SHARE-03": ("block", 404, True), "B19-SHARE-04": ("block", 404, True),
+        "B19-SHARE-05": ("allow", 200, True)}  # 5건 모두 api(4.61)
+
+
+class _FakeEmbedder:
+    def embed(self, texts):
+        return [[0.0] * 1024 for _ in texts]
+
+
+def test_user_resume_without_embedder_is_unverified(env):
+    """C11-05: 임베더가 없으면 자소서만 만들고 인덱싱을 건너뛰며, 결과에 '미확인'으로 남긴다(D bge-m3 대기)."""
+    app, accounts = env
+    results, _ = core.run(TestClient(app), accounts, DbSeeder(accounts), _scenarios("C11-AUTHZ-05"))
+    assert seed.RETRIEVAL_SKIPPED in results[0].checks_unverified
+
+
+def test_user_resume_is_indexed_tokenized_with_embedder(env):
+    """임베더가 있으면 저장본(토큰화된 본문)을 개인 인덱스에 넣는다 — 연락처 원문은 인덱스에 없다."""
+    from sqlalchemy import select
+
+    from app.db import SessionLocal
+    from app.models.embedding import UserProfileEmbedding
+    _, accounts = env
+    s = _scenarios("C11-AUTHZ-05")[0]
+    values = DbSeeder(accounts, embedder=_FakeEmbedder()).prepare(s)
+    assert "_unverified" not in values
+    with SessionLocal() as db:
+        row = db.scalar(select(UserProfileEmbedding).where(
+            UserProfileEmbedding.source_id == uuid.UUID(values["user_resume_id"])))
+    assert row.owner_id == accounts.sub("user") and row.source_type == "resume" and row.grade == "personal"
+    assert "010-2345-6789" not in row.content and "[[PHONE" in row.content
+
+
+def test_response_excludes_catches_leak(env):
+    """대조군: 응답 본문에 나오면 안 되는 문장이 실제로 있으면 불일치로 잡는다(05가 '항상 통과'하지 않게)."""
+    app, accounts = env
+    s = dict(_scenarios("B19-SHARE-05")[0])
+    s["expect_checks"] = {**s["expect_checks"], "response_excludes": ["평가 러너 시드 문단"]}  # 공유 시점 v1 본문
+    results, _ = core.run(TestClient(app), accounts, DbSeeder(accounts), [s])
+    assert results[0].http_status == 200 and not results[0].match
+    assert results[0].checks_failed == ["응답에 '평가 러너 시드 문단' 있음"]
 
 
 def test_llm_channel_reads_audit_log_when_sink_wired(env):
@@ -79,6 +123,7 @@ def test_llm_channel_reads_audit_log_when_sink_wired(env):
     results, _ = core.run(TestClient(app), accounts, DbSeeder(accounts), _scenarios("A10-SENS-01", "A10-SENS-05"),
                           delay=0.01)
     by = {r.id: r for r in results}
+    assert all(r.link == "request_id" for r in results)  # X-Request-ID로 정확히 연결
     assert by["A10-SENS-01"].judged_by == "audit" and by["A10-SENS-01"].actual_decision == "block"
     assert by["A10-SENS-05"].judged_by == "audit" and by["A10-SENS-05"].actual_decision == "allow"
     assert all(r.endpoint == "POST /writing/proofread" for r in results)
@@ -121,3 +166,38 @@ def test_results_csv(env):
     text = core.render_csv(results)
     assert text.startswith("﻿") and "B19-SHARE-01" in text and text.splitlines()[0].lstrip("﻿") == ",".join(
         core.RESULT_COLUMNS)
+
+
+def test_runner_traffic_is_marked_test_and_uses_one_session_per_scenario(env):
+    app, accounts = env
+    guard = Guardrail(llm=LlmClient(provider=FakeProvider(reply="다듬었습니다.")), vault=InMemoryVaultStore(),
+                      audit=DbAuditSink())
+    app.dependency_overrides[writing_router.get_guardrail] = lambda: guard
+    multi = [s for s in core.load_sheet(EVAL / "scenarios_sheet.yaml") if len(s["turns"]) > 1][:1]
+    core.run(TestClient(app), accounts, DbSeeder(accounts), multi)
+    from sqlalchemy import select
+
+    from app.db import SessionLocal
+    from app.models import AuditLog
+    with SessionLocal() as db:
+        logs = db.scalars(select(AuditLog).where(AuditLog.user_id == accounts.sub(multi[0]["role"]))).all()
+    assert len(logs) == len(multi[0]["turns"]) and all(log.is_test for log in logs)
+    assert len({log.session_id for log in logs}) == 1 and logs[0].session_id.startswith(f"test-{multi[0]['id']}-")
+
+
+def test_audit_api_request_id_filter(env):
+    app, accounts = env
+    c = TestClient(app)
+    res = c.get("/audit-logs", params={"request_id": str(uuid.uuid4())}, headers={"Authorization": "Bearer fake-operator"})
+    assert res.status_code == 200 and res.json() == []
+    assert c.get("/audit-logs", params={"request_id": "x"},
+                 headers={"Authorization": "Bearer fake-operator"}).status_code == 422
+
+
+def test_seeder_reuses_base_resume_under_resume_limit(env):
+    """시트 전체를 돌려도 시드 자소서가 50개 상한에 걸리지 않는다(사전 조건 없는 시나리오는 공용 자소서)."""
+    app, accounts = env
+    seeder = DbSeeder(accounts)
+    plain = {"preconditions": {}}
+    ids = {seeder.prepare(plain)["resume_id"] for _ in range(60)}
+    assert len(ids) == 1

@@ -37,14 +37,35 @@ def _shared() -> Guardrail:
       같은 세션이 다른 워커로 갈 때 이력이 끊긴다. D7 세션 저장소가 준비되면
       그 구현을 주입한다 (docs/A12.md 6장).
     """
+    from app.config import get_settings
     from app.features.audit.sink import DbAuditSink
+    from app.guardrail.bedrock import build_provider
+    from app.guardrail.llm_client import LlmClient
 
-    return Guardrail(audit=DbAuditSink(), history=InMemoryTurnStore())
+    # A2 제공자 주입 지점. LLM_PROVIDER=none(기본)이면 지금까지와 같은 NotConfiguredProvider 다
+    llm = LlmClient(provider=build_provider(get_settings()))
+    return Guardrail(llm=llm, audit=DbAuditSink(), history=InMemoryTurnStore())
+
+
+@lru_cache(maxsize=1)
+def _limited() -> Guardrail:
+    """C7 레이트리밋 래퍼를 씌운 것. LLM 엔드포인트는 모두 이 의존성으로 받아 한도를 피할 수 없다."""
+    from app.features.ratelimit.guard import RateLimitedGuardrail
+
+    return RateLimitedGuardrail(_shared())  # type: ignore[return-value]  # run·run_split 같은 모양
 
 
 def get_guardrail() -> Guardrail:
-    """테스트에서 갈아끼울 수 있게 의존성으로 뺀다."""
-    return _shared()
+    """테스트에서 갈아끼울 수 있게 의존성으로 뺀다.
+
+    C13 ②: A5 응답 검사가 볼 카나리 토큰을 매 요청 직전에 채운다. 토큰은 DB에만 있고(C12 시드),
+    5분 캐시라 DB를 매번 읽지 않는다. 시드 Job이 앱보다 늦게 돌아도(post-upgrade) 5분 안에 켜진다.
+    C7: 돌려주는 것은 레이트리밋 래퍼다(같은 `_shared()` 가드레일을 감싼다).
+    """
+    from app.retrieval import canary
+
+    _shared().canaries = canary.tokens.get()
+    return _limited()
 
 
 def _as_uuid(value: str) -> uuid.UUID:

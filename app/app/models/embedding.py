@@ -93,3 +93,28 @@ class UserProfileEmbedding(Base):
     deleted_at: Mapped[DeletedAt]
     created_at: Mapped[CreatedAt]
     updated_at: Mapped[UpdatedAt]
+
+
+class LearningContentEmbedding(Base):
+    """공개 인덱스 — 학습 강좌(C14 의미 검색). 강좌당 1행, 항상 grade=public.
+
+    키·제목 검색으로 못 찾은 직무 역량을 역량 이름 ↔ 강좌 의미 유사도로 찾는다(docs/C14.md B ②).
+    `content`는 임베딩한 글(제목 + K-MOOC 요약 앞부분) — 바뀌었을 때만 다시 임베딩한다.
+    """
+
+    __tablename__ = "learning_content_embeddings"
+    __table_args__ = (grade_check(), _hnsw_index("ix_lce_hnsw"))
+
+    id: Mapped[UuidPk]
+    # 강좌 FK — 강좌 삭제 시 함께 삭제(파생 데이터). 강좌당 1행.
+    content_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("learning_contents.id", ondelete="CASCADE"), unique=True
+    )
+    content: Mapped[str] = mapped_column(Text)
+    grade: Mapped[str] = grade_column(Grade.PUBLIC)
+    model_version: Mapped[str] = mapped_column(
+        String(64), default=MODEL_VERSION, server_default=MODEL_VERSION, index=True
+    )
+    embedding: Mapped[list[float]] = mapped_column(Vector(EMBED_DIM))
+    created_at: Mapped[CreatedAt]
+    updated_at: Mapped[UpdatedAt]

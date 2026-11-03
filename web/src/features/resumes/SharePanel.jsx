@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { sharesApi } from './api.js'
+import { resumesApi, sharesApi } from './api.js'
 import { shortDate } from './ShareTags.jsx'
 
 // 작성자용 멘토 공유 관리(B10 후속, part2_guide 4.44)
@@ -14,9 +14,32 @@ const localDate = (offsetDays = 0) => {
   return d.toLocaleDateString('sv-SE') // YYYY-MM-DD(브라우저 시간대)
 }
 
-const emptyForm = () => ({ mentor_id: '', mentor_label: '', end_date: localDate(DEFAULT_DAYS - 1) })
+const emptyForm = () => ({ mentor_email: '', mentor_label: '', end_date: localDate(DEFAULT_DAYS - 1) })
 
-export default function SharePanel({ resumeId, onChanged }) {
+// 공유할 문항·버전 고르기(10/29): 문항마다 체크(기본: 내용 있는 문항 전부) + 버전 선택(기본: 최신)
+function useVersionPicks(resumeId, questions) {
+  const [versions, setVersions] = useState({}) // question_id → 버전 목록(최신이 앞)
+  const [picks, setPicks] = useState({}) // question_id → version_id | '' (공유 안 함)
+  const key = questions.map((q) => `${q.id}:${q.latest_version?.id ?? ''}`).join(',')
+  useEffect(() => {
+    let alive = true
+    Promise.all(questions.map((q) => resumesApi.listVersions(resumeId, q.id).then((v) => [q.id, v])))
+      .then((pairs) => {
+        if (!alive) return
+        setVersions(Object.fromEntries(pairs))
+        setPicks(Object.fromEntries(pairs.map(([qid, v]) => [qid, v[0]?.id ?? ''])))
+      })
+      .catch(() => {})
+    return () => { alive = false }
+    // 문항·최신 버전이 바뀔 때만 다시 불러온다
+  }, [resumeId, key])
+  return { versions, picks, setPicks }
+}
+
+export default function SharePanel({ resumeId, questions = [], onChanged }) {
+  const { versions, picks, setPicks } = useVersionPicks(resumeId, questions)
+  const chosen = questions.map((q) => picks[q.id]).filter(Boolean)
+
   const [shares, setShares] = useState([])
   const [showEnded, setShowEnded] = useState(false)
   const [form, setForm] = useState(emptyForm)
@@ -25,10 +48,23 @@ export default function SharePanel({ resumeId, onChanged }) {
   const [error, setError] = useState(null)
   const [comments, setComments] = useState({}) // share_id → 코멘트 목록(펼친 공유만)
 
-  const load = useCallback(() => sharesApi.list(resumeId).then(setShares), [resumeId])
+  // 목록을 한 번이라도 받았으면 API가 연결된 것 → 이후 404(끝난 공유 등)는 서버 문구 그대로
+  const [connected, setConnected] = useState(false)
+  const errorText = (e) =>
+    e.status === 404 && !connected ? '공유 기능이 아직 서버에 연결되지 않았습니다.' : e.message
 
+  const load = useCallback(
+    () => sharesApi.list(resumeId).then((list) => {
+      setShares(list)
+      setConnected(true)
+    }),
+    [resumeId],
+  )
+
+  // 공유 API가 서버에 아직 없으면(main.py 라우터 등록 전, D) 404. 패널은 그대로 두고 목록 404만 조용히 넘긴다
+  // (10/28 사용자 결정). 자소서는 이미 불러온 뒤라 여기서의 404는 연결 누락뿐 — 등록되면 그대로 정상 동작
   useEffect(() => {
-    load().catch((e) => setError(e.message))
+    load().catch((e) => e.status !== 404 && setError(errorText(e)))
   }, [load])
 
   // 성공하면 true. 목록과 버전 태그·자소서 요약을 다시 불러온다
@@ -40,7 +76,7 @@ export default function SharePanel({ resumeId, onChanged }) {
       onChanged()
       return true
     } catch (e) {
-      setError(e.message)
+      setError(errorText(e))
       return false
     }
   }
@@ -48,7 +84,9 @@ export default function SharePanel({ resumeId, onChanged }) {
   const create = (confirmed = false) =>
     run(async () => {
       try {
-        await sharesApi.create(resumeId, { ...form, mentor_id: form.mentor_id.trim(), confirm: confirmed })
+        await sharesApi.create(resumeId, {
+          ...form, mentor_email: form.mentor_email.trim(), version_ids: chosen, confirm: confirmed,
+        })
         setForm(emptyForm())
         setConfirm(null)
       } catch (e) {
@@ -81,7 +119,7 @@ export default function SharePanel({ resumeId, onChanged }) {
       const list = await sharesApi.comments(sid)
       setComments((cur) => ({ ...cur, [sid]: list }))
     } catch (e) {
-      setError(e.message)
+      setError(errorText(e))
     }
   }
 
@@ -91,12 +129,12 @@ export default function SharePanel({ resumeId, onChanged }) {
       setComments((cur) => ({ ...cur, [sid]: cur[sid].map((x) => (x.id === cid ? c : x)) }))
       await load()
     } catch (e) {
-      setError(e.message)
+      setError(errorText(e))
     }
   }
 
   const visible = shares.filter((s) => showEnded || s.status === 'active')
-  const canCreate = form.mentor_id.trim() && form.mentor_label.trim() && form.end_date
+  const canCreate = form.mentor_email.trim() && form.mentor_label.trim() && form.end_date && chosen.length > 0
 
   return (
     <div className="card share-panel">
@@ -108,8 +146,37 @@ export default function SharePanel({ resumeId, onChanged }) {
         </label>
       </div>
       <p className="muted">
-        지금 저장된 문항별 최신 버전이 공유됩니다. 이후 수정한 내용은 멘토에게 보이지 않습니다.
+        공유할 문항과 버전을 고르세요. 공유한 뒤 수정한 내용은 멘토에게 보이지 않습니다.
       </p>
+
+      <div className="share-picks">
+        {questions.map((q) => {
+          const list = versions[q.id] ?? []
+          const on = Boolean(picks[q.id])
+          return (
+            <div key={q.id} className="share-pick">
+              <label className="share-toggle">
+                <input type="checkbox" checked={on} disabled={!list.length}
+                  onChange={(e) => setPicks({ ...picks, [q.id]: e.target.checked ? list[0]?.id ?? '' : '' })} />
+                {q.title}
+              </label>
+              {list.length ? (
+                <select value={picks[q.id] || list[0].id} disabled={!on} aria-label={`${q.title} 공유할 버전`}
+                  onChange={(e) => setPicks({ ...picks, [q.id]: e.target.value })}>
+                  {list.map((v, i) => (
+                    <option key={v.id} value={v.id}>
+                      v{v.version_no}{i === 0 ? ' (최신)' : ''} · {v.char_count.toLocaleString()}자
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span className="muted">저장된 내용 없음</span>
+              )}
+            </div>
+          )
+        })}
+        {questions.length === 0 && <p className="muted">공유할 문항이 없습니다. 먼저 문항을 작성해 주세요.</p>}
+      </div>
 
       <form
         className="row"
@@ -120,11 +187,12 @@ export default function SharePanel({ resumeId, onChanged }) {
       >
         <input
           className="grow"
-          placeholder="멘토 ID"
-          value={form.mentor_id}
-          maxLength={128}
-          onChange={(e) => setForm({ ...form, mentor_id: e.target.value })}
-          aria-label="멘토 ID"
+          type="email"
+          placeholder="멘토 이메일(멘토로 가입한 계정)"
+          value={form.mentor_email}
+          maxLength={254}
+          onChange={(e) => setForm({ ...form, mentor_email: e.target.value })}
+          aria-label="멘토 이메일"
         />
         <input
           placeholder="멘토 이름(나만 보임)"
@@ -199,8 +267,9 @@ export default function SharePanel({ resumeId, onChanged }) {
                 </span>
               </div>
               <div className="row muted">
-                <span className="grow" title={s.mentor_id}>
-                  ID {s.mentor_id.slice(0, 8)}… · {shortDate(s.created_at.slice(0, 10))} 공유
+                {/* 멘토 이메일 전체(없으면 ID 전체). 자르지 않는다(10/29) */}
+                <span className="grow share-mentor-who">
+                  {s.mentor_email ?? `ID ${s.mentor_id}`} · {shortDate(s.created_at.slice(0, 10))} 공유
                 </span>
                 {s.comment_count > 0 && (
                   <button className="secondary" onClick={() => toggleComments(s.id)} aria-expanded={!!comments[s.id]}>

@@ -27,6 +27,7 @@ class LearningItem:
     importance: str          # required / preferred / mentioned (정렬은 호출측이 끝냄)
     est_hours: float         # 콘텐츠 예상 소요 시간(없으면 0 — 사용자 추가 항목 등)
     title: str = ""          # 표시용 콘텐츠 제목
+    slot: int = 0            # 같은 역량의 몇 번째 강좌인가(학습 방법 "전체"면 온라인·오프라인 2칸)
 
 
 @dataclass(frozen=True)

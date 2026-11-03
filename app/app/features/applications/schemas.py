@@ -45,6 +45,8 @@ class PostingBrief(BaseModel):
     region_name: str | None
     closes_on: date | None
     is_active: bool
+    #: 원문 주소(`source_url`, 서울시 공고는 없음). 화면은 http/https만 연다(safeUrl).
+    url: str | None = Field(None, validation_alias="source_url")
 
 
 class ApplicationOut(BaseModel):
@@ -56,11 +58,25 @@ class ApplicationOut(BaseModel):
     version_ids: list[uuid.UUID]
     applied_at: date | None
     memo: str | None
+    #: 같은 상태 열 안 순서(작을수록 위)
+    position: int = 0
     created_at: datetime
     updated_at: datetime
     #: 딸린 공고 요약(없으면 null). days_until = 마감까지 남은 일수(상시·마감없음은 null).
     posting: PostingBrief | None = None
     days_until: int | None = None
+
+
+#: 한 열에 담을 수 있는 카드 수 상한(요청 크기 제한)
+MAX_ORDER_IDS = 500
+
+
+class ApplicationOrder(BaseModel):
+    """칸반 한 열의 새 순서. `ids` 순서대로 위→아래, 다른 열에서 끌어온 카드는 이 상태로 바뀐다."""
+
+    model_config = ConfigDict(extra="forbid")
+    status: ApplicationStatus
+    ids: list[uuid.UUID] = Field(min_length=1, max_length=MAX_ORDER_IDS)
 
 
 class StatusCounts(BaseModel):
@@ -71,4 +87,3 @@ class StatusCounts(BaseModel):
     document_passed: int = 0
     interview: int = 0
     final: int = 0
-    rejected: int = 0

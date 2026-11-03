@@ -27,7 +27,7 @@ A3(질의 분류)·C6(검색 필터)·A5(출력 검사)가 각각 판정을 내�
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Literal
 
 # --------------------------------------------------------------------------
@@ -98,7 +98,8 @@ class Finding:
             raise ValueError("rule_id 가 비어 있습니다")
         if len(self.rule_id) > MAX_RULE_ID_LEN:
             raise ValueError(
-                f"rule_id 가 {MAX_RULE_ID_LEN}자를 넘습니다 — audit_logs 에 들어가지 못합니다: {self.rule_id!r}"
+                f"rule_id 가 {MAX_RULE_ID_LEN}자를 넘습니다 — "
+                f"audit_logs 에 들어가지 못합니다: {self.rule_id!r}"
             )
         if self.severity not in SEVERITIES:
             raise ValueError(f"severity 는 {SEVERITIES} 중 하나여야 합니다: {self.severity!r}")
@@ -164,11 +165,23 @@ class Verdict:
         - 판정: 더 무거운 쪽 (block > mask > allow)
         - 단계: **무거운 판정을 만든 단계.** 어디서 막혔는지가 로그의 쓸모다
         - 표식: 양쪽을 순서대로 합치고 중복 제거
-        - 질의 유형: 먼저 정해진 값을 유지한다 (분류 단계가 한 번만 정한다)
+        - 질의 유형: **무거운 판정을 만든 쪽의 값.** 그 쪽이 비었으면 다른 쪽 값을 쓴다
+
+        ★ 질의 유형이 단계를 따라가는 이유 — **막은 쪽이 왜 막았는지를 말해야 한다.**
+          전에는 "먼저 정해진 값을 유지" 였다. 그런데 A12 가 이력을 보고 탈취로
+          판정해도 A3 가 이 턴만 보고 내린 ``normal`` 이 먼저 정해진 값이라 이겼고,
+          **감사 로그가 막은 이유를 틀리게 적었다** (A10-MULTI-04 측정에서 드러났다).
+
+          무거운 쪽이 비어 있을 때만 가벼운 쪽 값을 쓴다. 그래서 유형을 정하지 않는
+          단계(출력 검사)가 막을 때는 분류 단계가 정한 값이 그대로 남는다.
         """
         decision = worse_decision(self.decision, other.decision)
-        # 동률이면 먼저 내려진 판정의 단계를 남긴다 — 파이프라인 앞쪽이 원인이다
-        stage = self.stage if _DECISION_RANK[self.decision] >= _DECISION_RANK[other.decision] else other.stage
+        # 동률이면 먼저 내려진 판정을 남긴다 — 파이프라인 앞쪽이 원인이다
+        if _DECISION_RANK[other.decision] > _DECISION_RANK[self.decision]:
+            stage, heavier, lighter = other.stage, other.query_type, self.query_type
+        else:
+            stage, heavier, lighter = self.stage, self.query_type, other.query_type
+        query_type = heavier if heavier is not None else lighter
 
         seen: dict[str, Finding] = {}
         for finding in (*self.findings, *other.findings):
@@ -190,7 +203,7 @@ class Verdict:
             decision=decision,
             stage=stage,  # type: ignore[arg-type]
             findings=tuple(seen.values()),
-            query_type=self.query_type if self.query_type is not None else other.query_type,
+            query_type=query_type,
         )
 
     # ------------------------------------------------------------ 감사 로그

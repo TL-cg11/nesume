@@ -28,26 +28,40 @@ class RecommendRequest(BaseModel):
     region_codes: list[str] = Field(default_factory=list, max_length=MAX_FILTER_CODES)
     job_codes: list[str] = Field(default_factory=list, max_length=MAX_FILTER_CODES)
     top_k: int = Field(default=20, ge=1, le=MAX_TOP_K)
+    #: 맞춤 학습: 이 자소서 기준으로 추천(쿼리 벡터 = 그 자소서 청크, 보유 역량 = 그 자소서 본문 + 경험).
+    #: 본인 자소서만(남의 것·없음 → 404). 비우면 지금처럼 전체 프로필 기준.
+    resume_id: uuid.UUID | None = None
 
 
 class PostingBrief(BaseModel):
-    """추천 공고 요약(제목·직무). 공고 글은 C 창구 `get_posting_fields`로만 읽는다."""
+    """추천 공고 요약(제목·직무·회사). 공고 글은 C 창구 `get_posting_fields`·`get_posting_link`로만 읽는다."""
 
     model_config = ConfigDict(extra="forbid")
     title: str | None = None
     job_name: str | None = None
+    company_name: str | None = None
+    #: 출처(seoul / work24_open …) — 화면 출처 문구용(서울시는 "서울특별시 공공데이터" 표시 의무).
+    source: str | None = None
+    #: 원문 링크(공채속보만, 기업별 외부 도메인·http/https만 저장). 서울시는 None → 화면은 접수방법 안내.
+    url: str | None = None
+    #: 모집분야 이름들(분야가 2개 이상일 때만, 아니면 빈 목록). 화면의 "맞는 분야"·분야 바꿔 보기용
+    field_names: list[str] = Field(default_factory=list)
 
 
 class RecommendationOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     posting_id: uuid.UUID
-    #: 최종 점수 = 0.5 벡터 + 0.5 키워드율(docs/C8.md 결정2).
+    #: 최종 점수 = 0.5 벡터 + 0.5 키워드율(docs/C8.md 결정2). 키워드 정보 없으면 벡터 점수만.
     score: float
     vector_score: float
     keyword_score: float
     #: 왜 추천됐는지 — 사용자 보유 ∩ 공고 요구 역량.
     matched_keywords: list[str]
+    #: False = 공고에 비교할 사전 기술이 없음 → 키워드 0은 "안 맞음"이 아니라 "정보 없음"(점수 공식은 그대로)
+    keyword_available: bool = True
+    #: 자소서에 가장 맞는 모집분야 순번(`posting.field_names` 인덱스). 분야 하나뿐이거나 모르면 None
+    field_index: int | None = None
     posting: PostingBrief | None = None
 
 

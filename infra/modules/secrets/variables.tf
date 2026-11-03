@@ -1,2 +1,2 @@
-variable "project" { type = string }   # nesume
-variable "env" { type = string }       # dev
+variable "project" { type = string } # nesume
+variable "env" { type = string }     # dev

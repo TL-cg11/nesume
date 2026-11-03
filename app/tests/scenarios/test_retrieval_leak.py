@@ -13,11 +13,14 @@ owner_id·shared_with는 `users.id` FK라 시드에서 User 행을 먼저 만든
 """
 from __future__ import annotations
 
+import asyncio
 import uuid
+from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from app.guardrail.pipeline import Chunk
 from app.models.embedding import (
     EMBED_DIM,
     MODEL_VERSION,
@@ -28,7 +31,12 @@ from app.models.posting import JobPosting
 from app.models.resume import Resume
 from app.models.share import Share
 from app.models.user import User
-from app.retrieval.search import search_personal, search_public
+from app.retrieval.search import (
+    PersonalRetriever,
+    build_retriever,
+    search_personal,
+    search_public,
+)
 
 # 모든 문서·쿼리를 같은 벡터로 → 유사도는 동일, 필터만이 결과를 가른다(가장 가까운데도 빠지는가).
 QUERY = [1.0] + [0.0] * (EMBED_DIM - 1)
@@ -80,13 +88,14 @@ def _share(session, resume_id, owner: str, mentor: str) -> Share:
     return s
 
 
-def _posting(session, *, active: bool = True, review: bool = False) -> JobPosting:
+def _posting(session, *, active: bool = True, review: bool = False, closes_on=None) -> JobPosting:
     p = JobPosting(
         source="seoul",
         link_key=str(uuid.uuid4()),
         content_hash=str(uuid.uuid4()),
         is_active=active,
         needs_review=review,
+        closes_on=closes_on,
     )
     session.add(p)
     session.flush()
@@ -187,6 +196,22 @@ def test_public_excludes_inactive_and_review(db_session):
     assert review.id not in got
 
 
+def test_public_excludes_past_deadline(db_session):
+    """마감일이 지난 공고는 활성이어도 빠진다(당일까지 노출, 마감일 없음은 유지). 오늘 = 한국 날짜."""
+    from zoneinfo import ZoneInfo
+
+    today = datetime.now(ZoneInfo("Asia/Seoul")).date()
+    past = _posting(db_session, closes_on=today - timedelta(days=1))
+    due = _posting(db_session, closes_on=today)
+    open_ended = _posting(db_session)
+    for p in (past, due, open_ended):
+        _posting_emb(db_session, p.id)
+
+    got = _ids(search_public(db_session, QUERY))
+    assert past.id not in got
+    assert due.id in got and open_ended.id in got
+
+
 # --------------------------------------------------------------------------
 # S-NOFILTER — 필터 없는 경로 차단(런타임에서도)
 # --------------------------------------------------------------------------
@@ -196,3 +221,87 @@ def test_search_personal_requires_role_and_user(db_session, role, uid):
     """S-NOFILTER-1: role·user_id 없이는 검색 자체가 거부된다(DB 접근 전)."""
     with pytest.raises(ValueError):
         search_personal(db_session, QUERY, role=role, user_id=uid)
+
+
+# --------------------------------------------------------------------------
+# A8 연결 — spec §8.2 `search(query, role, user_id, top_k)` (PersonalRetriever)
+# --------------------------------------------------------------------------
+
+class _FakeEmbedder:
+    """질의 1건을 QUERY 벡터로. 호출 기록으로 '임베딩 1회'·'필터 없는 호출은 임베딩 전 차단'을 본다."""
+
+    def __init__(self):
+        self.calls: list[list[str]] = []
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        self.calls.append(texts)
+        return [QUERY for _ in texts]
+
+
+def _retriever(db_session, embedder=None) -> PersonalRetriever:
+    # 테스트 트랜잭션(db_session) 안의 시드를 보도록 같은 세션을 넘긴다(닫지 않게 nullcontext)
+    return PersonalRetriever(embedder or _FakeEmbedder(), session_factory=lambda: nullcontext(db_session))
+
+
+def _search(retriever, *, role, user_id, top_k=5):
+    return asyncio.run(retriever.search("자기소개 질의", role=role, user_id=user_id, top_k=top_k))
+
+
+def test_retriever_returns_chunks_with_text_grade_doc_id(db_session):
+    """A8 규약 모양: Chunk(doc_id=원문 기준, grade, text=토큰화 본문). 질의 임베딩은 1회."""
+    a = _user(db_session)
+    r = _resume(db_session, a)
+    _emb(db_session, a, r.id)
+    emb = _FakeEmbedder()
+
+    got = _search(_retriever(db_session, emb), role="user", user_id=a)
+
+    assert len(got) == 1
+    c = got[0]
+    assert isinstance(c, Chunk)
+    assert c.doc_id == f"resume:{r.id}#0"
+    assert c.grade == "personal"
+    assert c.text == "[[PHONE_1]] 자기소개"  # 저장된 토큰화 본문 그대로(원문 PII 없음)
+    assert emb.calls == [["자기소개 질의"]]
+
+
+def test_retriever_marks_decision_by_role(db_session):
+    """판정 표시: 본인(user×personal)=allow, 운영자(operator×personal)=mask. 거르지는 않는다."""
+    a, op = _user(db_session), _user(db_session)
+    r = _resume(db_session, a)
+    _emb(db_session, a, r.id)
+
+    own = _search(_retriever(db_session), role="user", user_id=a)
+    target = f"resume:{r.id}#0"
+    ops = [c for c in _search(_retriever(db_session), role="operator", user_id=op) if c.doc_id == target]
+
+    assert [c.decision for c in own] == ["allow"]
+    assert [c.decision for c in ops] == ["mask"]
+
+
+def test_retriever_keeps_filters(db_session):
+    """WHERE는 그대로: 타인 문서·소프트 삭제 0건, 멘토는 개인 인덱스 0건."""
+    a, b, mentor = _user(db_session), _user(db_session), _user(db_session)
+    ra, rb, rd = _resume(db_session, a), _resume(db_session, b), _resume(db_session, a)
+    _emb(db_session, a, ra.id)
+    _emb(db_session, b, rb.id)
+    _emb(db_session, a, rd.id, deleted=True)
+
+    ids = {c.doc_id for c in _search(_retriever(db_session), role="user", user_id=a)}
+    assert ids == {f"resume:{ra.id}#0"}
+    assert _search(_retriever(db_session), role="mentor", user_id=mentor) == []
+
+
+@pytest.mark.parametrize(("role", "uid"), [("", "u"), ("user", "")])
+def test_retriever_requires_role_and_user_before_embedding(db_session, role, uid):
+    """S-NOFILTER-2: role·user_id 없으면 임베딩·DB 전에 거부."""
+    emb = _FakeEmbedder()
+    with pytest.raises(ValueError):
+        _search(_retriever(db_session, emb), role=role, user_id=uid)
+    assert emb.calls == []
+
+
+def test_build_retriever_without_embedder_is_none():
+    """임베더 미설정 → None(가드레일 검색 단계 생략, 현행 동작 유지)."""
+    assert build_retriever() is None
+    assert isinstance(build_retriever(_FakeEmbedder()), PersonalRetriever)

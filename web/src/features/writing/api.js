@@ -1,61 +1,57 @@
 // 글 다듬기 화면이 쓰는 API 모음. 공통 클라이언트만 사용한다 (프론트 가이드 5절).
 //
-// 한 화면에서 세 기능을 쓴다 — A7 맞춤법·STAR, A13 글자수·문체, A14 말투 프로필.
-// 셋 다 **같은 글**을 다루므로 화면을 나누지 않았다. 서버 쪽은 각각 다른 라우터다.
+//   검사·교정 탭  맞춤법(A7 /writing/proofread) · STAR(/writing/star) — 따로 누른다
+//   다시 쓰기 탭  내 말투 샘플로 다시 쓰기(A6 /writing/rewrite + style_sample)
 import { api } from '../../app/api/client.js'
 
-// 서버 스키마의 MAX_TEXT_LEN 과 같아야 한다.
-// writing/schemas.py · style/schemas.py · profile/schemas.py 모두 8000 이다.
+// 서버 스키마의 MAX_TEXT_LEN 과 같아야 한다 (writing/schemas.py 8000).
 export const MAX_TEXT_LEN = 8000
 
-// A14 — 말투 프로필을 만들 수 있는 최소 글자 수 (profile/extract.py MIN_SOURCE_CHARS).
-// 표본이 적으면 말투가 아니라 그 글의 우연이라 서버가 거절한다.
-export const MIN_PROFILE_CHARS = 1000
-
-// 문체 이름. 서버 tone.py 의 TONE_NAMES 와 같아야 한다.
-export const TONE_NAMES = {
-  formal: '합니다체',
-  polite: '해요체',
-  plain: '했다체',
-  nominal: '음슴체',
+export const reviewApi = {
+  // 규칙(맞춤법·띄어쓰기) + AI 문장 제안
+  spelling: (text, signal) => api.post('/writing/proofread', { text, use_llm: true }, { signal }),
+  // STAR 네 요소를 AI가 판정한다. AI를 못 쓰면 서버가 규칙 판정으로 내려간다
+  star: (text, signal) => api.post('/writing/star', { text }, { signal }),
+  // 사용자가 고른 요소만 AI가 써 넣거나(write) 다듬는다(improve). omit 은 만들지 말라고 전한다.
+  // fill: [{ element, mode, hint }]
+  starComplete: ({ text, fill, omit }, signal) =>
+    api.post('/writing/star/complete', { text, fill, omit }, { signal }),
 }
 
-// ── A7 맞춤법·문장 개선
-export const writingApi = {
-  // useLlm=false 면 규칙 검사만 한다. 입력 중 가볍게 돌릴 때 쓴다.
-  proofread: (text, useLlm = true, signal) =>
-    api.post('/writing/proofread', { text, use_llm: useLlm }, { signal }),
+// 요소별 참고 사실 길이 (서버 star_complete.MAX_HINT_LEN)
+export const MAX_HINT_LEN = 300
 
-  // 수락한 제안만 반영한다. 받았던 제안을 그대로 돌려보낸다 —
-  // LLM 제안은 서버가 다시 만들면 달라져 재현할 수 없다.
-  apply: (text, suggestions, accepted, signal) =>
-    api.post('/writing/apply', { text, suggestions, accepted }, { signal }),
-}
+// ── A6 다시 쓰기 (내 말투)
+//
+// ★ **고른 구간**을 다룬다. 그래서 상한이 MAX_TEXT_LEN 과 다르다 —
+//   서버 rewrite.py 의 MAX_SELECTION_LEN(5,000 × 4조각)과 같아야 한다.
+export const MAX_SELECTION_LEN = 20000
 
-// ── A13 글자 수·문체
-export const styleApi = {
-  // limit 은 문항의 글자 수 상한. 비워 두면 길이는 보지 않고 문체만 본다.
-  adjust: ({ text, limit, minChars, targetTone = 'formal', useLlm = true }, signal) =>
+// 한 번에 모델로 보내는 조각 크기. 이보다 길면 서버가 나눠 보낸다.
+export const CHUNK_CHARS = 5000
+
+// 돌려받는 후보 수 (서버 CANDIDATE_COUNT).
+export const CANDIDATE_COUNT = 3
+
+// 말투 샘플 길이 (서버 rewrite.py MIN_SAMPLE_CHARS · MAX_SAMPLE_CHARS).
+export const MIN_SAMPLE_CHARS = 100
+export const MAX_SAMPLE_CHARS = 3000
+
+export const rewriteApi = {
+  // tone 을 비우면(null) 문장 끝맺음도 말투 샘플을 따른다
+  rewrite: ({ text, tone = null, styleSample }, signal) =>
     api.post(
-      '/style/adjust',
-      {
-        text,
-        limit: limit || null,
-        min_chars: minChars || null,
-        target_tone: targetTone,
-        use_llm: useLlm,
-      },
+      '/writing/rewrite',
+      { text, tone, length: 'similar', keywords: [], use_llm: true, style_sample: styleSample },
       { signal },
     ),
 
-  apply: (text, trims, accepted, signal) =>
-    api.post('/style/apply', { text, trims, accepted }, { signal }),
-}
-
-// ── A14 말투 프로필
-export const profileApi = {
-  // 없으면 404 다. 호출자가 "아직 없음"으로 다룬다.
-  read: (signal) => api.get('/profile/writing', { signal }),
-  build: (text, signal) => api.put('/profile/writing', { text }, { signal }),
-  remove: (signal) => api.delete('/profile/writing', { signal }),
+  // 고른 후보를 새 버전으로 저장한다 (B4, source="ai").
+  // 문항 맥락이 있을 때만 쓸 수 있다 — 글 다듬기 화면은 기본적으로 저장하지 않는다.
+  apply: ({ resumeId, questionId, body }, signal) =>
+    api.post(
+      '/writing/rewrite/apply',
+      { resume_id: resumeId, question_id: questionId, body },
+      { signal },
+    ),
 }

@@ -1,0 +1,135 @@
+/* 학습 로드맵 — roadmap-·skill-·lesson-·method-chip 등 주요 스타일은 layout.css(목업 포팅)에 있다.
+   여기엔 페이지 래퍼와 소소한 보조만 둔다. */
+
+.learning-page { display: flex; flex-direction: column; gap: 20px; }
+.inline-head { display: flex; align-items: center; gap: 12px; }
+
+/* 오류 상태(roadmap-empty 변형) */
+.roadmap-error { background: var(--danger-soft); }
+.roadmap-error strong { color: var(--danger); }
+
+/* skill-panel 안의 생성 버튼은 위 여백을 둔다 */
+.skill-panel .btn-full { margin-top: 16px; }
+
+.lp-select { width: 100%; margin: 4px 0 12px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface, var(--surface)); color: var(--fg); }
+/* ①·②·③ 단계 사이 흐린 경계선 */
+.lp-step-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 18px 0 8px; padding-top: 16px; border-top: 1px solid var(--border); }
+.lp-step-head h4 { margin: 0; font-size: 13px; }
+.lp-filter { display: inline-flex; gap: 4px; }
+.lp-filter button { border: 1px solid var(--border); border-radius: 999px; background: transparent; padding: 3px 9px; font-size: 11px; color: var(--muted); cursor: pointer; }
+.lp-filter button.on { border-color: var(--accent); color: var(--accent-text); font-weight: 700; }
+.lp-postings { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 260px; overflow-y: auto; }
+.lp-posting { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid var(--border); border-radius: 8px; background: transparent; padding: 8px 10px; text-align: left; cursor: pointer; color: var(--fg); }
+.lp-posting.on { border-color: var(--accent); background: var(--accent-soft); }
+.lp-posting-title { font-size: 12px; font-weight: 600; line-height: 1.4; }
+.lp-badge { flex-shrink: 0; border-radius: 999px; padding: 2px 7px; font-size: 10px; font-weight: 700; color: var(--muted); background: var(--bg); }
+.lp-badge.applied { color: var(--success); background: var(--success-soft); }
+
+.lp-link { border: 0; background: transparent; color: var(--accent-text); font-size: 11px; font-weight: 700; cursor: pointer; padding: 0; }
+.lp-group-title { margin: 12px 0 6px; font-size: 12px; font-weight: 700; color: var(--fg); }
+.lp-group-title span { margin-left: 6px; font-weight: 400; color: var(--muted); font-size: 11px; }
+.lp-conditions { display: flex; flex-wrap: wrap; gap: 6px; }
+.lp-conditions .lp-group-title { width: 100%; }
+.lp-cond { border: 1px solid var(--border); border-radius: 999px; padding: 3px 9px; font-size: 11px; color: var(--muted); }
+.lp-cond b { color: var(--fg); margin-right: 4px; }
+
+/* 맞는 강좌 없는 갭 항목 — 강좌 카드와 구분(점선·흐리게) */
+.c-lesson-nocourse { border-style: dashed; background: transparent; }
+.c-lesson-nocourse .c-lesson-provider { color: var(--muted); font-style: italic; }
+.lp-posting-title b { font-weight: 800; margin-right: 2px; }
+
+/* 강좌 없는 갭 → 직접 추가(대체) · 항목 삭제 */
+.c-lesson-card { position: relative; padding-right: 30px; }
+.lp-item-remove { position: absolute; top: 8px; right: 10px; border: 0; background: transparent; color: var(--muted); font-size: 16px; line-height: 1; cursor: pointer; padding: 2px 4px; }
+.lp-item-remove:hover { color: var(--danger); }
+.lp-add-btn { margin-top: 8px; padding: 6px 10px; font-size: 11px; }
+.lp-add-form { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.lp-add-form input { border: 1px solid var(--border); border-radius: 8px; padding: 7px 9px; font-size: 12px; }
+.lp-add-actions { display: flex; gap: 6px; }
+.lp-add-actions button { padding: 6px 12px; font-size: 11px; }
+
+/* 학습 방법 배지(오프라인) · AI 추천 배지 · 전체 보기 */
+.c-mode-offline { background: var(--success-soft); color: var(--success); }
+.lp-ai-badge { border: 1px dashed var(--warning); border-radius: 999px; padding: 1px 7px; font-size: 10px; color: var(--warning); background: var(--warning-soft); white-space: nowrap; }
+.lp-browse-btn { margin-top: 6px; border: 0; background: none; padding: 0; color: var(--accent); font-size: 11px; text-decoration: underline; cursor: pointer; }
+
+.lp-cand-dialog { width: min(720px, calc(100vw - 32px)); max-height: calc(100vh - 64px); background: var(--surface); color: var(--fg); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; }
+.lp-cand-dialog::backdrop { background: rgb(0 0 0 / 40%); }
+.lp-cand-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.lp-cand-head h3 { font-size: 15px; }
+.lp-cand-close { border: 0; background: none; font-size: 20px; color: var(--muted); cursor: pointer; }
+.lp-cand-filter { display: flex; align-items: center; gap: 6px; margin: 12px 0; flex-wrap: wrap; }
+.lp-cand-filter button { border: 1px solid var(--border); border-radius: 999px; background: var(--surface); padding: 4px 11px; font-size: 11px; color: var(--fg); cursor: pointer; }
+.lp-cand-filter button.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-text); font-weight: 700; }
+.lp-cand-count { margin-left: auto; font-size: 11px; color: var(--muted); }
+.lp-cand-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.lp-cand-item { display: flex; gap: 12px; justify-content: space-between; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+.lp-cand-main { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.lp-cand-title-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; }
+.lp-cand-meta { font-size: 11px; color: var(--muted); }
+.lp-cand-actions { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
+.lp-cand-actions button { padding: 6px 10px; font-size: 11px; }
+.lp-cand-tag { font-size: 11px; color: var(--muted); }
+.lp-cand-pager { display: flex; justify-content: center; align-items: center; gap: 10px; margin-top: 12px; font-size: 12px; }
+.lp-cand-empty, .lp-cand-error { font-size: 12px; color: var(--muted); padding: 12px 0; }
+.lp-cand-error { color: var(--danger); }
+@media (max-width: 560px) { .lp-cand-item { flex-direction: column; } .lp-cand-actions { flex-direction: row; } }
+
+/* 내 로드맵 고르기·삭제 */
+.lp-roadmap-picker { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0 4px; }
+.lp-roadmap-picker select { max-width: 100%; border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; font-size: 12px; background: var(--surface); }
+
+/* 초안/저장 상태 · 저장 · 저장된 로드맵 서랍 */
+.lp-draft-tag { font-size: 11px; color: var(--warning); background: var(--warning-soft); border: 1px dashed var(--warning); border-radius: 999px; padding: 2px 8px; }
+.lp-saved-tag { font-size: 11px; color: var(--success); background: var(--success-soft); border-radius: 999px; padding: 2px 8px; }
+.lp-save-btn { padding: 5px 12px; font-size: 11px; }
+.lp-save-form { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.lp-save-form input { border: 1px solid var(--border); border-radius: 8px; padding: 6px 9px; font-size: 12px; min-width: 180px; }
+.lp-save-form button { padding: 5px 11px; font-size: 11px; }
+
+
+/* 저장된 로드맵 팝오버 — 버튼 바로 아래에 펼쳐진다 */
+.lp-pop-wrap { position: relative; margin-left: auto; }
+.lp-pop-btn { padding: 5px 11px; font-size: 11px; white-space: nowrap; }
+.lp-pop { position: absolute; top: calc(100% + 6px); right: 0; z-index: 20; width: min(360px, calc(100vw - 32px)); max-height: 420px; overflow-y: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow-md); padding: 10px; }
+.lp-pop-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.lp-pop-item { display: flex; flex-direction: column; gap: 3px; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; font-size: 12px; }
+.lp-pop-item.on { border-color: var(--accent); }
+.lp-pop-sub { font-size: 11px; color: var(--muted); }
+.lp-pop-actions { display: flex; gap: 6px; margin-top: 6px; }
+.lp-pop-actions button { padding: 5px 11px; font-size: 11px; }
+
+/* 삭제 버튼 — 저장 버튼과 같은 크기, 색만 경고색 */
+.lp-danger-btn { border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); color: var(--danger); }
+.lp-danger-btn:hover { border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); background: var(--danger-soft); }
+
+/* ① 자소서 선택 칸 — 내용이 길어지면 칸 안에서 스크롤(넓은 화면에서만, 좁으면 위아래로 쌓여 페이지 스크롤) */
+@media (min-width: 1151px) {
+  .skill-panel { position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto; }
+}
+
+/* ③ 역량 갭 표 — 매칭률 막대 + 요구 역량·구분·근거 */
+.lp-gap { margin-bottom: 8px; }
+.lp-gap-rate { margin-bottom: 10px; }
+.lp-gap-rate-row { display: flex; justify-content: space-between; align-items: baseline; font-size: 11px; color: var(--muted); }
+.lp-gap-rate-row strong { font-size: 22px; color: var(--accent-text); }
+.lp-gap-bar { height: 8px; margin-top: 6px; border-radius: 999px; background: var(--bg); overflow: hidden; }
+.lp-gap-bar span { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+.lp-gap-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.lp-gap-table th { padding: 6px 6px; text-align: left; font-size: 11px; font-weight: 600; color: var(--muted); border-bottom: 1px solid var(--border); }
+.lp-gap-table td { padding: 8px 6px; border-bottom: 1px solid var(--border); vertical-align: middle; color: var(--fg); }
+.lp-gap-table tr:last-child td { border-bottom: 0; }
+.lp-gap-table th:first-child, .lp-gap-table td:first-child { width: 22px; padding-right: 0; }
+.lp-gap-table input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
+.lp-gap-why { color: var(--muted) !important; font-size: 11px; }
+.lp-gap-imp { display: inline-block; margin-left: 2px; border-radius: 999px; padding: 1px 6px; font-size: 10px; font-weight: 700; background: var(--bg); color: var(--muted); white-space: nowrap; }
+.lp-gap-imp.req { background: var(--danger-soft); color: var(--danger); }
+.lp-gap-st { display: inline-block; border-radius: 999px; padding: 3px 8px; font-size: 10px; font-weight: 700; white-space: nowrap; }
+.lp-gap-st.have { background: var(--success-soft); color: var(--success); }
+.lp-gap-st.need { background: var(--danger-soft); color: var(--danger); }
+.lp-gap-st.nice { background: var(--warning-soft); color: var(--warning); }
+
+/* 모집분야가 여럿인 공고 — 추천이 찾은 맞는 분야, ③에서 분야 바꿔 보기 */
+.lp-posting-field { display: block; margin-top: 2px; font-size: 11px; font-weight: 600; color: var(--accent-text); }
+.lp-field-pick { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: 11px; color: var(--muted); }
+.lp-field-pick select { flex: 1; min-width: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--fg); padding: 5px 8px; font-size: 12px; }

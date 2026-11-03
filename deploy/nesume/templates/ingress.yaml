@@ -9,10 +9,13 @@ metadata:
   annotations:
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
+    {{- /* 인증서가 있을 때만 443 + HTTP->HTTPS 리다이렉트. dev 는 도메인·인증서가 없어 HTTP 80 만 연다. */ -}}
+    {{- if .Values.ingress.certificateArn }}
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
     alb.ingress.kubernetes.io/ssl-redirect: "443"
-    {{- with .Values.ingress.certificateArn }}
-    alb.ingress.kubernetes.io/certificate-arn: {{ . | quote }}
+    alb.ingress.kubernetes.io/certificate-arn: {{ .Values.ingress.certificateArn | quote }}
+    {{- else }}
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
     {{- end }}
     alb.ingress.kubernetes.io/healthcheck-path: /api/health
     {{- with .Values.ingress.annotations }}
