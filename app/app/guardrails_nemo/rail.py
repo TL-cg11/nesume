@@ -92,9 +92,12 @@ def build_nemo_rail(settings: Any) -> NemoRail | None:
     chunk_mode = getattr(settings, "nemo_chunk_mode", "off")
     if query_mode == "off" and chunk_mode == "off":
         return None
-    from app.retrieval.embedder import get_query_embedder
+    from app.retrieval.embedder import get_embedder
 
-    embedder = get_query_embedder()
+    # 배치 정책(60초·재시도) 임베더를 쓴다. 첫 호출 때 예시 63문장을 색인하는데, dev 임베더(CPU)는 32문장에
+    # 약 5초라 요청 경로용(5초·재시도 없음)으로는 색인이 실패했다(11-03 dev). 질의 1건 지연은 rail 의
+    # timeout_s 가 따로 막는다(질의 1건 실측 0.1초)
+    embedder = get_embedder()
     if embedder is None:
         log.warning("nemo_rail", extra={"fields": {"rail": "nemo", "outcome": "disabled",
                                                    "why": "no_embedder"}})
