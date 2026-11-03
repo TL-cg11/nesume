@@ -139,3 +139,24 @@ def test_no_rail_is_the_old_behaviour():
     guard = Guardrail(llm=LlmClient(provider=FakeProvider(reply="ok")), vault=InMemoryVaultStore())
     assert guard.input_rail is None
     assert _run(guard, "지원 동기 다듬어 줘").verdict.decision == "allow"
+
+
+def test_build_uses_batch_embedder_for_index(monkeypatch):
+    """예시 색인은 문장이 많아 요청 경로용 5초 정책으로는 실패한다(11-03 dev) — 배치 임베더를 쓴다."""
+    import app.guardrails_nemo.rail as rail_mod
+    import app.retrieval.embedder as emb_mod
+
+    batch, query = object(), object()
+    monkeypatch.setattr(emb_mod, "get_embedder", lambda: batch)
+    monkeypatch.setattr(emb_mod, "get_query_embedder", lambda: query)
+    seen = {}
+
+    class FakeIntentRail:
+        def __init__(self, embedder, *, threshold):
+            seen["embedder"] = embedder
+
+    monkeypatch.setattr(rail_mod, "NemoIntentRail", FakeIntentRail)
+    settings = SimpleNamespace(nemo_query_mode="shadow", nemo_chunk_mode="off",
+                               nemo_threshold=0.6, nemo_timeout_s=3.0)
+    assert build_nemo_rail(settings) is not None
+    assert seen["embedder"] is batch
