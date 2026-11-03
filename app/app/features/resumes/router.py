@@ -261,3 +261,14 @@ def restore_version(
         raise _NOT_FOUND
     version, over_limit = result
     return {**_version_out(db, user.sub, user.sub, version), "over_limit": over_limit}
+
+
+# B12 PDF(/resumes/{id}/pdf). 자소서 라우터 아래에 붙여 main.py(D) 등록 없이 동작한다.
+from app.features.pdf.router import router as _pdf_router  # noqa: E402
+
+router.include_router(_pdf_router)
+
+# B13 모의 면접(/resumes/{id}/interviews/...). PDF와 같은 방식으로 붙인다.
+from app.features.interview.router import router as _interview_router  # noqa: E402
+
+router.include_router(_interview_router)

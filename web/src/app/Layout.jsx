@@ -12,12 +12,19 @@ const NAV_META = {
   experiences: { icon: 'case', group: '워크스페이스' },
   writing: { icon: 'spark', group: 'AI 도구' },
   interview: { icon: 'msg', group: 'AI 도구' },
+  // C 공고 추천·학습 로드맵·지원 현황
+  recommend: { icon: 'dash', group: '취업 준비' },
+  learning: { icon: 'spark', group: '취업 준비' },
+  applications: { icon: 'case', group: '취업 준비' },
   github: { icon: 'git', group: '소개' },
-  // B17 멘토 공유, B9 프롬프트 템플릿(발표 시안의 '관리' 그룹)
+  // B17 멘토 공유, B11 AI 사용 기록(발표 시안의 '관리' 그룹)
   mentor: { icon: 'user', group: '관리' },
-  templates: { icon: 'shield', group: '관리' },
+  'ai-logs': { icon: 'shield', group: '관리' }, // B11 AI 사용 기록(운영자). 10/29 프롬프트 템플릿 대신
+  'admin/dashboard': { icon: 'dash', group: '관리' }, // D14·D15 운영 대시보드
+  'admin/users': { icon: 'user', group: '관리' }, // D6 역할 관리
+  'admin/sessions': { icon: 'shield', group: '관리' }, // D16 세션 차단
 }
-const GROUP_ORDER = ['워크스페이스', 'AI 도구', '소개', '관리', '기타']
+const GROUP_ORDER = ['워크스페이스', 'AI 도구', '취업 준비', '소개', '관리', '기타']
 
 function groupNav(navItems) {
   const groups = new Map()
@@ -32,9 +39,10 @@ function groupNav(navItems) {
 function pageTitle(pathname, navItems) {
   const seg = pathname.split('/')[1]
   if (!seg) return '대시보드'
-  const hit = navItems.find((n) => n.path === seg)
+  // 두 단계 경로(admin/dashboard, admin/users, admin/sessions)는 전체 경로로 먼저 찾는다
+  const hit = navItems.find((n) => pathname === `/${n.path}` || pathname.startsWith(`/${n.path}/`)) ?? navItems.find((n) => n.path === seg)
   if (hit) return hit.nav
-  const label = { login: '로그인', signup: '계정 만들기', confirm: '이메일 확인', forgot: '비밀번호 재설정', mfa: '인증' }
+  const label = { login: '로그인', signup: '계정 만들기', confirm: '이메일 확인', forgot: '비밀번호 재설정', mfa: '인증', admin: '운영' }
   return label[seg] || 'nesume'
 }
 
@@ -50,23 +58,28 @@ function UserBlock() {
   }
   return (
     <div className="app-user">
-      <span className="app-user-av">
-        <Icon name="user" />
-      </span>
-      <span className="app-user-info">
-        <span className="app-user-name" title={email ?? ''}>
-          {email ?? me?.username ?? ''}
+      <div className="app-user-id">
+        <span className="app-user-av">
+          <Icon name="user" />
         </span>
-        <span className="app-user-role">{me ? ROLE_LABEL[me.role] ?? me.role : ''}</span>
-      </span>
-      <button type="button" className="secondary" onClick={logout} title="로그아웃" aria-label="로그아웃">
+        <span className="app-user-info">
+          <span className="app-user-name" title={email ?? ''}>
+            {email ?? me?.username ?? ''}
+          </span>
+          <span className="app-user-role">{me ? ROLE_LABEL[me.role] ?? me.role : ''}</span>
+        </span>
+      </div>
+      {/* 이메일을 가리지 않도록 사용자 정보 아래 줄에 작게 둔다(모바일 상단 바에서는 옆에 아이콘만) */}
+      <button type="button" className="secondary app-user-logout" onClick={logout} title="로그아웃" aria-label="로그아웃">
         <Icon name="logout" />
+        <span className="app-user-logout-label">로그아웃</span>
       </button>
     </div>
   )
 }
 
-export default function Layout({ navItems }) {
+// home: 로고·대시보드가 가리키는 곳. '/' 가 아니면(멘토 → /mentor) 대시보드 링크를 숨긴다(RoleNavLayout)
+export default function Layout({ navItems, home = '/' }) {
   const location = useLocation()
   const [navOpen, setNavOpen] = useState(false)
   const groups = groupNav(navItems)
@@ -85,7 +98,7 @@ export default function Layout({ navItems }) {
         >
           <Icon name="menu" />
         </button>
-        <Link to="/" className="app-brand" onClick={closeNav}>
+        <Link to={home} className="app-brand" onClick={closeNav}>
           <span className="app-brand-mark">
             <Icon name="file" />
           </span>
@@ -96,11 +109,13 @@ export default function Layout({ navItems }) {
         </Link>
 
         <nav className="app-nav">
-          <div className="app-nav-group">
-            <NavLink to="/" end onClick={closeNav}>
-              <Icon name="home" /> 대시보드
-            </NavLink>
-          </div>
+          {home === '/' && (
+            <div className="app-nav-group">
+              <NavLink to="/" end onClick={closeNav}>
+                <Icon name="home" /> 대시보드
+              </NavLink>
+            </div>
+          )}
           {groups.map((group) => (
             <div className="app-nav-group" key={group.label}>
               <span className="app-nav-label">{group.label}</span>

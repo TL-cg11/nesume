@@ -137,6 +137,21 @@ def test_diff_between_versions(alice):
                      params={"from": 1, "to": 9}).status_code == 404
 
 
+def test_diff_is_character_level_inside_changed_words():
+    """띄어쓰기 없는 글에 덧붙이거나 조사만 바꿔도 바뀐 글자만 표시(10/29)."""
+    from app.features.resumes.service import diff_segments
+    segs = diff_segments("1" * 20, "1" * 20 + "22")
+    assert segs == [{"op": "equal", "before": "1" * 20, "after": "1" * 20},
+                    {"op": "insert", "before": "", "after": "22"}]
+    segs = diff_segments("초안을 고쳤습니다", "초안이 고쳤습니다")
+    assert [s["op"] for s in segs] == ["equal", "replace", "equal"]
+    assert segs[1] == {"op": "replace", "before": "을", "after": "이"}
+    # 두 조각을 이으면 원래 글이 그대로 나온다
+    before = "".join(s["before"] for s in segs)
+    after = "".join(s["after"] for s in segs)
+    assert (before, after) == ("초안을 고쳤습니다", "초안이 고쳤습니다")
+
+
 def test_restore_creates_new_manual_version_with_origin(alice):
     r = _resume(alice)
     q = _question(alice, r["id"])
@@ -348,3 +363,18 @@ def test_cannot_delete_version_in_use(alice):
     res = alice.delete(f"{base}/{v2['id']}")
     assert res.status_code == 409 and res.json()["errors"] == {"by": "share"}
     assert alice.delete(f"{base}/{uuid.uuid4()}").status_code == 404
+
+
+# --- 10/28 글자 수 상한: 문항 제목 300자, 글자수 설정·본문 10,000자 -----------------------
+
+def test_question_and_body_length_limits(alice):
+    c = alice
+    rid = c.post("/resumes", json={"title": "상한"}).json()["id"]
+    assert c.post(f"/resumes/{rid}/questions", json={"title": "가" * 301}).status_code == 422
+    assert c.post(f"/resumes/{rid}/questions", json={"title": "q", "char_limit": 10_001}).status_code == 422
+    q = c.post(f"/resumes/{rid}/questions", json={"title": "가" * 300, "char_limit": 10_000})
+    assert q.status_code == 201
+    qid = q.json()["id"]
+    assert c.patch(f"/resumes/{rid}/questions/{qid}", json={"char_limit": 10_001}).status_code == 422
+    assert c.post(f"/resumes/{rid}/questions/{qid}/versions", json={"body": "a" * 10_001}).status_code == 422
+    assert c.post(f"/resumes/{rid}/questions/{qid}/versions", json={"body": "a" * 10_000}).status_code == 201

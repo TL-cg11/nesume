@@ -191,7 +191,7 @@ jobs:
       id-token: write   # OIDC 로 nesume-github-ci 역할을 받는다. 저장소에 AWS 키 없음
       contents: read
     concurrency:
-      group: infra        # infra-up/down 과 같은 그룹. 동시에 클러스터를 만지지 않는다
+      group: infra        # infra.yml(up/down) 과 같은 그룹. 동시에 클러스터를 만지지 않는다
       cancel-in-progress: false
     env:
       AWS_REGION: ${{ vars.AWS_REGION }}
@@ -290,10 +290,19 @@ jobs:
           aws eks update-kubeconfig --name "$EKS_CLUSTER" --region "$AWS_REGION"
           terraform -chdir=infra/envs/dev/compute init -input=false >/dev/null
           DB=$(terraform -chdir=infra/envs/dev/compute output -raw rds_address)
+          # D20 embedder 는 embedder/ 가 바뀔 때만 빌드돼 app 과 태그가 다르다. ECR 최신 태그를 쓰고, 저장소가 없거나 비면 끈다
+          # (up.ps1/deploy.ps1 과 같은 규칙). 없으면 helm 이 image.embedder.tag required 로 실패한다(10-28 실측).
+          EMB=$(aws ecr describe-images --repository-name nesume/embedder \
+                --query 'sort_by(imageDetails,&imagePushedAt)[-1].imageTags[0]' --output text 2>/dev/null || true)
+          if [ -n "$EMB" ] && [ "$EMB" != "None" ]; then
+            EMB_SET=(--set-string image.embedder.tag="$EMB"); echo "embedder image: nesume/embedder:$EMB"
+          else
+            EMB_SET=(--set embedder.enabled=false); echo "::warning::ECR nesume/embedder is empty; deploying with embedder.enabled=false"
+          fi
           # --set-string: 숫자만 있는 sha 를 --set 은 int 로 읽어 이미지 이름이 깨진다(10-27 실측)
           helm upgrade --install nesume deploy/nesume -n dev -f deploy/nesume/values-dev.yaml \
             --set-string config.DB_HOST="$DB" \
-            --set-string image.app.tag="$SHA" --set-string image.web.tag="$SHA" \
+            --set-string image.app.tag="$SHA" --set-string image.web.tag="$SHA" "${EMB_SET[@]}" \
             --wait --timeout 10m
 
       - name: health check

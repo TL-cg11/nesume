@@ -1,12 +1,20 @@
 # --- base: 런타임 의존성 + 애플리케이션 코드 ---
-FROM python:3.12.15-slim-bookworm AS base
+FROM python:3.12.16-slim-bookworm AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
+# 베이스 이미지의 Debian 보안 패치를 당긴다. CI(D11) trivy 가 HIGH/CRITICAL 로 배포를 막는다(10-28: openssl CVE-2026-84782).
+# 이 레이어는 GHA 캐시에 남으므로 새 CVE 가 나오면 캐시를 비우거나 이 줄을 건드려 재빌드한다.
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /srv
+
+RUN apt-get update && apt-get install -y --no-install-recommends libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 fonts-nanum && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
 RUN pip install -r requirements.txt

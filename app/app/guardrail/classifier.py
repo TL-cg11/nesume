@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Protocol
@@ -87,6 +87,13 @@ class Rule:
     severity: Severity
     priority: int
     patterns: tuple[re.Pattern[str], ...]
+    #: 하나라도 걸리면 이 규칙을 적용하지 않는다. 낱말은 맞지만 뜻이 다른 문장을 뺀다
+    #: (B18 과차단 측정에서 "카드번호 검증 로직" 이 민감정보로 잡힌 것).
+    #:
+    #: ★ 이것으로 진짜 PII 가 빠져나가지는 않는다 — 실제 번호는 분류기가 아니라
+    #:   PII 층의 ``REJECTED_KINDS``(RRN·ACCOUNT)가 막는다. 제외는 **낱말만 있는
+    #:   문장**의 유형 판단에만 영향을 준다.
+    exclude_patterns: tuple[re.Pattern[str], ...] = ()
     #: 이 역할에게는 적용하지 않는다
     exempt_roles: frozenset[str] = frozenset()
     #: 이 질의가 요구하는 문서 등급. 있으면 matrix.yaml 로 역할×등급을 본다
@@ -99,7 +106,10 @@ class Rule:
         return role not in self.exempt_roles
 
     def matches(self, text: str) -> bool:
-        return any(p.search(text) for p in self.patterns)
+        if not any(p.search(text) for p in self.patterns):
+            return False
+        # 제외가 이긴다. 걸린 뒤에 보는 이유: 제외만으로는 아무것도 결정하지 않는다
+        return not any(p.search(text) for p in self.exclude_patterns)
 
 
 # --------------------------------------------------------------------------
@@ -109,6 +119,33 @@ class Rule:
 def _require(condition: bool, message: str) -> None:
     if not condition:
         raise RuleFileError(message)
+
+
+def _compile_patterns(rule_id: str, raw: object, field_name: str) -> tuple[re.Pattern[str], ...]:
+    """정규식 목록을 컴파일한다.
+
+    ★ 목록인지 먼저 본다. YAML 에 ``patterns: '검증'`` 처럼 따옴표만 쓰면 문자열이 되고,
+      문자열을 그냥 돌면 **글자 하나씩** 패턴이 된다 ('검', '증'). 각각 정규식으로는
+      멀쩡해서 예외도 안 나고, 규칙이 조용히 엉뚱해진다.
+    """
+    _require(
+        isinstance(raw, list),
+        f"{rule_id}.{field_name} 는 목록이어야 합니다(한 줄짜리도 '- ' 로 적습니다): {raw!r}",
+    )
+    assert isinstance(raw, list)  # _require 가 보장한다. 타입 검사기에게 알려 준다
+    _require(bool(raw), f"{rule_id}.{field_name} 가 비어 있습니다")
+
+    compiled: list[re.Pattern[str]] = []
+    for pattern in raw:
+        _require(
+            isinstance(pattern, str),
+            f"{rule_id}.{field_name} 의 항목은 문자열이어야 합니다: {pattern!r}",
+        )
+        try:
+            compiled.append(re.compile(pattern, re.IGNORECASE | re.MULTILINE))
+        except re.error as exc:
+            raise RuleFileError(f"{rule_id} 의 정규식이 잘못됐습니다: {pattern!r} — {exc}") from exc
+    return tuple(compiled)
 
 
 def load_rules(path: Path | str = RULES_PATH) -> tuple[Rule, ...]:
@@ -150,15 +187,12 @@ def load_rules(path: Path | str = RULES_PATH) -> tuple[Rule, ...]:
         priority = raw.get("priority")
         _require(isinstance(priority, int), f"{rule_id}.priority 는 정수여야 합니다")
 
-        raw_patterns = raw.get("patterns") or []
-        _require(bool(raw_patterns), f"{rule_id}.patterns 가 비어 있습니다")
+        patterns = _compile_patterns(rule_id, raw.get("patterns") or [], "patterns")
 
-        compiled: list[re.Pattern[str]] = []
-        for pattern in raw_patterns:
-            try:
-                compiled.append(re.compile(pattern, re.IGNORECASE | re.MULTILINE))
-            except re.error as exc:
-                raise RuleFileError(f"{rule_id} 의 정규식이 잘못됐습니다: {pattern!r} — {exc}") from exc
+        # 없으면 빈 튜플. 키를 적었는데 비었으면 편집 실수로 보고 막는다
+        excludes: tuple[re.Pattern[str], ...] = ()
+        if "exclude_patterns" in raw:
+            excludes = _compile_patterns(rule_id, raw["exclude_patterns"], "exclude_patterns")
 
         rules.append(
             Rule(
@@ -166,7 +200,8 @@ def load_rules(path: Path | str = RULES_PATH) -> tuple[Rule, ...]:
                 query_type=query_type,
                 severity=severity,
                 priority=priority,
-                patterns=tuple(compiled),
+                patterns=patterns,
+                exclude_patterns=excludes,
                 exempt_roles=frozenset(raw.get("exempt_roles") or ()),
                 grade=raw.get("grade"),
                 other_owner=bool(raw.get("other_owner", False)),

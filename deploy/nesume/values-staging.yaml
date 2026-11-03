@@ -10,6 +10,7 @@ web:
 
 config:
   APP_ENV: staging
+  MFA_EXEMPT_TEST_OPERATORS: "true" # 시드 test-operator1 은 TOTP 없이 역할 관리 등 운영자 기능 사용(D7)
   DB_HOST: ""
   S3_BUCKET_NAME: ""
   KMS_KEY_ALIAS: ""

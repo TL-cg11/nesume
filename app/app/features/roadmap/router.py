@@ -2,7 +2,8 @@
 
 흐름: 갭(요청) → 콘텐츠 매칭·주차 배치(`service.build_roadmap`) → 저장(`save_roadmap`) → 조회.
 - **본인 전용**: 모든 작업 owner=토큰 `sub`, 남의 것은 404(`RoadmapNotFound`). grade=personal 고정.
-- **LLM 직접 호출 없음**: 배치까지 순수/DB. "왜 이 순서인지" 설명은 통합 단계에서 A8 경유로 덧댄다.
+- **LLM 호출 없음**: 순서·주차 배치는 규칙(`schedule.py`).
+  "왜 이 순서인지" LLM 설명은 2026-10-29 제거(docs/C14.md).
 - 출력/이미지 저장은 **프런트**(조회 결과를 렌더·캡처) — 서버 엔드포인트 아님.
 main.py 등록은 D에 PR로 요청(features/__init__.py 규칙).
 """
@@ -11,38 +12,30 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.auth import AuthenticatedUser
 from app.db import get_db
 from app.features.roadmap import service
-from app.features.roadmap.explain import explain
 from app.features.roadmap.schemas import (
+    CandidateOut,
+    CandidatePick,
+    CandidatesOut,
     ItemUpdate,
+    LearningMode,
     RoadmapCreate,
     RoadmapItemOut,
     RoadmapOut,
     RoadmapUpdate,
     UserItemCreate,
 )
-from app.guardrail import Guardrail, LlmUnavailable
 from app.models.learning import LearningContent, LearningRoadmap, LearningRoadmapItem
+from app.postings.read import get_posting_fields, get_posting_link
+from app.retrieval.embedder import get_embedder
 
 router = APIRouter(prefix="/roadmaps", tags=["roadmaps"])
 Db = Annotated[Session, Depends(get_db)]
-
-
-def get_guardrail() -> Guardrail:
-    """A8 파이프라인(기능은 이것만 호출, llm_client 직접 import 금지). 프로바이더 배선은 D 통합 시.
-
-    A `matching`/`style` 라우터와 같은 패턴 — 기본 생성자는 `NotConfiguredProvider`라
-    실제 호출 시 `LlmUnavailable`. 테스트·import는 되고 런타임 LLM만 막힌다.
-    """
-    return Guardrail()
-
-
-GuardrailDep = Annotated[Guardrail, Depends(get_guardrail)]
 
 _NOT_FOUND = HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
 
@@ -63,6 +56,11 @@ def _item_out(item: LearningRoadmapItem, content: LearningContent | None) -> Roa
             source=content.source,
             provider=content.provider,
             certificate=content.certificate,
+            content_id=content.id,
+            mode=content.mode,
+            gap_key=item.gap_key,
+            gap_label=item.gap_label,
+            match_kind=item.match_kind,
         )
     # 사용자 추가 항목 또는 매칭 콘텐츠 없는 시스템 갭(inline title)
     return RoadmapItemOut(
@@ -75,11 +73,18 @@ def _item_out(item: LearningRoadmapItem, content: LearningContent | None) -> Roa
         title=item.title,
         url=item.url,
         hours=item.hours,
+        gap_key=item.gap_key,
+        gap_label=item.gap_label,
     )
 
 
 def _roadmap_out(db: Session, roadmap: LearningRoadmap, owner_id: str) -> RoadmapOut:
     out = RoadmapOut.model_validate(roadmap)
+    if roadmap.job_posting_id:  # 공고는 C4 창구로만(권한 규칙 그대로 — 못 보면 None)
+        fields = get_posting_fields(db, roadmap.job_posting_id, user_id=owner_id)
+        link = get_posting_link(db, roadmap.job_posting_id, user_id=owner_id) if fields else None
+        out.posting_title = fields["title"] if fields else None
+        out.company_name = link["company_name"] if link else None
     out.items = [
         _item_out(item, content)
         for item, content in service.get_items(db, roadmap_id=roadmap.id, owner_id=owner_id)
@@ -96,6 +101,7 @@ def create_roadmap(payload: RoadmapCreate, user: AuthenticatedUser, db: Db):
         weekly_hours=payload.weekly_hours,
         mode=payload.mode.value if payload.mode else None,
         max_weeks=payload.max_weeks,
+        embedder=get_embedder(),
     )
     roadmap = service.save_roadmap(
         db,
@@ -103,29 +109,10 @@ def create_roadmap(payload: RoadmapCreate, user: AuthenticatedUser, db: Db):
         job_posting_id=payload.job_posting_id,
         weekly_hours=payload.weekly_hours,
         plan=plan,
+        mode=payload.mode.value if payload.mode else None,
     )
     db.flush()
     return _roadmap_out(db, roadmap, user.sub)
-
-
-@router.post("/{roadmap_id}/explain", response_model=RoadmapOut)
-async def explain_roadmap(roadmap_id: uuid.UUID, user: AuthenticatedUser, db: Db, guard: GuardrailDep):
-    """"왜 이 순서인지" 설명을 A8 경유로 생성·저장. 로드맵은 데이터로 펜싱(LLM이 못 지어냄).
-
-    LLM 프로바이더 미배선(D 통합 전)이면 503 — 로드맵 자체는 설명 없이도 동작한다.
-    """
-    try:
-        service.get_roadmap(db, roadmap_id=roadmap_id, owner_id=user.sub)  # 소유 확인
-    except service.RoadmapNotFound:
-        raise _NOT_FOUND from None
-    rows = service.get_items(db, roadmap_id=roadmap_id, owner_id=user.sub)
-    try:
-        text = await explain(guard, rows, user_id=user.sub, role=user.role.value)
-    except LlmUnavailable:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "LLM 미배선") from None
-    rm = service.set_explanation(db, roadmap_id=roadmap_id, owner_id=user.sub, text=text)
-    db.flush()
-    return _roadmap_out(db, rm, user.sub)
 
 
 @router.get("", response_model=list[RoadmapOut])
@@ -145,11 +132,19 @@ def get_roadmap(roadmap_id: uuid.UUID, user: AuthenticatedUser, db: Db):
 @router.patch("/{roadmap_id}", response_model=RoadmapOut)
 def update_roadmap(roadmap_id: uuid.UUID, payload: RoadmapUpdate, user: AuthenticatedUser, db: Db):
     try:
-        rm = service.update_weekly_hours(
-            db, roadmap_id=roadmap_id, owner_id=user.sub, weekly_hours=payload.weekly_hours
+        rm = service.update_roadmap(
+            db, roadmap_id=roadmap_id, owner_id=user.sub,
+            weekly_hours=payload.weekly_hours, save=payload.save, name=payload.name,
+            replace_oldest=payload.replace_oldest,
         )
     except service.RoadmapNotFound:
         raise _NOT_FOUND from None
+    except service.SavedLimitReached:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"저장한 로드맵이 이미 {service.MAX_SAVED_ROADMAPS}개입니다. "
+            "가장 오래된 것을 지우고 저장하려면 확인이 필요합니다.",
+        ) from None
     db.flush()
     return _roadmap_out(db, rm, user.sub)
 
@@ -213,3 +208,79 @@ def delete_item(roadmap_id: uuid.UUID, item_id: uuid.UUID, user: AuthenticatedUs
     except service.RoadmapNotFound:
         raise _NOT_FOUND from None
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+#: "전체 보기" 페이지 크기 상한(한 번에 너무 많이 내려주지 않게).
+MAX_PAGE_SIZE = 50
+
+
+@router.get("/{roadmap_id}/items/{item_id}/candidates", response_model=CandidatesOut)
+def list_candidates(
+    roadmap_id: uuid.UUID,
+    item_id: uuid.UUID,
+    user: AuthenticatedUser,
+    db: Db,
+    mode: LearningMode | None = None,
+    page: Annotated[int, Query(ge=1, le=1000)] = 1,
+    size: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = 20,
+):
+    """이 항목 역량의 강좌 **전부**(키 일치·제목 단어·의미 검색), 평점순·페이지. 본인 로드맵만."""
+    try:
+        total, refs, in_roadmap = service.item_candidates(
+            db,
+            roadmap_id=roadmap_id,
+            item_id=item_id,
+            owner_id=user.sub,
+            mode=mode.value if mode else None,
+            page=page,
+            size=size,
+            embedder=get_embedder(),
+        )
+    except service.RoadmapNotFound:
+        raise _NOT_FOUND from None
+    except service.NoGapInfo:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "역량 정보가 없는 항목입니다. 로드맵을 다시 생성해 주세요."
+        ) from None
+    return CandidatesOut(
+        total=total,
+        page=page,
+        size=size,
+        items=[
+            CandidateOut(
+                content_id=r.content_id,
+                title=r.title,
+                url=r.url,
+                source=r.source,
+                mode=r.mode,
+                provider=r.provider,
+                hours=r.est_hours or None,
+                weeks=r.weeks,
+                rating=r.rating,
+                certificate=r.certificate,
+                match_kind=r.match,
+                in_roadmap=r.content_id in in_roadmap,
+            )
+            for r in refs
+        ],
+    )
+
+
+@router.post("/{roadmap_id}/items/{item_id}/candidates", response_model=RoadmapItemOut)
+def pick_candidate(
+    roadmap_id: uuid.UUID, item_id: uuid.UUID, payload: CandidatePick, user: AuthenticatedUser, db: Db
+):
+    """목록에서 고른 강좌로 **교체**(`replace=true`) 또는 같은 역량·주차에 **추가**. 활성 강좌만."""
+    fn = service.replace_with_candidate if payload.replace else service.add_candidate
+    try:
+        item = fn(
+            db, roadmap_id=roadmap_id, item_id=item_id, owner_id=user.sub, content_id=payload.content_id
+        )
+    except service.RoadmapNotFound:
+        raise _NOT_FOUND from None
+    except service.NoGapInfo:
+        raise HTTPException(status.HTTP_409_CONFLICT, "역량 정보가 없는 항목입니다.") from None
+    except service.ContentUnavailable:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "강좌를 찾을 수 없습니다") from None
+    db.flush()
+    return _item_out(item, db.get(LearningContent, item.content_id))

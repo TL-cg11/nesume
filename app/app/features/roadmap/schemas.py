@@ -64,10 +64,14 @@ class RoadmapCreate(BaseModel):
 
 
 class RoadmapUpdate(BaseModel):
-    """로드맵 수정 — 주당 시간만(재배치는 재생성/항목 이동으로)."""
+    """로드맵 수정 — 주당 시간·저장(초안 → 저장본)·이름. 준 필드만 바뀐다. 저장 취소는 없다(삭제로)."""
 
     model_config = ConfigDict(extra="forbid")
-    weekly_hours: int = Field(ge=1, le=60)
+    weekly_hours: int | None = Field(default=None, ge=1, le=60)
+    save: bool = False
+    name: str | None = Field(default=None, max_length=200)
+    #: 저장본이 한도(10개)면 가장 오래된 것을 지우고 저장 — 사용자가 확인했을 때만 true
+    replace_oldest: bool = False
 
 
 class UserItemCreate(BaseModel):
@@ -108,6 +112,47 @@ class RoadmapItemOut(BaseModel):
     source: str | None = None     # 시스템 항목 콘텐츠 출처(kmooc 등)
     provider: str | None = None
     certificate: bool | None = None
+    content_id: uuid.UUID | None = None  # 시스템 항목의 강좌(전체 보기에서 "지금 강좌" 표시)
+    mode: str | None = None       # 시스템 항목 강좌의 학습 방법(online/offline)
+    #: 어느 역량 몫인가(있으면 "이 역량 강좌 전체 보기" 가능). 사용자 추가·0020 이전 항목은 null.
+    gap_key: str | None = None
+    gap_label: str | None = None
+    #: 강좌를 찾은 방식 key / title / semantic(= "AI 추천 · 관련도 낮을 수 있음")
+    match_kind: str | None = None
+
+
+class CandidateOut(BaseModel):
+    """"이 역량 강좌 전체 보기"의 강좌 1건(공개 메타데이터)."""
+
+    model_config = ConfigDict(extra="forbid")
+    content_id: uuid.UUID
+    title: str
+    url: str
+    source: str
+    mode: str
+    provider: str | None = None
+    hours: float | None = None
+    weeks: int | None = None
+    rating: float | None = None   # 출처 원래 점수(K-MOOC 5점·고용24 100점) — 화면이 만점과 함께 표시
+    certificate: bool | None = None
+    match_kind: str
+    in_roadmap: bool              # 이미 이 로드맵에 있음
+
+
+class CandidatesOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    total: int
+    page: int
+    size: int
+    items: list[CandidateOut]
+
+
+class CandidatePick(BaseModel):
+    """목록에서 고른 강좌 → 추가(같은 역량·주차) 또는 교체. 링크·제목은 서버가 DB에서 채운다."""
+
+    model_config = ConfigDict(extra="forbid")
+    content_id: uuid.UUID
+    replace: bool = False
 
 
 class RoadmapOut(BaseModel):
@@ -116,8 +161,11 @@ class RoadmapOut(BaseModel):
     job_posting_id: uuid.UUID | None
     weekly_hours: int
     grade: str
-    #: "왜 이 순서인지" LLM 설명(A8 경유). 아직 생성 안 했으면 null.
-    explanation: str | None = None
+    mode: str | None = None              # 만들 때 고른 학습 방법(null = 전체)
+    saved_at: datetime | None = None     # null = 초안(목록엔 저장본만, 초안은 사용자당 1개)
+    name: str | None = None
+    posting_title: str | None = None     # 기준 공고(목록 표시용, 본인이 볼 수 있는 공고만)
+    company_name: str | None = None
     created_at: datetime
     updated_at: datetime
     items: list[RoadmapItemOut] = Field(default_factory=list)

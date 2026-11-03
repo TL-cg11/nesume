@@ -1,8 +1,11 @@
 """C14 K-MOOC 수집 파서 테스트. 실제 응답 모양(2026-10-23) 기준·순수(네트워크 없음)."""
 import datetime
+import io
+import urllib.error
 
 import pytest
 
+from app.features.roadmap import kmooc as _km
 from app.features.roadmap.kmooc import (
     KmoocApiError,
     collect,
@@ -114,3 +117,69 @@ def test_collect_public_only_false_keeps_all():
         dict(_LIST_ITEM, id="1"), dict(_LIST_ITEM, id="2", public_yn="N")]}
     got = collect(lambda p, s: page, public_only=False, max_pages=1)
     assert [c.external_id for c in got] == ["1", "2"]
+
+
+# --- HTTP 재시도·키 숨김 (docs/C14.md K-MOOC 수집 503 실패) ---
+
+_SECRET = "SECRET-KMOOC-KEY-123"  # gitleaks:allow — 가짜 표식(예외에 키가 안 실리는지 확인용)
+
+
+class _Resp(io.BytesIO):
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def _http_error(code):
+    url = f"https://apis.data.go.kr/x?ServiceKey={_SECRET}"
+    return urllib.error.HTTPError(url, code, "err", {}, None)
+
+
+def _patch(monkeypatch, outcomes):
+    monkeypatch.setenv("KMOOC_API_KEY", _SECRET)
+    calls, sleeps = [], []
+
+    def fake_urlopen(url, timeout):
+        calls.append(url)
+        out = outcomes.pop(0)
+        if isinstance(out, Exception):
+            raise out
+        return _Resp(out)
+
+    monkeypatch.setattr(_km.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(_km, "_sleep", sleeps.append)
+    return calls, sleeps
+
+
+def test_retries_5xx_then_succeeds(monkeypatch):
+    calls, sleeps = _patch(monkeypatch, [_http_error(503), TimeoutError(), b'{"resultCode": "00"}'])
+    assert _km.fetch_list_page(1, 100) == {"resultCode": "00"}
+    assert len(calls) == 3 and sleeps == [1.0, 2.0]
+
+
+def test_4xx_not_retried(monkeypatch):
+    calls, sleeps = _patch(monkeypatch, [_http_error(401)])
+    with pytest.raises(_km.KmoocApiError, match="HTTP 401"):
+        _km.fetch_list_page(1, 100)
+    assert len(calls) == 1 and sleeps == []
+
+
+def test_gives_up_and_hides_key(monkeypatch):
+    calls, _ = _patch(monkeypatch, [_http_error(503)] * 4)
+    with pytest.raises(_km.KmoocApiError) as ei:
+        _km.fetch_course_detail("c1")
+    assert len(calls) == 4
+    err = ei.value
+    assert _SECRET not in str(err) and _SECRET not in repr(err)
+    assert err.__cause__ is None and err.__suppress_context__  # 원래 HTTPError(URL 보유)가 안 딸려 감
+
+
+def test_oversized_and_non_json_rejected(monkeypatch):
+    _patch(monkeypatch, [b"x" * (_km._MAX_BYTES + 1)])
+    with pytest.raises(_km.KmoocApiError, match="크기"):
+        _km.fetch_list_page(1, 100)
+    _patch(monkeypatch, [b"<html>"])
+    with pytest.raises(_km.KmoocApiError, match="JSON"):
+        _km.fetch_list_page(1, 100)

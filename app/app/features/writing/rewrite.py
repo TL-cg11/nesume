@@ -30,6 +30,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Literal
 
+from app.features.profile.extract import CONNECTIVES
 from app.features.style.tone import DEFAULT_TONE, TONE_NAMES, TONES, Tone
 from app.guardrail import DEFAULT_MAX_CALLS
 
@@ -80,6 +81,17 @@ LENGTH_NAMES: dict[Length, str] = {
 CANDIDATE_MARK = "###후보"
 _CANDIDATE_RE = re.compile(rf"^{re.escape(CANDIDATE_MARK)}\s*(\d+)\s*$", re.MULTILINE)
 
+#: 말투 샘플 길이. 글쓴이가 평소 쓴 글을 붙여 넣으면 그 말투로 다시 쓴다.
+#: 몇 문장은 있어야 습관이 보이고, 너무 길면 매 조각 프롬프트가 불어난다.
+MIN_SAMPLE_CHARS = 100
+MAX_SAMPLE_CHARS = 3000
+
+#: 샘플과 본문을 **한 덩어리로** 가드레일에 넘길 때의 경계.
+#: ★ 샘플도 본문과 똑같이 A1 치환·A3 분류를 거쳐야 한다. 따로 프롬프트에 붙이면
+#:   샘플 속 이름·연락처가 가려지지 않은 채 모델에 간다. 그래서 둘을 이어 검사·치환한 뒤
+#:   이 경계에서 다시 가른다. 치환 규칙(PII 패턴)에 걸릴 수 없는 모양이어야 한다.
+SAMPLE_SEP = "\n<<<NESUME_STYLE_SAMPLE_END>>>\n"
+
 #: 문단 경계. 빈 줄 하나로 본다.
 _PARAGRAPH = re.compile(r"\n\s*\n")
 
@@ -100,12 +112,14 @@ class RewriteOptions:
     옵션을 고르게 강제하면 "그냥 다시 써 줘" 를 못 하게 된다.
     """
 
-    tone: Tone = DEFAULT_TONE
+    #: None 이면 끝맺음도 말투 샘플을 따른다. 샘플이 있을 때만 뜻이 있다 —
+    #: 샘플이 없으면 서비스가 기본 문체로 바꾼다 (rewrite_service.rewrite)
+    tone: Tone | None = DEFAULT_TONE
     length: Length = DEFAULT_LENGTH
     keywords: tuple[str, ...] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
-        if self.tone not in TONES:
+        if self.tone is not None and self.tone not in TONES:
             raise RewriteOptionError(f"문체는 {TONES} 중 하나여야 합니다: {self.tone!r}")
         if self.length not in LENGTHS:
             raise RewriteOptionError(f"길이는 {LENGTHS} 중 하나여야 합니다: {self.length!r}")
@@ -126,7 +140,8 @@ class RewriteOptions:
           있어야 한다.** 그래서 응답에도 이 문단을 그대로 실어 보낸다.
         """
         lines = [
-            f"- 문체는 {TONE_NAMES[self.tone]}로 씁니다.",
+            f"- 문체는 {TONE_NAMES[self.tone]}로 씁니다." if self.tone
+            else "- 문장 끝맺음(문체)도 말투 샘플을 따릅니다.",
             f"- {LENGTH_RULES[self.length]}",
         ]
         if self.keywords:
@@ -211,6 +226,8 @@ def build_part_prompt(
     *,
     template_body: str | None = None,
     profile_fragment: str = "",
+    style_sample: str = "",
+    sample_measures: str = "",
     part_index: int = 0,
     part_total: int = 1,
 ) -> str:
@@ -219,22 +236,89 @@ def build_part_prompt(
     ``template_body`` 는 B9 활성 템플릿이다. 없으면 내장 기본값으로 쓴다 —
     **활성 템플릿이 없다고 기능이 멈추면 안 된다** (운영자가 첫 템플릿을
     등록하기 전까지 아무도 리라이팅을 못 쓰게 된다).
+
+    ``style_sample`` 은 **치환이 끝난** 말투 샘플이다. 있으면 저장된 말투 프로필
+    대신 이것을 따른다 — 사용자가 지금 붙여 넣은 글이 더 정확한 기준이다.
     """
     head = template_body if template_body else DEFAULT_TEMPLATE_BODY
+    tone_rule = (
+        SAMPLE_TONE_RULE.format(tone=TONE_NAMES[options.tone]) if options.tone
+        else SAMPLE_OWN_ENDINGS
+    )
+    if style_sample:
+        # ★ 말투 맞추기가 목적이면 그 지시를 **맨 앞에** 둔다. 뒤에 두면 "자소서를 다시 써라"
+        #   가 앞서서 모델이 원문 구조를 그대로 두고 낱말만 바꿨다 (10-29 실측).
+        #   대신 샘플 끝맺음(했다)이 문체 지시를 이겨서, 끝맺음은 앞뒤 두 번 적는다
+        head = f"{SAMPLE_HEAD} {tone_rule}\n\n{head}"
     rules = [options.instructions()]
-    if profile_fragment:
+    if style_sample:
+        rules.append(SAMPLE_RULE)
+        if sample_measures:
+            rules.append(sample_measures)
+    elif profile_fragment:
         rules.append(profile_fragment)
     if part_total > 1:
         rules.append(
             f"- 이 글은 긴 글의 {part_index + 1}/{part_total} 조각입니다. "
             "앞뒤를 짐작해 **없는 내용을 덧붙이지 않습니다.**"
         )
+    sample = (
+        f"--- 말투 샘플 (말투만 참고) ---\n{style_sample}\n\n({tone_rule})\n\n" if style_sample else ""
+    )
     return (
         f"{head}\n\n"
         f"{_candidate_rule()}\n\n"
         f"{chr(10).join(rules)}\n\n"
+        f"{sample}"
         f"--- 글 ---\n{part}"
     )
+
+
+#: ★ 샘플은 **말투만** 빌린다. 샘플 속 사실·숫자가 본문에 섞이면 그것도 지어낸 경험이다.
+#:   서버가 새 숫자가 생긴 후보를 버리지만(rewrite_service), 지시에서 먼저 막는다.
+SAMPLE_HEAD = "'말투 샘플' 을 쓴 사람이 되어, '글' 의 내용을 그 사람의 말투로 다시 써 주십시오."
+SAMPLE_TONE_RULE = "단, 모든 문장의 끝은 반드시 {tone}로 씁니다."
+#: 끝맺음을 고르지 않았을 때(화면 기본, 2026-10-29). 말투를 맞추는 기능이니 끝맺음도 그 사람 것이다
+SAMPLE_OWN_ENDINGS = "문장 끝맺음(~습니다·~했다·~해요 등)도 샘플과 같게 씁니다."
+
+_MEASURE_SENTENCE = re.compile(r"[^.!?\n]+[.!?]*")
+
+
+def _avg_sentence_len(text: str) -> int:
+    sentences = [s.strip() for s in _MEASURE_SENTENCE.findall(text) if s.strip()]
+    return round(sum(len(s) for s in sentences) / len(sentences)) if sentences else 0
+
+
+def sample_measures(sample: str, text: str) -> str:
+    """샘플을 **서버가 재서** 수치로 지시한다.
+
+    ★ "샘플처럼" 만으로는 모델이 문장 길이를 거의 바꾸지 않았다. 숫자를 주면 따른다.
+      고정 지시("짧게 끊어라")는 길게 쓰는 사람에게 틀린 말이 되므로 재서 준다.
+    ★ 치환을 거치지 않고 프롬프트에 붙는 값이라 **숫자와 화이트리스트 기능어만** 담는다
+      (A14 `extract` 와 같은 판단 — 내용어는 PII 일 수 있다).
+    """
+    target, current = _avg_sentence_len(sample), _avg_sentence_len(text)
+    lines = [
+        f"- 샘플의 문장은 평균 {target}자입니다 (지금 글은 평균 {current}자). "
+        f"다시 쓴 글의 문장도 평균 {target}자 안팎이 되게 끊거나 잇습니다."
+    ]
+    used = [c for c in CONNECTIVES if c in sample]
+    if used:
+        lines.append(f"- 샘플이 쓰는 연결 표현: {' · '.join(used[:5])}")
+    return "\n".join(lines)
+
+
+#: ★ "샘플처럼 맞춘다" 정도로 적으면 모델이 원문 문장 구조를 그대로 두고 낱말만 바꿨다
+#:   (10-29 Nova 2 Lite 실측). 그래서 **이 사람이 썼다고 생각하고** 다시 쓰라고 하고,
+#:   따라야 할 것(문장 길이·시작·연결·리듬)을 하나씩 짚는다.
+SAMPLE_RULE = (
+    "- **가장 중요한 조건**: '말투 샘플' 을 쓴 사람이 이 글을 직접 썼다고 생각하고 다시 씁니다. "
+    "샘플의 문장 길이(짧게 끊는지 길게 잇는지), 문장을 시작하는 방식, 자주 쓰는 연결 표현과 "
+    "부사, 문장의 리듬을 그대로 따릅니다. 원문의 문장 구조는 유지하지 않아도 됩니다.\n"
+    "- '글' 의 내용은 **하나도 빼지 않습니다.** 문장을 나누거나 합칠 뿐 정보를 줄이지 않습니다.\n"
+    "- 문단은 '글' 처럼 나눕니다. 문장마다 줄을 바꾸지 않습니다.\n"
+    "- 샘플의 **내용·사실·숫자·고유명사는 가져오지 않습니다.** 내용은 '글' 에 있는 것만 씁니다."
+)
 
 
 def _candidate_rule() -> str:

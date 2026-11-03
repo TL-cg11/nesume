@@ -1,4 +1,4 @@
-"""감사 로그 (spec 10.1). 민감 등급. 요청당 1행, 원문 질의 저장 금지.
+"""감사 로그 (spec 10.1). 민감 등급. 요청당 1행, 원문 질의 저장 금지(질문·답변 모두 가린 형태로만).
 
 user_id는 FK를 두지 않는다. 계정 삭제 시 anon_id로 치환해 보존한다(spec 10.2).
 무결성 제약(B3, part2_guide 4.25): doc_grades 5등급만, test- 접두어⇔is_test, query_hash SHA-256 형식.
@@ -49,6 +49,8 @@ class AuditLog(Base):
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     feature: Mapped[str] = mapped_column(String(50))
     query_masked: Mapped[str | None] = mapped_column(Text)  # A1 마스킹 적용
+    # 사용자에게 돌려준 답변(복원 전 토큰 + 마스킹). 차단 시 NULL(막힌 응답은 남기지 않음, part2_guide 4.74)
+    response_masked: Mapped[str | None] = mapped_column(Text)
     query_hash: Mapped[str | None] = mapped_column(String(64))  # 원문 SHA-256 hex
     query_type: Mapped[str | None] = mapped_column(String(20))
     flags: Mapped[list[str]] = mapped_column(ARRAY(String(50)), default=list, server_default="{}")

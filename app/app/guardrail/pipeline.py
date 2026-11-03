@@ -11,6 +11,7 @@ LLM 을 쓰는 **모든** 기능이 지나는 단 하나의 경로다. A·B·C �
     5. 프롬프트 조립          외부 텍스트는 데이터로 감싼다
     6. LLM 호출        (A2)  모델은 토큰만 본다
     7. check_output    (A5)  ★ 복원 전에 검사한다
+       output_rail     (D19) 선택. 안전 분류 모델(Llama Guard)로 유해 콘텐츠를 한 번 더 본다
     8. detokenize      (A1)  복원 + 조사 보정
     9. finally         (B11) 감사 로그를 **정확히 한 번** 쓴다
 
@@ -38,7 +39,14 @@ from typing import Awaitable, Callable, Mapping, Protocol, Sequence
 
 from app.guardrail.classifier import PolicyLike, classify
 from app.guardrail.multiturn import TurnStore, check_multiturn, make_turn
-from app.guardrail.llm_client import LlmClient, LlmRequest, LlmResponse, Usage, ZERO_USAGE
+from app.guardrail.llm_client import (
+    DEFAULT_SPLIT_MAX_OUTPUT_TOKENS,
+    ZERO_USAGE,
+    LlmClient,
+    LlmRequest,
+    LlmResponse,
+    Usage,
+)
 from app.guardrail.output_guard import OutputContext, check_output
 from app.guardrail.schema import Finding, Verdict, allow, worse_decision
 from app.pii import (
@@ -130,6 +138,17 @@ class AuditSink(Protocol):
     async def write(self, **fields: object) -> None: ...
 
 
+class OutputRail(Protocol):
+    """D19 추가 출력 레일(guardrail/rails/). A5 가 통과시킨 본문을 **복원 전에** 한 번 더 판정한다.
+
+    돌려주는 판정의 stage 는 ``output_guard`` 다 — 감사 로그 CHECK 제약에 단계가 셋뿐이라 새 단계를 만들지
+    않는다.
+    레일 자체의 오류 처리(fail-open/closed)는 레일 안에서 끝내고 여기로 예외를 올리지 않는다.
+    """
+
+    async def check(self, text: str) -> Verdict: ...
+
+
 # --------------------------------------------------------------------------
 # 컨텍스트와 결과
 # --------------------------------------------------------------------------
@@ -179,6 +198,9 @@ class PipelineResult:
     doc_ids: tuple[str, ...] = ()
     #: 참조한 문서들의 등급. doc_ids 와 같은 순서다 (audit_logs.doc_grades)
     doc_grades: tuple[str, ...] = ()
+    #: 감사 로그용 응답 — 출력 검사를 통과한 **복원 전** 글(PII 는 토큰 상태). B11 이 가려 저장한다.
+    #: 차단되면 비어 있다(막힌 응답은 기록하지 않는다 — 유출 내용을 다시 남기지 않게)
+    audit_response: str = ""
 
     @property
     def blocked(self) -> bool:
@@ -263,6 +285,8 @@ class Guardrail:
     #: 기밀 문서에 심어둔 표식 (A5 가 검사한다)
     canaries: tuple[str, ...] = ()
     top_k: int = DEFAULT_TOP_K
+    #: D19 출력 레일. 주지 않으면 A5 만으로 끝난다(기존 동작). 설정 플래그로 fastapi.py 가 주입한다
+    output_rail: OutputRail | None = None
 
     async def run(
         self, query: str, ctx: RequestContext, *, prompt: PromptBuilder | None = None
@@ -334,6 +358,7 @@ class Guardrail:
                 doc_grades=result.doc_grades,
                 latency_ms=int((time.monotonic() - started) * 1000),
                 suppress=failure is not None,
+                response=result.audit_response,
             )
 
     def _multiturn(self, query: str, ctx: RequestContext, single_turn: Verdict) -> Verdict:
@@ -435,9 +460,13 @@ class Guardrail:
         )
         verdict = verdict.merge(checked.verdict)
 
+        # 7b. 추가 출력 레일 (D19) — A5 가 이미 막았으면 부르지 않는다(비용). 역시 복원 전
+        if self.output_rail is not None and checked.verdict.decision != "block":
+            verdict = verdict.merge(await self.output_rail.check(checked.text))
+
         doc_ids = tuple(c.doc_id for c in chunks)
         doc_grades = tuple(c.grade for c in chunks)
-        if checked.verdict.decision == "block":
+        if verdict.decision == "block":
             # 복원하지 않는다. 복원하면 막기로 한 본문에 진짜 이름이 들어간다
             return PipelineResult(
                 text="",
@@ -459,6 +488,7 @@ class Guardrail:
             unresolved=tuple(restored.unresolved),
             doc_ids=doc_ids,
             doc_grades=doc_grades,
+            audit_response=checked.text,
         )
 
     async def _run_split(
@@ -476,7 +506,10 @@ class Guardrail:
 
         # 4. 조각별 프롬프트. 호출 횟수 상한은 A2 가 **부르기 전에** 본다
         requests = [
-            LlmRequest(prompt=prompt, system=DEFAULT_SYSTEM_PROMPT)
+            LlmRequest(
+                prompt=prompt, system=DEFAULT_SYSTEM_PROMPT,
+                max_output_tokens=DEFAULT_SPLIT_MAX_OUTPUT_TOKENS,
+            )
             for prompt in parts(tokenized.text)
         ]
         responses, usage = await self.llm.generate_split(requests)
@@ -495,6 +528,10 @@ class Guardrail:
             )
             verdict = verdict.merge(checked.verdict)
             checked_texts.append(checked.text)
+
+        # 5b. 추가 출력 레일 (D19) — 조각을 이어 한 번만 부른다(비용). 길이 상한은 레일이 자른다
+        if self.output_rail is not None and verdict.decision != "block":
+            verdict = verdict.merge(await self.output_rail.check("\n\n".join(checked_texts)))
 
         # ★ 한 조각이라도 막히면 **전부** 막는다. 막힌 조각만 빼고 돌려주면
         #   사용자는 글 가운데가 사라진 것을 모른 채 저장한다
@@ -515,6 +552,7 @@ class Guardrail:
             verdict=verdict,
             usage=usage,
             unresolved=tuple(dict.fromkeys(unresolved)),
+            audit_response="\n\n".join(checked_texts),
         )
 
     async def _write_audit(
@@ -527,6 +565,7 @@ class Guardrail:
         doc_grades: tuple[str, ...],
         latency_ms: int,
         suppress: bool,
+        response: str = "",
     ) -> None:
         if self.audit is None:
             return
@@ -541,6 +580,9 @@ class Guardrail:
             #   뒷자리도 남기지 않는다 — 대조는 바로 아래 query_hash 가 맡는다
             "query_masked": mask(query),
             "query_hash": hashlib.sha256(query.encode("utf-8")).hexdigest(),
+            # 사용자에게 돌려준 답변(B11 AI 사용 기록, part2_guide 4.74). 복원 전 글이라 PII 는
+            # 토큰 상태이고, 모델이 지어낸 PII 까지 질문과 같은 방식으로 한 번 더 가린다
+            "response_masked": mask(response) if response else None,
             "doc_ids": list(doc_ids),
             # 등급별 차단율 집계(B21)에 쓴다. doc_ids 와 같은 순서다
             "doc_grades": list(doc_grades),

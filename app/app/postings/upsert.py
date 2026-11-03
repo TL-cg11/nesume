@@ -31,6 +31,10 @@ from app.postings.identity import (
 _KST = ZoneInfo("Asia/Seoul")
 
 
+#: 무변경 공고에도 비어 있으면 채우는 **표시 전용** 컬럼(content_hash에 안 들어감). 새 컬럼 추가 시 여기에.
+_BACKFILL_IF_EMPTY = ("career_text", "edu_text", "recruit_fields")
+
+
 def _kst_now() -> datetime:
     return datetime.now(_KST)
 
@@ -115,6 +119,12 @@ def upsert_posting(
         existing.needs_review = not reliable
         for k, v in content.items():
             setattr(existing, k, v)
+    else:
+        # 무변경이라도 **나중에 추가된 표시용 컬럼이 비어 있으면 채운다**(덮어쓰지 않음, 해시·식별 무관).
+        # 없으면 기존 행은 내용이 바뀔 때까지 영영 NULL로 남는다(0018 경력·학력 글).
+        for k in _BACKFILL_IF_EMPTY:
+            if getattr(existing, k) is None and content.get(k) is not None:
+                setattr(existing, k, content[k])
     return existing, action
 
 

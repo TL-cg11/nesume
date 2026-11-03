@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
+from app.features import personal_index
 from app.features.resumes import pii_hooks
 from app.features.resumes import repository as repo
 from app.models import Question, Resume, User, Version
@@ -87,6 +88,7 @@ def update_question(db: Session, question: Question, **fields) -> Question:
 def soft_delete_question(db: Session, question: Question) -> None:
     question.deleted_at = datetime.now(UTC)
     db.flush()
+    personal_index.mark(db, "resume", question.resume_id)  # 자소서 글이 바뀜 → 커밋 뒤 다시 색인(B5)
 
 
 def create_version(
@@ -128,6 +130,7 @@ def create_version(
     db.add(version)
     db.flush()
     db.refresh(version)
+    personal_index.mark(db, "resume", question.resume_id)  # 새 버전 → 커밋 뒤 자소서 다시 색인(B5)
     return version, False
 
 
@@ -155,9 +158,11 @@ def delete_version(db: Session, owner_id: str, version: Version) -> None:
     if repo.version_used_by_active_share(db, owner_id, version.id):
         raise VersionInUse("share")
     vault = version.vault_id
+    resume_id = db.get(Question, version.question_id).resume_id
     db.delete(version)
     db.flush()
     pii_hooks.discard_vault(db, vault)
+    personal_index.mark(db, "resume", resume_id)  # 최신 버전이 바뀌었을 수 있다(B5)
 
 
 def restore_body(db: Session, owner_id: str, requester_id: str, version: Version) -> str:
@@ -168,12 +173,35 @@ def restore_body(db: Session, owner_id: str, requester_id: str, version: Version
 _TOKEN = re.compile(r"\s+|[^\s]+")
 
 
-def diff_segments(before: str, after: str) -> list[dict]:
-    """단어(공백 보존) 단위 차이. 한국어 문단에서 줄 단위보다 읽기 쉽다."""
-    a, b = _TOKEN.findall(before), _TOKEN.findall(after)
+CHAR_DIFF_MAX = 5000  # 바뀐 구간을 글자 단위로 다시 볼 최대 길이(넘으면 단어 단위 그대로)
+
+
+def _char_segments(before: str, after: str) -> list[dict]:
+    """바뀐 단어 구간 안에서 글자 단위로 다시 비교한다. 띄어쓰기 없이 이어진 글이나
+    조사만 바뀐 경우(초안을 → 초안이)에 단어 전체가 삭제·추가로 보이지 않게(10/29)."""
     out = []
+    for op, i1, i2, j1, j2 in difflib.SequenceMatcher(a=before, b=after, autojunk=False).get_opcodes():
+        out.append({"op": op, "before": before[i1:i2], "after": after[j1:j2]})
+    return out
+
+
+def diff_segments(before: str, after: str) -> list[dict]:
+    """단어(공백 보존) 단위 차이 + 바뀐 구간은 글자 단위로 세분. 연속된 같은 종류 조각은 합친다."""
+    a, b = _TOKEN.findall(before), _TOKEN.findall(after)
+    raw: list[dict] = []
     for op, i1, i2, j1, j2 in difflib.SequenceMatcher(a=a, b=b, autojunk=False).get_opcodes():
-        out.append({"op": op, "before": "".join(a[i1:i2]), "after": "".join(b[j1:j2])})
+        seg_before, seg_after = "".join(a[i1:i2]), "".join(b[j1:j2])
+        if op == "replace" and len(seg_before) + len(seg_after) <= CHAR_DIFF_MAX:
+            raw.extend(_char_segments(seg_before, seg_after))
+        else:
+            raw.append({"op": op, "before": seg_before, "after": seg_after})
+    out: list[dict] = []
+    for seg in raw:
+        if out and out[-1]["op"] == seg["op"]:
+            out[-1]["before"] += seg["before"]
+            out[-1]["after"] += seg["after"]
+        else:
+            out.append(dict(seg))
     return out
 
 

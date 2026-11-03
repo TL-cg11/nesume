@@ -12,7 +12,10 @@ export const experiencesApi = {
   },
   create: (data) => api.post('/experiences', data),
   update: (id, data) => api.patch(`/experiences/${id}`, data),
+  get: (id) => api.get(`/experiences/${id}`),
   remove: (id) => api.delete(`/experiences/${id}`),
+  // B14 GitHub 소개 초안(유형 GitHub). 결과의 experience_draft로 폼을 채운다
+  githubDraft: (data) => api.post('/experiences/github/draft', data),
 
   listLinked: (rid, qid) => api.get(links(rid, qid)),
   link: (rid, qid, experienceId) => api.post(links(rid, qid), { experience_id: experienceId }),

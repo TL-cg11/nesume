@@ -1,0 +1,218 @@
+# D11 CD: dev compute(EKS·RDS·NAT) 를 Actions 에서 올리고 내린다. infra/scripts/up.ps1·down.ps1 과 같은 순서를 러너에서 돈다.
+#   up   : 수동(Run workflow → up). compute apply(최대 3회) → 애드온 대기 → ECR 태그 결정 → helm → ALB /api/health. 15~20분
+#   down : 수동(Run workflow → down). helm uninstall → ALB 소멸 대기 → compute destroy → 과금 잔존 확인. 10분
+# 켜진 뒤의 코드 배포는 ci.yml build-deploy 가 main 푸시마다 한다(클러스터가 켜져 있을 때). 둘은 concurrency 그룹 infra 를 공유해 동시에 클러스터를 만지지 않는다.
+# AWS 권한은 OIDC 로 nesume-github-ci 역할(신뢰 조건 ref=refs/heads/main → 이 워크플로는 main 에서만 실행 가능). 저장소에 AWS 키 없음.
+# 2026-11-02 결정: dev 는 상시 가동. 매일 00:00 KST 자동 down 스케줄은 뺐다(다시 필요하면 on.schedule cron "0 15 * * *" + down 의 if 에 schedule 추가).
+name: infra
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "up = compute 생성 + helm 배포, down = helm 제거 + compute 삭제"
+        type: choice
+        required: true
+        default: up
+        options: [up, down]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: infra            # ci.yml build-deploy 와 같은 그룹
+  cancel-in-progress: false
+
+env:
+  TERRAFORM_VERSION: "1.16.x"
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  EKS_CLUSTER: ${{ vars.EKS_CLUSTER }}
+  COMPUTE: infra/envs/dev/compute
+
+jobs:
+  up:
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'up'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false   # output 을 변수로 받기 위해
+      - uses: azure/setup-helm@v4
+
+      - name: terraform init
+        run: terraform -chdir="$COMPUTE" init -input=false
+
+      # apply 는 최대 3회. 실패하면 helm 릴리스(ALB 컨트롤러·ESO) 중 deployed 가 아닌 것을 지우고 다시 돈다.
+      # 10-28 실측: 막 올라온 컨트롤플레인이 ESO 의 큰 CRD 생성 요청을 타임아웃시켜 릴리스가 failed 로 남고,
+      # 그 상태에서는 다음 apply 도 같은 릴리스에서 막힌다. 실패한 릴리스를 지워야 provider 가 새로 만든다(up.ps1 과 같은 규칙).
+      - name: terraform apply (compute, up to 3 attempts)
+        run: |
+          for attempt in 1 2 3; do
+            if terraform -chdir="$COMPUTE" apply -auto-approve -input=false; then
+              echo "apply succeeded (attempt $attempt)"; exit 0
+            fi
+            echo "::warning::terraform apply failed (attempt $attempt/3). Checking helm releases..."
+            if ! aws eks describe-cluster --name "$EKS_CLUSTER" --query cluster.status --output text 2>/dev/null | grep -q ACTIVE; then
+              echo "terraform apply failed before the cluster existed. See the error above."; exit 1
+            fi
+            aws eks update-kubeconfig --name "$EKS_CLUSTER" --region "$AWS_REGION" >/dev/null
+            cleaned=false
+            for rel in kube-system/aws-load-balancer-controller external-secrets/external-secrets; do
+              ns=${rel%/*}; name=${rel#*/}
+              status=$(helm -n "$ns" status "$name" -o json 2>/dev/null | jq -r .info.status || true)
+              if [ -n "$status" ] && [ "$status" != "deployed" ]; then
+                echo "::warning::helm release $rel is '$status'. Uninstalling so apply can recreate it."
+                helm -n "$ns" uninstall "$name" --wait --timeout 3m || true
+                cleaned=true
+              fi
+            done
+            if [ "$cleaned" != true ]; then
+              echo "terraform apply failed and no helm release is in a failed state. See the error above."; exit 1
+            fi
+            sleep 30   # 컨트롤플레인이 숨 돌릴 시간
+          done
+          echo "terraform apply failed 3 times"; exit 1
+
+      - name: kubeconfig + wait for addons
+        run: |
+          aws eks update-kubeconfig --name "$EKS_CLUSTER" --region "$AWS_REGION"
+          kubectl -n kube-system rollout status deploy/aws-load-balancer-controller --timeout=5m
+          kubectl -n external-secrets rollout status deploy/external-secrets-webhook --timeout=5m
+          kubectl -n external-secrets rollout status deploy/external-secrets --timeout=5m
+
+      # app·web 태그 = main sha(ci.yml 이 main 푸시마다 올린다). 아직 없으면(CI 진행 중) ECR 최신 태그로 내려가고 경고.
+      # embedder(D20)는 embedder/ 가 바뀔 때만 빌드돼 태그가 다르다. ECR 최신 태그를 쓰고, 저장소가 비면 끈다.
+      - name: resolve image tags
+        id: tags
+        run: |
+          main_sha=${GITHUB_SHA::7}
+          tags() { aws ecr describe-images --repository-name "nesume/$1" --query 'imageDetails[].imageTags[]' --output text 2>/dev/null | tr '\t' '\n'; }
+          latest() { aws ecr describe-images --repository-name "nesume/$1" --query 'sort_by(imageDetails,&imagePushedAt)[-1].imageTags[0]' --output text 2>/dev/null || true; }
+          if tags app | grep -qx "$main_sha" && tags web | grep -qx "$main_sha"; then
+            sha=$main_sha
+          else
+            sha=$(latest app)
+            if [ -z "$sha" ] || [ "$sha" = None ]; then echo "no image in ECR nesume/app. Let ci.yml on main finish first."; exit 1; fi
+            if ! tags web | grep -qx "$sha"; then echo "ECR nesume/web has no tag $sha (app has it)."; exit 1; fi
+            echo "::warning::ECR has no nesume/app:$main_sha yet (CI still building?). Deploying latest ECR tag $sha; the next main push redeploys via ci.yml."
+          fi
+          emb=$(latest embedder)
+          if [ -n "$emb" ] && [ "$emb" != None ]; then
+            echo "emb_set=--set-string image.embedder.tag=$emb" >> "$GITHUB_OUTPUT"; echo "embedder image: nesume/embedder:$emb"
+          else
+            echo "emb_set=--set embedder.enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::ECR nesume/embedder is empty; deploying with embedder.enabled=false"
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"; echo "emb=${emb:-none}" >> "$GITHUB_OUTPUT"
+          echo "app/web image tag: $sha"
+
+      - name: helm upgrade --install (dev)
+        env:
+          SHA: ${{ steps.tags.outputs.sha }}
+          EMB_SET: ${{ steps.tags.outputs.emb_set }}
+        run: |
+          DB=$(terraform -chdir="$COMPUTE" output -raw rds_address)
+          # --set-string: 숫자만 있는 sha 를 --set 은 int 로 읽어 이미지 이름이 깨진다(10-27 실측). $EMB_SET 은 의도적으로 단어 분리.
+          # shellcheck disable=SC2086
+          helm upgrade --install nesume deploy/nesume -n dev -f deploy/nesume/values-dev.yaml \
+            --set-string config.DB_HOST="$DB" \
+            --set-string image.app.tag="$SHA" --set-string image.web.tag="$SHA" $EMB_SET \
+            --wait --timeout 10m
+
+      - name: wait for ALB and /api/health
+        env:
+          SHA: ${{ steps.tags.outputs.sha }}
+          EMB: ${{ steps.tags.outputs.emb }}
+        run: |
+          alb=""
+          for i in $(seq 1 30); do
+            alb=$(kubectl -n dev get ingress nesume -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+            [ -n "$alb" ] && break; sleep 10
+          done
+          if [ -z "$alb" ]; then echo "ingress has no ALB address after 5 minutes"; kubectl -n dev describe ingress nesume; exit 1; fi
+          for i in $(seq 1 30); do
+            if body=$(curl -fsS --max-time 5 "http://$alb/api/health"); then
+              kubectl -n dev get pods
+              {
+                echo "### UP: http://$alb"
+                echo "- chart main \`${GITHUB_SHA::7}\`, app/web image \`$SHA\`, embedder \`$EMB\`"
+                echo "- /api/health: \`$body\`"
+                echo "- 팀 공지 채널의 ALB 주소를 갱신할 것(올릴 때마다 바뀜)"
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "/api/health is not 200 at http://$alb"; kubectl -n dev get pods; exit 1
+
+  down:
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'down'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+      - uses: azure/setup-helm@v4
+
+      # Ingress 는 ALB 컨트롤러 finalizer 때문에 uninstall 이 돌아온 뒤에도 10~20초 더 남고, ALB·타깃 그룹·SG 가 남으면
+      # destroy 가 VPC/서브넷에서 멈춘다(10-27 실측). 클러스터가 이미 없으면 바로 destroy 로 간다(NAT·EIP 잔존 정리).
+      - name: helm uninstall + wait for ALB deletion
+        run: |
+          if ! aws eks describe-cluster --name "$EKS_CLUSTER" --query cluster.status --output text 2>/dev/null | grep -q ACTIVE; then
+            echo "cluster $EKS_CLUSTER is not ACTIVE; skipping helm uninstall"; exit 0
+          fi
+          aws eks update-kubeconfig --name "$EKS_CLUSTER" --region "$AWS_REGION"
+          helm -n dev uninstall nesume --ignore-not-found --wait --timeout 5m
+          kubectl -n dev wait --for=delete ingress/nesume --timeout=3m 2>/dev/null || true
+          lbs=""
+          for i in $(seq 1 30); do
+            lbs=$(aws elbv2 describe-load-balancers --query 'LoadBalancers[].LoadBalancerName' --output text)
+            [ -z "$lbs" ] && break; sleep 10
+          done
+          if [ -n "$lbs" ]; then echo "::warning::ALB still present: $lbs (destroy may hang; see infra/README.md 5절)"; fi
+
+      - name: terraform destroy (compute)
+        run: |
+          terraform -chdir="$COMPUTE" init -input=false
+          terraform -chdir="$COMPUTE" destroy -auto-approve -input=false
+
+      # 과금 누수 확인. 전부 none 이어야 한다. 남으면 warning + job 실패 → 작성자에게 메일.
+      - name: leak check (NAT, EIP, EKS, RDS, ALB)
+        run: |
+          nat=$(aws ec2 describe-nat-gateways --filter Name=state,Values=available,pending --query 'NatGateways[].NatGatewayId' --output text)
+          eip=$(aws ec2 describe-addresses --query 'Addresses[?AssociationId==null].PublicIp' --output text)
+          eks=$(aws eks list-clusters --query clusters --output text)
+          rds=$(aws rds describe-db-instances --query 'DBInstances[].DBInstanceIdentifier' --output text)
+          alb=$(aws elbv2 describe-load-balancers --query 'LoadBalancers[].LoadBalancerName' --output text)
+          leak=false
+          echo "### DOWN ($(date -u +%Y-%m-%dT%H:%MZ))" >> "$GITHUB_STEP_SUMMARY"
+          for kv in "NAT=$nat" "EIP(unassociated)=$eip" "EKS=$eks" "RDS=$rds" "ALB=$alb"; do
+            k=${kv%%=*}; v=${kv#*=}
+            if [ -n "$v" ]; then echo "::warning::$k still exists: $v"; echo "- $k: **$v**" >> "$GITHUB_STEP_SUMMARY"; leak=true
+            else echo "$k: none"; echo "- $k: none" >> "$GITHUB_STEP_SUMMARY"; fi
+          done
+          [ "$leak" = false ] || { echo "resources still exist after destroy; clean up by hand (infra/README.md 5절)"; exit 1; }

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 import { resumesApi } from '../../features/resumes/api.js'
 import { shortDate } from '../../features/resumes/ShareTags.jsx'
+import Icon from '../Icons.jsx'
 import './home.css'
 
 // 홈 대시보드(사용자용) — 발표 시안 화면 1(sprint2/index.html), part2_guide 4.54
@@ -11,11 +12,16 @@ const STATUS_CLASS = { '작성 중': 'home-badge', '검토 중': 'home-badge rev
 const fmt = (iso) =>
   new Date(iso).toLocaleString('ko-KR', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 
+// 주요 기능 정리(10/29): 이 서비스가 제공하는 기능을 한 줄씩. 소개만 하고 바로가기는 두지 않는다(메뉴로 이동)
+// 10/30: 아이콘·번호·구분선(시안 이미지)
 const QUICK = [
-  { to: '/resumes', title: '자기소개서 작성', desc: '문항별 초안 작성과 버전 관리' },
-  { to: '/experiences', title: '경험 등록', desc: '프로젝트와 성과를 자산으로 저장' },
-  { to: '/writing', title: 'AI 글 다듬기', desc: '문장과 STAR 구성 점검' },
-  { to: null, title: '공고 추천 · 역량 갭', desc: '요구 역량과 경험의 연결 확인' }, // C 화면 준비 중
+  { icon: 'file', title: '자기소개서', desc: '문항별 작성 · 버전 관리와 비교 · 멘토 공유' },
+  { icon: 'folder', title: '경험', desc: '프로젝트 · 활동 · 수상 · GitHub 경험 기록, 문항에 연결' },
+  { icon: 'pencil', title: '글 다듬기', desc: '맞춤법 · STAR 점검 · AI 리라이팅' },
+  { icon: 'search', title: '공고 추천', desc: '내 자기소개서와 경험에 맞는 채용 공고 추천' },
+  { icon: 'grad', title: '학습 로드맵', desc: '부족한 역량을 채울 강좌 추천' },
+  { icon: 'chart', title: '지원 현황', desc: '지원한 공고의 진행 단계 관리' },
+  { icon: 'user', title: '면접 연습', desc: '자기소개서 기반 예상 질문과 답변 연습' }, // B13
 ]
 
 function Stat({ label, value, caption }) {
@@ -29,8 +35,10 @@ function Stat({ label, value, caption }) {
 }
 
 export default function Home() {
+  const navigate = useNavigate()
   const [d, setD] = useState(null)
   const [error, setError] = useState(null)
+  const [creating, setCreating] = useState(false)
 
   useEffect(() => {
     const ctrl = new AbortController()
@@ -40,6 +48,18 @@ export default function Home() {
       .catch((e) => e.name !== 'AbortError' && setError(e.status === 401 ? '로그인 후 이용할 수 있습니다.' : e.message))
     return () => ctrl.abort()
   }, [])
+
+  const create = async () => {
+    setCreating(true)
+    try {
+      const r = await resumesApi.createUntitled()
+      navigate(`/resumes/${r.id}`, { state: { focusTitle: true } })
+    } catch (e) {
+      // 50개 상한(409)이면 서버 안내 문구를 그대로 보여준다
+      setError(e.status === 401 ? '로그인 후 이용할 수 있습니다.' : e.message)
+      setCreating(false)
+    }
+  }
 
   return (
     <section className="home">
@@ -51,9 +71,10 @@ export default function Home() {
           설득력 있는 이야기로 완성하세요.
         </h1>
         <p className="muted">경험 기록부터 자기소개서 첨삭까지, 취업 준비의 모든 단계를 한곳에서 관리하세요.</p>
-        <Link to="/resumes" className="home-cta">
-          자기소개서 작성하기
-        </Link>
+        {/* 목록을 거치지 않고 바로 새 자기소개서를 만들어 상세(편집) 화면으로(10/28 요청) */}
+        <button type="button" className="home-cta" onClick={create} disabled={creating}>
+          {creating ? '만드는 중…' : '자기소개서 작성하기'}
+        </button>
       </div>
 
       {error && <p className="error">{error}</p>}
@@ -105,30 +126,25 @@ export default function Home() {
               </ul>
             </div>
 
-            <div className="stack home-side">
+            <div className="home-side">
               <div className="card">
-                <h2>빠른 시작</h2>
-                <p className="muted">취업 준비를 효율적으로 시작하세요.</p>
-                <ul className="list">
-                  {QUICK.map((q) => (
-                    <li key={q.title}>
-                      {q.to ? (
-                        <Link to={q.to} className="home-quick-title">
-                          {q.title}
-                        </Link>
-                      ) : (
-                        <span className="home-quick-title muted">{q.title} (준비 중)</span>
-                      )}
-                      <p className="muted">{q.desc}</p>
+                <span className="home-feat-eyebrow">FEATURES</span>
+                <h2>주요 기능</h2>
+                <p className="muted">nesume에서 할 수 있는 일</p>
+                <ul className="home-feat-list">
+                  {QUICK.map((q, i) => (
+                    <li key={q.title} className="home-feat">
+                      <span className="home-feat-icon">
+                        <Icon name={q.icon} />
+                      </span>
+                      <div>
+                        <span className="home-feat-no">{String(i + 1).padStart(2, '0')}</span>
+                        <span className="home-quick-title">{q.title}</span>
+                        <p className="muted">{q.desc}</p>
+                      </div>
                     </li>
                   ))}
                 </ul>
-              </div>
-              <div className="card home-tip">
-                <h3>작성 팁</h3>
-                <p>
-                  상황과 과제, 구체적인 행동, 측정 가능한 결과(STAR)를 기록하면 더 설득력 있는 자기소개서를 만들 수 있습니다.
-                </p>
               </div>
             </div>
           </div>

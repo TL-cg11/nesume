@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.auth import AuthenticatedUser
+from app.auth import CurrentUser, require_interactive
 from app.features.style import service
 from app.features.style.counter import TokenizedTextError, count
 from app.features.style.length import OverlappingTrims, StaleTrim, apply_trims
@@ -34,7 +34,7 @@ router = APIRouter(prefix="/style", tags=["style"])
 @router.post("/adjust", response_model=AdjustResponse)
 async def adjust(
     payload: AdjustRequest,
-    user: AuthenticatedUser,
+    user: CurrentUser = Depends(require_interactive),
     guard: Guardrail = Depends(get_guardrail),
     session_id: str | None = Depends(session_header),
 ) -> AdjustResponse:
@@ -62,7 +62,10 @@ async def adjust(
 
 
 @router.post("/apply", response_model=ApplyResponse)
-def apply(payload: ApplyRequest, user: AuthenticatedUser) -> ApplyResponse:
+def apply(
+    payload: ApplyRequest,
+    user: CurrentUser = Depends(require_interactive),
+) -> ApplyResponse:
     """수락한 제안만 반영해 돌려준다. 저장하지 않는다.
 
     모델을 부르지 않으므로 동기 함수다.

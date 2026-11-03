@@ -1,0 +1,29 @@
+/* AI 사용 기록(B11 화면, 10/29). 값은 theme.css 변수만 사용. 접두사 aud- */
+.aud-filters { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; margin-top: var(--space-4); }
+.aud-filters input[type='email'] { min-width: 220px; }
+.aud-filters label { display: inline-flex; align-items: center; gap: var(--space-1); font-size: var(--text-sm); white-space: nowrap; }
+.aud-filters input[type='checkbox'] { min-height: 0; padding: 0; margin: 0; }
+.aud-card { margin-top: var(--space-4); padding: var(--space-2); }
+.aud-list { list-style: none; margin: 0; padding: 0; }
+.aud-row { padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); border-radius: var(--radius-sm); }
+.aud-row:last-child { border-bottom: 0; }
+.aud-row:hover { background: color-mix(in srgb, var(--accent-soft) 40%, transparent); }
+.aud-meta { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; font-size: var(--text-sm); }
+.aud-who { font-weight: 650; color: var(--fg); }
+.aud-pill { padding: calc(var(--space-1) / 2) var(--space-2); border-radius: var(--radius-pill); font-weight: 700; font-size: 12px; }
+.aud-pill.allow { color: var(--success); background: var(--success-soft); }
+.aud-pill.mask { color: var(--warning); background: color-mix(in srgb, var(--warning) 12%, transparent); }
+.aud-pill.block { color: var(--danger); background: var(--danger-soft); }
+.aud-qa { display: grid; grid-template-columns: 3.5em 1fr; gap: var(--space-1) var(--space-3); margin: var(--space-2) 0 0; }
+.aud-qa dt { color: var(--muted); font-size: var(--text-sm); }
+.aud-qa dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fg); }
+.aud-qa dd.clip { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.aud-more { margin-top: var(--space-3); text-align: center; }
+/* 11/3 판정 상세·가린 자리 강조(4.74) */
+.aud-masked { background: color-mix(in srgb, var(--warning) 18%, transparent); color: var(--warning); border-radius: var(--radius-sm); padding: 0 var(--space-1); font-size: var(--text-sm); font-weight: 600; }
+.aud-detail { margin-top: var(--space-2); padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); border-left: 3px solid var(--border); font-size: var(--text-sm); }
+.aud-detail.mask { border-left-color: var(--warning); background: color-mix(in srgb, var(--warning) 6%, transparent); }
+.aud-detail.block { border-left-color: var(--danger); background: color-mix(in srgb, var(--danger) 5%, transparent); }
+.aud-detail p { margin: 0 0 var(--space-1); }
+.aud-rules { margin: 0 0 var(--space-1); padding-left: 1.2em; }
+.aud-rules code { font-size: 12px; }

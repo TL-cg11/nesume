@@ -32,3 +32,60 @@ def resume_bodies(db: Session, owner_id: str, resume_id: uuid.UUID) -> list[dict
             "body": service.restore_body(db, owner_id, owner_id, v) if v else None,
         })
     return out
+
+
+def tokenized_resume_docs(db: Session) -> list[dict]:
+    """C3 색인 배치 전용 — 삭제 안 된 모든 자소서의 **토큰화 상태 본문**(원문 복원 안 함).
+
+    문항 순서대로 최신 버전 본문을 이어 붙인다. 등급·공유 메타(`grade`·`shared_with`)를 같이 준다 —
+    C3가 벡터 행에 복제해 C6 사전 필터가 쓴다. API 응답·로그로 내보내지 않는다(서버 안 배치 전용).
+    """
+    from sqlalchemy import select
+
+    from app.models.resume import Question, Resume
+
+    resumes = db.scalars(select(Resume).where(Resume.deleted_at.is_(None))).all()
+    if not resumes:
+        return []
+    questions = db.scalars(
+        select(Question)
+        .where(Question.resume_id.in_([r.id for r in resumes]), Question.deleted_at.is_(None))
+        .order_by(Question.resume_id, Question.position, Question.id)
+    ).all()
+    latest = repo.latest_versions(db, [q.id for q in questions])
+    bodies: dict = {}
+    for q in questions:
+        v = latest.get(q.id)
+        if v is not None and v.body:
+            bodies.setdefault(q.resume_id, []).append(v.body)
+    return [
+        {
+            "id": r.id,
+            "owner_id": r.owner_id,
+            "grade": r.grade,
+            "shared_with": list(r.shared_with or []),
+            "text": "\n\n".join(bodies.get(r.id, [])),
+        }
+        for r in resumes
+    ]
+
+
+def tokenized_resume_doc(db: Session, resume_id) -> dict | None:
+    """저장 즉시 색인용(B5, 11/2) — 자소서 **하나**의 토큰화 본문. 형식은 `tokenized_resume_docs`와 같다
+    (배치가 다시 봐도 '변경 없음'으로 건너뛰게). 삭제됐거나 없으면 None."""
+    from sqlalchemy import select
+
+    from app.models.resume import Question, Resume
+
+    r = db.get(Resume, resume_id)
+    if r is None or r.deleted_at is not None:
+        return None
+    questions = db.scalars(
+        select(Question)
+        .where(Question.resume_id == r.id, Question.deleted_at.is_(None))
+        .order_by(Question.resume_id, Question.position, Question.id)
+    ).all()
+    latest = repo.latest_versions(db, [q.id for q in questions])
+    bodies = [latest[q.id].body for q in questions if q.id in latest and latest[q.id].body]
+    return {"id": r.id, "owner_id": r.owner_id, "grade": r.grade,
+            "shared_with": list(r.shared_with or []), "text": "\n\n".join(bodies)}
