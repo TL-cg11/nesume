@@ -15,7 +15,7 @@ from collections.abc import Callable
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import ValidationError
 
-from app.auth import AuthenticatedUser
+from app.auth import CurrentUser, require_interactive
 from app.features.matching import service
 from app.features.matching.schemas import (
     AnalyzeRequest,
@@ -100,7 +100,7 @@ def _posting_from(
 @router.post("/analyze", response_model=AnalyzeResponse)
 async def analyze(
     payload: AnalyzeRequest,
-    user: AuthenticatedUser,
+    user: CurrentUser = Depends(require_interactive),
     guard: Guardrail = Depends(get_guardrail),
     session_id: str | None = Depends(session_header),
     lookup: PostingLookup = Depends(get_posting_lookup),

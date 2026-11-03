@@ -15,3 +15,12 @@
 .adm-role-mentor { color: var(--violet); background: var(--violet-soft); border-color: transparent; }
 .adm-role-system,
 .adm-role-invalid { color: var(--warning); background: var(--warning-soft); border-color: transparent; }
+
+/* D16 세션 차단 */
+.adm-reason-canary_hit { color: var(--danger, #b91c1c); background: var(--danger-soft, #fee2e2); border-color: transparent; }
+.adm-reason-exfil_threshold { color: var(--warning); background: var(--warning-soft); border-color: transparent; }
+.adm-reason-operator { color: var(--accent-text); background: var(--accent-soft); border-color: transparent; }
+.adm-mono { font-family: var(--font-mono, ui-monospace, monospace); font-size: var(--text-xs, 0.8rem); word-break: break-all; }
+.adm-block-form { flex-wrap: wrap; gap: var(--space-2); align-items: flex-end; }
+.adm-block-form label { display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-sm); color: var(--muted); }
+.adm-released { opacity: 0.6; }

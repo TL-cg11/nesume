@@ -5,6 +5,7 @@ terraform {
     helm       = { source = "hashicorp/helm", version = "~> 3.0" }
     kubernetes = { source = "hashicorp/kubernetes", version = "~> 2.35" }
     random     = { source = "hashicorp/random", version = "~> 3.6" }
+    archive    = { source = "hashicorp/archive", version = "~> 2.4" } # D16 웹훅 Lambda
   }
   backend "s3" {
     bucket       = "nesume-tfstate-852138520969"

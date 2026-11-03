@@ -44,3 +44,14 @@ variable "audit_kms_key_arn" {
   description = "감사 로그 그룹 KMS 키 ARN"
   type        = string
 }
+# D19 출력 레일(Llama Guard 계열). 서울에 meta 모델이 없어 리전이 다르다(app/app/guardrail/rails/llama_guard.py)
+variable "output_rail_region" {
+  description = "D19 안전 분류 모델 호출 리전(교차 리전 프로파일 us.*)"
+  type        = string
+  default     = "us-east-1"
+}
+variable "output_rail_model_prefixes" {
+  description = "D19 가 호출할 수 있는 모델 id 접두사. 기본 Llama 3.1 8B(Llama Guard 대역), 모델이 열리면 meta.llama-guard-* 도 같은 접두사"
+  type        = list(string)
+  default     = ["meta."]
+}

@@ -24,7 +24,12 @@ variable "fluent_bit_chart_version" {
   type        = string
 }
 variable "alert_email" {
-  description = "D14 알람 SNS 토픽 이메일 구독(비우면 구독 없음. 확인 메일의 링크를 눌러야 활성). Slack 웹훅 구독은 D16"
+  description = "D14 알람 SNS 토픽 이메일 구독(비우면 구독 없음. 확인 메일의 링크를 눌러야 활성). Discord/Slack 웹훅 구독은 D16"
   type        = string
   default     = ""
+}
+variable "webhook_alerts_enabled" {
+  description = "D16 SNS → Lambda → Discord/Slack 웹훅 구독. 앱 시크릿(nesume/dev/app) JSON 에 ALERTS_WEBHOOK_URL 을 넣은 뒤 true"
+  type        = bool
+  default     = false
 }

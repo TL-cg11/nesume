@@ -1,5 +1,7 @@
 # 역할 전부 base. Pod Identity 신뢰 정책은 클러스터 id가 필요 없어 compute를 매일 새로 만들어도 ARN이 안 바뀐다.
 locals {
+  # D16: compute 레이어 observability 모듈이 만드는 토픽(aws_sns_topic.alerts) 이름과 같아야 한다
+  alerts_topic_arn = "arn:aws:sns:${var.region}:${var.account_id}:${var.name}-alerts"
   pod_identity_trust = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -128,6 +130,17 @@ resource "aws_iam_role_policy" "app" {
           "arn:aws:bedrock:*::foundation-model/${p}*",
         ]])
       },
+      # D19 출력 레일: 안전 분류 모델(기본 us.meta.llama3-1-8b, 버지니아 교차 리전 프로파일). 모델 ARN 단위로 제한
+      {
+        Effect = "Allow"
+        Action = ["bedrock:InvokeModel"]
+        Resource = flatten([for p in var.output_rail_model_prefixes : [
+          "arn:aws:bedrock:${var.output_rail_region}:${var.account_id}:inference-profile/us.${p}*",
+          "arn:aws:bedrock:*::foundation-model/${p}*",
+        ]])
+      },
+      # D16 알림: SNS 토픽(compute observability 모듈 nesume-<env>-alerts)에 Publish. base 는 compute 를 읽지 않으므로 이름으로
+      { Effect = "Allow", Action = ["sns:Publish"], Resource = local.alerts_topic_arn },
       # Admin*: 역할 변경·MFA 조회. ListUsers·ListUsersInGroup: 역할 관리 화면 검색·운영자/멘토 목록(GET /admin/users)
       {
         Effect   = "Allow"
@@ -143,8 +156,12 @@ resource "aws_iam_role_policy" "batch" {
   name = "batch"
   role = aws_iam_role.pod["batch"].id
   policy = jsonencode({
-    Version   = "2012-10-17"
-    Statement = [{ Effect = "Allow", Action = ["secretsmanager:GetSecretValue"], Resource = var.app_secret_arn }]
+    Version = "2012-10-17"
+    Statement = [
+      { Effect = "Allow", Action = ["secretsmanager:GetSecretValue"], Resource = var.app_secret_arn },
+      # D16: 수집 배치(C4)가 emit("collector_failed") 로 알림을 보낼 때
+      { Effect = "Allow", Action = ["sns:Publish"], Resource = local.alerts_topic_arn },
+    ]
   })
 }
 

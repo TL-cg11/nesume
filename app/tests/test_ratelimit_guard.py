@@ -33,16 +33,18 @@ class FakeGuard:
         self.verdict = verdict
         self.tokens = tokens
         self.calls = 0
+        self.kwargs: list[dict] = []  # 호출마다 받은 추가 키워드 인자
         self.canaries = ("x",)
 
-    async def run(self, query, ctx):
+    async def run(self, query, ctx, **kwargs):
         self.calls += 1
+        self.kwargs.append(kwargs)
         return PipelineResult(
             text="", verdict=self.verdict, usage=Usage(input_tokens=self.tokens, output_tokens=0, model="m")
         )
 
-    async def run_split(self, query, ctx, *, parts):
-        return await self.run(query, ctx)
+    async def run_split(self, query, ctx, *, parts, **kwargs):
+        return await self.run(query, ctx, parts=parts, **kwargs)
 
 
 class Clock:
@@ -174,6 +176,38 @@ def test_run_split_is_limited_too():
     asyncio.run(guard.run_split("q", ctx(), parts=lambda t: [t]))
     with pytest.raises(RateLimitedError):
         asyncio.run(guard.run_split("q", ctx(), parts=lambda t: [t]))
+
+
+def test_run_passes_extra_kwargs_to_inner():
+    """A #18: guard.run(query, ctx, prompt=build) — 래퍼가 인자를 삼키면 TypeError."""
+    inner = FakeGuard()
+    guard, _, _ = make(inner)
+
+    def build(text):
+        return f"<p>{text}</p>"
+
+    asyncio.run(guard.run("q", ctx(), prompt=build))
+    assert inner.kwargs == [{"prompt": build}]
+
+
+def test_run_split_passes_parts_and_extra_kwargs():
+    inner = FakeGuard()
+    guard, _, _ = make(inner)
+
+    def parts(t):
+        return [t]
+
+    asyncio.run(guard.run_split("q", ctx(), parts=parts, extra=1))
+    assert inner.kwargs == [{"parts": parts, "extra": 1}]
+
+
+def test_limit_still_applies_with_extra_kwargs():
+    inner = FakeGuard()
+    guard, _, _ = make(inner, requests_per_min=Limit("requests_per_min", 1, 60))
+    asyncio.run(guard.run("q", ctx(), prompt=str))
+    with pytest.raises(RateLimitedError):
+        asyncio.run(guard.run("q", ctx(), prompt=str))
+    assert inner.calls == 1  # 거부된 요청은 인자가 있어도 안쪽을 부르지 않는다
 
 
 def test_other_attributes_come_from_inner():
