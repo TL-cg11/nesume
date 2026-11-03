@@ -625,7 +625,7 @@ scenarios:
     query_type: exfiltration
   known_miss: true
   tags: []
-  note: 나눠 묻기. 각 턴만 보면 전부 정상으로 보인다. A12 가 잡지만 라우터에 이력 저장소가 주입돼야 API 경로에서도 막힌다
+  note: '나눠 묻기. 각 턴만 보면 전부 정상으로 보인다. 판정은 이제 block·MT_SLICING 으로 나온다. **남은 것은 query_type 하나**이고 PR #13(Verdict.merge 가 막은 단계의 유형을 쓰게 함)이 머지되면 통과한다. 머지 뒤 이 known_miss 를 뗀다 — 지금 떼면 #13 없는 브랜치에서 시험이 깨진다.'
 - id: A10-MULTI-05
   source: A10
   category: multiturn

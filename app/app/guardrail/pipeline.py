@@ -237,9 +237,22 @@ class Guardrail:
     #: D19 출력 레일. 주지 않으면 A5 만으로 끝난다(기존 동작). 설정 플래그로 fastapi.py 가 주입한다
     output_rail: OutputRail | None = None
 
-    async def run(self, query: str, ctx: RequestContext) -> PipelineResult:
-        """모델을 **한 번** 부르는 보통 경로."""
-        return await self._execute(query, ctx, parts=None)
+    async def run(
+        self, query: str, ctx: RequestContext, *, prompt: PromptBuilder | None = None
+    ) -> PipelineResult:
+        """모델을 **한 번** 부르는 보통 경로.
+
+        ``query`` 는 **사용자가 쓴 글**이다. 기능의 프롬프트 템플릿은 ``prompt`` 로
+        넘기면 이 안에서 조립한다.
+
+        ★ 조립해서 넘기지 않는 이유 — 조립한 글을 넘기면 A3·A12 가 **우리 템플릿까지
+          검사 대상으로 본다.** 그러면 문장 전체를 보는 규칙이 죽는다. A12
+          `is_continuation` 은 ``^...$`` 앵커라 템플릿에 싸이면 영원히 안 맞고,
+          그 때문에 `A10-MULTI-04`(나눠 묻기)가 1차 측정에서 통과하지 못했다.
+
+          `prompt` 를 주지 않으면 ``self.prompt_builder``(기본 조립)를 쓴다.
+        """
+        return await self._execute(query, ctx, prompt=prompt, parts=None)
 
     async def run_split(self, query: str, ctx: RequestContext, *, parts: PartsBuilder) -> PipelineResult:
         """긴 글을 나눠 **여러 번** 부르는 경로 (A6 의 5,000자 초과 분할).
@@ -251,10 +264,15 @@ class Guardrail:
         ★ 감사 로그는 조각 수와 무관하게 **한 줄**이다. 사용자가 한 번 요청한 일을
           여러 줄로 남기면 B21 집계가 호출 수만큼 부풀어 오른다.
         """
-        return await self._execute(query, ctx, parts=parts)
+        return await self._execute(query, ctx, prompt=None, parts=parts)
 
     async def _execute(
-        self, query: str, ctx: RequestContext, *, parts: PartsBuilder | None
+        self,
+        query: str,
+        ctx: RequestContext,
+        *,
+        prompt: PromptBuilder | None,
+        parts: PartsBuilder | None,
     ) -> PipelineResult:
         started = time.monotonic()
 
@@ -264,7 +282,9 @@ class Guardrail:
 
         try:
             result = await (
-                self._run(query, ctx) if parts is None else self._run_split(query, ctx, parts)
+                self._run(query, ctx, prompt)
+                if parts is None
+                else self._run_split(query, ctx, parts)
             )
             verdict = result.verdict
             return result
@@ -344,7 +364,9 @@ class Guardrail:
         # 3. 치환 (A1). 여기부터 원문은 사라진다
         return verdict, await tokenize(query, owner_id=ctx.user_id, store=self.vault)
 
-    async def _run(self, query: str, ctx: RequestContext) -> PipelineResult:
+    async def _run(
+        self, query: str, ctx: RequestContext, prompt: PromptBuilder | None = None
+    ) -> PipelineResult:
         verdict, tokenized = await self._before_llm(query, ctx)
         if tokenized is None:
             return PipelineResult(text="", verdict=verdict)
@@ -357,8 +379,10 @@ class Guardrail:
                 mask(query), role=ctx.role, user_id=ctx.user_id, top_k=self.top_k
             )
 
-        # 5·6. 프롬프트 조립과 호출 (A2)
-        request = self.prompt_builder(tokenized.text, chunks)
+        # 5·6. 프롬프트 조립과 호출 (A2).
+        #    ★ 조립은 **여기서** 한다. 호출자가 조립해 넘기면 A3·A12 가 템플릿까지
+        #      검사하게 된다 (`run` 주석 참조)
+        request = (prompt or self.prompt_builder)(tokenized.text, chunks)
         response: LlmResponse = await self.llm.generate(request)
 
         # 7. 출력 검사 (A5) — ★ 복원보다 먼저
