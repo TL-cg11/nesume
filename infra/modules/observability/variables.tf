@@ -42,3 +42,23 @@ variable "pod_restart_threshold" {
   type        = number
   default     = 5
 }
+# ---- D16 (alerts.tf) ----
+variable "webhook_enabled" {
+  description = "SNS → Lambda → Discord/Slack 웹훅 구독을 만든다. 먼저 앱 시크릿 JSON 에 ALERTS_WEBHOOK_URL 을 넣는다"
+  type        = bool
+  default     = false
+}
+variable "app_secret_arn" {
+  description = "웹훅 URL 이 든 앱 시크릿(nesume/<env>/app) ARN. Lambda 가 읽는다"
+  type        = string
+}
+variable "webhook_secret_key" {
+  description = "앱 시크릿 JSON 안의 웹훅 URL 필드 이름"
+  type        = string
+  default     = "ALERTS_WEBHOOK_URL"
+}
+variable "collector_failed_days" {
+  description = "수집 배치 연속 실패 알람 기준(일). tasks.md C4 '3회 연속 실패'"
+  type        = number
+  default     = 3
+}

@@ -66,11 +66,15 @@ class RateLimitedGuardrail:
         self._store_factory = store_factory
         self._clock = clock
 
-    async def run(self, query: str, ctx: RequestContext) -> PipelineResult:
-        return await self._guarded(ctx, lambda: self.inner.run(query, ctx))
+    # 나머지 키워드 인자(A #18 `prompt=` 등)는 그대로 넘긴다 — 가드레일 시그니처가 늘어도 래퍼는 그대로.
+    # 잘못된 인자는 안쪽 Guardrail.run 이 TypeError 로 똑같이 막는다.
+    async def run(self, query: str, ctx: RequestContext, **kwargs: Any) -> PipelineResult:
+        return await self._guarded(ctx, lambda: self.inner.run(query, ctx, **kwargs))
 
-    async def run_split(self, query: str, ctx: RequestContext, *, parts: PartsBuilder) -> PipelineResult:
-        return await self._guarded(ctx, lambda: self.inner.run_split(query, ctx, parts=parts))
+    async def run_split(
+        self, query: str, ctx: RequestContext, *, parts: PartsBuilder, **kwargs: Any
+    ) -> PipelineResult:
+        return await self._guarded(ctx, lambda: self.inner.run_split(query, ctx, parts=parts, **kwargs))
 
     def __getattr__(self, name: str) -> Any:
         # llm·canaries 등 나머지 속성은 원래 가드레일 것을 그대로 보인다
