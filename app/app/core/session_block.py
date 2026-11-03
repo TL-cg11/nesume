@@ -183,11 +183,14 @@ class SessionBlockGuardrail:
         self._clock = clock
         self._exfil_limit_reached = exfil_limit_reached or self._c7_limit_reached
 
-    async def run(self, query: str, ctx: RequestContext) -> PipelineResult:
-        return await self._guarded(ctx, lambda: self.inner.run(query, ctx))
+    async def run(self, query: str, ctx: RequestContext, **kwargs: Any) -> PipelineResult:
+        # 추가 키워드 인자(A #18 `prompt=` 등)는 그대로 안쪽에 넘긴다(C7 #71 과 같은 방식)
+        return await self._guarded(ctx, lambda: self.inner.run(query, ctx, **kwargs))
 
-    async def run_split(self, query: str, ctx: RequestContext, *, parts: PartsBuilder) -> PipelineResult:
-        return await self._guarded(ctx, lambda: self.inner.run_split(query, ctx, parts=parts))
+    async def run_split(
+        self, query: str, ctx: RequestContext, *, parts: PartsBuilder, **kwargs: Any
+    ) -> PipelineResult:
+        return await self._guarded(ctx, lambda: self.inner.run_split(query, ctx, parts=parts, **kwargs))
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self.inner, name)

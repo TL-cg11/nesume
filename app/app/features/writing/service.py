@@ -28,7 +28,13 @@ from dataclasses import dataclass, field
 from app.features.writing import proofread, star
 from app.features.writing.star import StarAnalysis
 from app.features.writing.suggestions import Suggestion
-from app.guardrail import Guardrail, LlmUnavailable, RequestContext
+from app.guardrail import (
+    DEFAULT_SYSTEM_PROMPT,
+    Guardrail,
+    LlmRequest,
+    LlmUnavailable,
+    RequestContext,
+)
 
 FEATURE = "writing.proofread"
 
@@ -171,10 +177,17 @@ async def improve(
         # 라우터가 주지 않으면(단위 테스트 등) 새로 만든다.
         request_id=request_id or uuid.uuid4(),
     )
-    try:
-        result = await guard.run(
-            _PROMPT.format(sep=SEP, limit=MAX_LLM_SUGGESTIONS, text=text), ctx
+    # ★ 가드레일에는 **사용자가 쓴 글**을 넘기고, 템플릿 조립은 A8 안에서 하게 한다.
+    #   조립한 글을 넘기면 A3·A12 가 우리 템플릿까지 검사 대상으로 보고, 문장 전체를
+    #   보는 규칙이 죽는다 (A12 `is_continuation` 이 그래서 A10-MULTI-04 를 놓쳤다).
+    def build(query: str, chunks) -> LlmRequest:
+        return LlmRequest(
+            prompt=_PROMPT.format(sep=SEP, limit=MAX_LLM_SUGGESTIONS, text=query),
+            system=DEFAULT_SYSTEM_PROMPT,
         )
+
+    try:
+        result = await guard.run(text, ctx, prompt=build)
     except LlmUnavailable:
         # 제공자 미정(2026-10 현재). 1차 결과만 돌려준다 — 사용자가 빈손으로 끝나지 않는다
         return ImproveResult(

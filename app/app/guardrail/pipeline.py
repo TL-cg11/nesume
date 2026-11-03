@@ -58,6 +58,17 @@ from app.pii import (
     validate_input,
 )
 
+#: 조각의 등급 판정을 가드레일 판정으로 옮기는 표.
+#:
+#: ★ 표에 없는 값은 **block 으로 친다.** C6 가 돌려주는 값은 allow·mask 뿐이지만
+#:   (C2 matrix), 모르는 값을 allow 로 흘리면 새 등급이 생긴 날 조용히 통과한다.
+#: (규칙 ID, 심각도). 심각도 값은 `Finding` 이 생성 시 검사한다 —
+#: 여기서 Severity 를 import 하면 #14 와 같은 줄을 건드려 충돌이 는다.
+_GRADE_DECISIONS: dict[str, tuple[str, str]] = {
+    "mask": ("AUTHZ_GRADE_MASK", "warn"),
+    "block": ("AUTHZ_GRADE_BLOCK", "critical"),
+}
+
 #: 검색 결과 개수 기본값
 DEFAULT_TOP_K = 5
 
@@ -98,6 +109,15 @@ class Chunk:
     doc_id: str
     grade: str
     text: str
+    #: 이 조각에 대한 **역할 × 등급 판정** (C2 matrix). C6 가 채운다.
+    #:
+    #: ★ 검색은 WHERE 에서 이미 걸렀으므로 여기서 다시 거르지 않는다 —
+    #:   거르는 곳이 둘이면 한쪽이 바뀔 때 구멍이 난다. 이 값은 **판정 신호**다.
+    #:   본문도 이미 치환돼 있어 다시 가리지 않는다. 빠져 있던 것이 mask 판정뿐이라
+    #:   그것만 싣는다 (C6 `PolicyChunk`, spec 8.4·9.1).
+    #:
+    #: 포트에 선언해 둔다. 숨은 속성으로 두면 **규약인지 우연인지 구분되지 않는다.**
+    decision: str | None = None
 
 
 class Retriever(Protocol):
@@ -178,6 +198,9 @@ class PipelineResult:
     doc_ids: tuple[str, ...] = ()
     #: 참조한 문서들의 등급. doc_ids 와 같은 순서다 (audit_logs.doc_grades)
     doc_grades: tuple[str, ...] = ()
+    #: 감사 로그용 응답 — 출력 검사를 통과한 **복원 전** 글(PII 는 토큰 상태). B11 이 가려 저장한다.
+    #: 차단되면 비어 있다(막힌 응답은 기록하지 않는다 — 유출 내용을 다시 남기지 않게)
+    audit_response: str = ""
 
     @property
     def blocked(self) -> bool:
@@ -195,6 +218,37 @@ PromptBuilder = Callable[[str, Sequence[Chunk]], LlmRequest]
 #: 받는 것은 **치환이 끝난 글**이다 — 호출자가 원문을 다시 만지지 않게 하려는 것이다.
 #: 돌려주는 것은 조각 수만큼의 프롬프트고, 개수가 그대로 모델 호출 횟수가 된다.
 PartsBuilder = Callable[[str], Sequence[str]]
+
+
+def _grade_verdict(chunks: Sequence[Chunk]) -> Verdict:
+    """C6 가 조각마다 실어 보낸 **역할 × 등급 판정**을 가드레일 판정으로 옮긴다.
+
+    운영자가 개인 등급 자소서를 읽는 경우가 이것이다. 검색은 되지만 원문 그대로는
+    아니다 — "운영자는 무제한" 이 아니라는 뜻이고, C2 matrix 가 `mask` 로 정해 둔다.
+
+    ★ 여기서 본문을 **다시 가리지 않는다.** 본문은 이미 치환돼 있어 원문 PII 가
+      나가지 않는다. 빠져 있던 것은 **판정 신호**뿐이라 그것만 싣는다. 가리는 일을
+      두 곳에서 하면 한쪽이 바뀔 때 어긋난다.
+
+    ★ 조각이 여럿이면 **가장 무거운 판정**을 쓴다. 하나라도 가려야 하면 응답 전체가
+      그 조건 아래 있다 — 가려야 할 조각만 빼고 답을 만들면 그 조각은 모델에게
+      이미 간 뒤다.
+    """
+    counts: dict[str, int] = {}
+    for chunk in chunks:
+        decision = chunk.decision
+        if decision and decision != "allow":
+            counts[decision] = counts.get(decision, 0) + 1
+    if not counts:
+        return allow("retriever")
+
+    findings = []
+    worst = "allow"
+    for decision, count in counts.items():
+        rule_id, severity = _GRADE_DECISIONS.get(decision, _GRADE_DECISIONS["block"])
+        findings.append(Finding(rule_id, severity, count))  # type: ignore[arg-type]
+        worst = worse_decision(worst, decision if decision in _GRADE_DECISIONS else "block")
+    return Verdict(worst, "retriever", tuple(findings))  # type: ignore[arg-type]
 
 
 def build_prompt(query: str, chunks: Sequence[Chunk]) -> LlmRequest:
@@ -234,9 +288,22 @@ class Guardrail:
     #: D19 출력 레일. 주지 않으면 A5 만으로 끝난다(기존 동작). 설정 플래그로 fastapi.py 가 주입한다
     output_rail: OutputRail | None = None
 
-    async def run(self, query: str, ctx: RequestContext) -> PipelineResult:
-        """모델을 **한 번** 부르는 보통 경로."""
-        return await self._execute(query, ctx, parts=None)
+    async def run(
+        self, query: str, ctx: RequestContext, *, prompt: PromptBuilder | None = None
+    ) -> PipelineResult:
+        """모델을 **한 번** 부르는 보통 경로.
+
+        ``query`` 는 **사용자가 쓴 글**이다. 기능의 프롬프트 템플릿은 ``prompt`` 로
+        넘기면 이 안에서 조립한다.
+
+        ★ 조립해서 넘기지 않는 이유 — 조립한 글을 넘기면 A3·A12 가 **우리 템플릿까지
+          검사 대상으로 본다.** 그러면 문장 전체를 보는 규칙이 죽는다. A12
+          `is_continuation` 은 ``^...$`` 앵커라 템플릿에 싸이면 영원히 안 맞고,
+          그 때문에 `A10-MULTI-04`(나눠 묻기)가 1차 측정에서 통과하지 못했다.
+
+          `prompt` 를 주지 않으면 ``self.prompt_builder``(기본 조립)를 쓴다.
+        """
+        return await self._execute(query, ctx, prompt=prompt, parts=None)
 
     async def run_split(self, query: str, ctx: RequestContext, *, parts: PartsBuilder) -> PipelineResult:
         """긴 글을 나눠 **여러 번** 부르는 경로 (A6 의 5,000자 초과 분할).
@@ -248,10 +315,15 @@ class Guardrail:
         ★ 감사 로그는 조각 수와 무관하게 **한 줄**이다. 사용자가 한 번 요청한 일을
           여러 줄로 남기면 B21 집계가 호출 수만큼 부풀어 오른다.
         """
-        return await self._execute(query, ctx, parts=parts)
+        return await self._execute(query, ctx, prompt=None, parts=parts)
 
     async def _execute(
-        self, query: str, ctx: RequestContext, *, parts: PartsBuilder | None
+        self,
+        query: str,
+        ctx: RequestContext,
+        *,
+        prompt: PromptBuilder | None,
+        parts: PartsBuilder | None,
     ) -> PipelineResult:
         started = time.monotonic()
 
@@ -261,7 +333,9 @@ class Guardrail:
 
         try:
             result = await (
-                self._run(query, ctx) if parts is None else self._run_split(query, ctx, parts)
+                self._run(query, ctx, prompt)
+                if parts is None
+                else self._run_split(query, ctx, parts)
             )
             verdict = result.verdict
             return result
@@ -284,6 +358,7 @@ class Guardrail:
                 doc_grades=result.doc_grades,
                 latency_ms=int((time.monotonic() - started) * 1000),
                 suppress=failure is not None,
+                response=result.audit_response,
             )
 
     def _multiturn(self, query: str, ctx: RequestContext, single_turn: Verdict) -> Verdict:
@@ -340,7 +415,9 @@ class Guardrail:
         # 3. 치환 (A1). 여기부터 원문은 사라진다
         return verdict, await tokenize(query, owner_id=ctx.user_id, store=self.vault)
 
-    async def _run(self, query: str, ctx: RequestContext) -> PipelineResult:
+    async def _run(
+        self, query: str, ctx: RequestContext, prompt: PromptBuilder | None = None
+    ) -> PipelineResult:
         verdict, tokenized = await self._before_llm(query, ctx)
         if tokenized is None:
             return PipelineResult(text="", verdict=verdict)
@@ -352,9 +429,22 @@ class Guardrail:
             chunks = await self.retriever.search(
                 mask(query), role=ctx.role, user_id=ctx.user_id, top_k=self.top_k
             )
+            verdict = verdict.merge(_grade_verdict(chunks))
+            if verdict.decision == "block":
+                # ★ 볼 수 없는 자료가 섞였다. 모델을 부르지 않는다 — 부르고 나서
+                #   막으면 그 조각은 **이미 모델에게 간 뒤**다. 분류 단계가 탈취를
+                #   막을 때와 같은 판단이고, 그쪽에만 있던 검사를 여기에도 둔다
+                return PipelineResult(
+                    text="",
+                    verdict=verdict,
+                    doc_ids=tuple(c.doc_id for c in chunks),
+                    doc_grades=tuple(c.grade for c in chunks),
+                )
 
-        # 5·6. 프롬프트 조립과 호출 (A2)
-        request = self.prompt_builder(tokenized.text, chunks)
+        # 5·6. 프롬프트 조립과 호출 (A2).
+        #    ★ 조립은 **여기서** 한다. 호출자가 조립해 넘기면 A3·A12 가 템플릿까지
+        #      검사하게 된다 (`run` 주석 참조)
+        request = (prompt or self.prompt_builder)(tokenized.text, chunks)
         response: LlmResponse = await self.llm.generate(request)
 
         # 7. 출력 검사 (A5) — ★ 복원보다 먼저
@@ -398,6 +488,7 @@ class Guardrail:
             unresolved=tuple(restored.unresolved),
             doc_ids=doc_ids,
             doc_grades=doc_grades,
+            audit_response=checked.text,
         )
 
     async def _run_split(
@@ -461,6 +552,7 @@ class Guardrail:
             verdict=verdict,
             usage=usage,
             unresolved=tuple(dict.fromkeys(unresolved)),
+            audit_response="\n\n".join(checked_texts),
         )
 
     async def _write_audit(
@@ -473,6 +565,7 @@ class Guardrail:
         doc_grades: tuple[str, ...],
         latency_ms: int,
         suppress: bool,
+        response: str = "",
     ) -> None:
         if self.audit is None:
             return
@@ -487,6 +580,9 @@ class Guardrail:
             #   뒷자리도 남기지 않는다 — 대조는 바로 아래 query_hash 가 맡는다
             "query_masked": mask(query),
             "query_hash": hashlib.sha256(query.encode("utf-8")).hexdigest(),
+            # 사용자에게 돌려준 답변(B11 AI 사용 기록, part2_guide 4.74). 복원 전 글이라 PII 는
+            # 토큰 상태이고, 모델이 지어낸 PII 까지 질문과 같은 방식으로 한 번 더 가린다
+            "response_masked": mask(response) if response else None,
             "doc_ids": list(doc_ids),
             # 등급별 차단율 집계(B21)에 쓴다. doc_ids 와 같은 순서다
             "doc_grades": list(doc_grades),

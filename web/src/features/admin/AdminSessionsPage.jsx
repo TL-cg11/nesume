@@ -82,13 +82,13 @@ export default function AdminSessionsPage() {
       </p>
 
       <form className="row adm-block-form adm-search" onSubmit={block}>
-        <label>
+        <label className="adm-block-session">
           세션 ID
           <input
             type="text"
             value={form.sessionId}
             maxLength={128}
-            placeholder="AI 사용 기록 화면의 session_id"
+            placeholder="예: a1b2c3d4-… (AI 사용 기록의 session_id)"
             onChange={(e) => setForm({ ...form, sessionId: e.target.value })}
             required
           />
@@ -110,8 +110,9 @@ export default function AdminSessionsPage() {
       {notice && <p className="success">{notice}</p>}
 
       <div className="row adm-search">
-        <label className="muted">
-          <input type="checkbox" checked={showHistory} onChange={(e) => setShowHistory(e.target.checked)} /> 해제·만료된 이력도 보기
+        <label className="muted adm-check">
+          <input type="checkbox" checked={showHistory} onChange={(e) => setShowHistory(e.target.checked)} />
+          해제·만료된 이력도 보기
         </label>
       </div>
 
