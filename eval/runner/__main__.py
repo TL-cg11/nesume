@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -14,6 +15,16 @@ import httpx
 from runner import core
 from runner.accounts import CognitoAccounts
 from runner.seed import DbSeeder
+
+# D17 WAF(dev ALB 앞): 이 헤더가 맞는 요청은 IP당 요청 수 제한에서 빠진다(공격 패턴 규칙은 그대로).
+# 값은 Secrets Manager nesume/dev/eval-waf-token. 로컬(http://app:8000)은 WAF를 지나지 않아 비워 둔다.
+# ★ 값은 결과 CSV·요약 JSON·로그 어디에도 남기지 않는다
+EVAL_TOKEN_HEADER = "X-Eval-Token"
+
+
+def client_headers(env=os.environ) -> dict[str, str]:
+    token = env.get("EVAL_WAF_TOKEN", "").strip()
+    return {EVAL_TOKEN_HEADER: token} if token else {}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -30,7 +41,7 @@ def main(argv: list[str] | None = None) -> int:
         prefixes = tuple(x.strip() for x in a.only.split(",") if x.strip())
         scenarios = [s for s in scenarios if s["id"].startswith(prefixes)]
     accounts = CognitoAccounts.from_env()
-    with httpx.Client(base_url=a.base_url, timeout=60) as client:
+    with httpx.Client(base_url=a.base_url, timeout=60, headers=client_headers()) as client:
         results, m = core.run(client, accounts, DbSeeder(accounts), scenarios, delay=a.delay)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     a.out_dir.mkdir(parents=True, exist_ok=True)

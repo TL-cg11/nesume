@@ -201,3 +201,32 @@ def test_seeder_reuses_base_resume_under_resume_limit(env):
     plain = {"preconditions": {}}
     ids = {seeder.prepare(plain)["resume_id"] for _ in range(60)}
     assert len(ids) == 1
+
+
+def test_eval_waf_token_header_only_when_set():
+    """D17 WAF 요청 수 제한 예외 헤더. 값이 없으면(로컬) 붙이지 않는다."""
+    from runner.__main__ import EVAL_TOKEN_HEADER, client_headers
+    assert client_headers({}) == {}
+    assert client_headers({"EVAL_WAF_TOKEN": "  "}) == {}
+    assert client_headers({"EVAL_WAF_TOKEN": "t0k"}) == {EVAL_TOKEN_HEADER: "t0k"}
+
+
+def test_eval_waf_token_not_written_to_results(env, tmp_path, monkeypatch):
+    """헤더 값은 결과 CSV·요약 JSON·표준 출력에 남지 않는다."""
+    from runner import __main__ as entry
+    from runner import core
+    secret = f"waf-{uuid.uuid4()}"
+    monkeypatch.setenv("EVAL_WAF_TOKEN", secret)
+    seen = {}
+
+    def fake_run(client, *a, **k):
+        seen["header"] = client.headers.get(entry.EVAL_TOKEN_HEADER)
+        return [], core.metrics([])
+
+    monkeypatch.setattr(core, "run", fake_run)
+    monkeypatch.setattr(entry.CognitoAccounts, "from_env", classmethod(lambda cls: None))
+    monkeypatch.setattr(entry, "DbSeeder", lambda accounts: None)
+    entry.main(["--base-url", "http://dev.example", "--out-dir", str(tmp_path), "--only", "NONE"])
+    assert seen["header"] == secret
+    for f in tmp_path.iterdir():
+        assert secret not in f.read_text(encoding="utf-8")
