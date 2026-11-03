@@ -6,20 +6,12 @@ locals {
   config_count = var.config_enabled ? 1 : 0
 }
 
-# 서비스 연결 역할(AWSServiceRoleForConfig)은 Terraform 이 관리하지 않는다.
-# 11-03 첫 apply 에서 만들어졌지만 provider default_tags 를 붙이는 iam:TagRole 권한이 없어 실패했다 →
-# 역할은 AWS 에 남기고 state 에서만 뺀다(destroy = false). 경로는 AWS 가 정한 고정 값이다.
-# 계정을 새로 만들 때는 한 번: aws iam create-service-linked-role --aws-service-name config.amazonaws.com
-removed {
-  from = aws_iam_service_linked_role.config
-
-  lifecycle {
-    destroy = false
-  }
-}
-
-locals {
-  config_role_arn = "arn:aws:iam::${var.account_id}:role/aws-service-role/config.amazonaws.com/AWSServiceRoleForConfig"
+# 계정에 없었다(11-03 조회). 한 번 만들면 Config 를 꺼도 남는다(서비스 연결 역할은 비용 없음).
+# 만들 때 provider default_tags 를 붙이므로 iam:TagRole(role/aws-service-role/*)이 필요하다 — 11-03 첫 apply 는
+# 이 권한이 없어 역할만 생기고 실패했고, D 가 권한을 추가했다(정책 nesume-dev-iam-terraform v2).
+resource "aws_iam_service_linked_role" "config" {
+  count            = local.config_count
+  aws_service_name = "config.amazonaws.com"
 }
 
 # 전용 버킷. CloudTrail 버킷(SSE-KMS)에 넣으면 트레일 키 정책·버킷 정책을 Config 용으로 넓혀야 한다 → 섞지 않는다.
@@ -102,7 +94,7 @@ resource "aws_s3_bucket_policy" "config" {
 resource "aws_config_configuration_recorder" "this" {
   count    = local.config_count
   name     = "${var.name}-recorder"
-  role_arn = local.config_role_arn
+  role_arn = aws_iam_service_linked_role.config[0].arn
 
   recording_group {
     all_supported                 = true
