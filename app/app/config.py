@@ -75,7 +75,11 @@ class Settings(BaseSettings):
     nemo_query_mode: Literal["off", "shadow", "enforce"] = "off"
     nemo_chunk_mode: Literal["off", "shadow", "enforce"] = "off"
     nemo_threshold: float = 0.6
+    #: enforce 가 기다리는 최대 시간. 넘으면 통과(NEMO_TIMEOUT)시키고 판정은 뒤에서 마저 돌려 기록
     nemo_timeout_s: float = 3.0
+    #: shadow·늦은 판정의 최대 시간(사용자는 기다리지 않는다)과 뒤에서 도는 검사 동시 상한
+    nemo_shadow_timeout_s: float = 30.0
+    nemo_max_background: int = 8
 
     # D16 알림. 비우면 로그만 남긴다. SNS 토픽(IRSA sns:Publish) 우선, 없으면 웹훅 직접 POST(로컬·kind).
     # Discord(기본)·Slack 웹훅 URL 은 Secrets Manager nesume/<env>/app 의 ALERTS_WEBHOOK_URL 키
