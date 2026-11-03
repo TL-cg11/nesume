@@ -24,6 +24,30 @@ const DECISION = {
 const QUERY_TYPE = { normal: '정상', out_of_scope: '범위 밖', sensitive: '민감', exfiltration: '유출 시도', '(없음)': '분류 없음' }
 const ROLE = { user: '일반 사용자', mentor: '멘토', operator: '운영자', system: '시스템' }
 const STAGE = { classifier: '분류기', retriever: '검색 필터', output_guard: '출력 검사', '(없음)': '단계 없음' }
+// 감사 로그 feature 값(각 서비스의 FEATURE 상수) → 화면 이름. 새 기능이 생기면 여기 한 줄
+const FEATURE = {
+  interview: '면접 연습',
+  'rewrite.generate': '자소서 리라이팅',
+  'writing.proofread': '글 다듬기(맞춤법)',
+  'writing.star': 'STAR 점검',
+  'writing.star_complete': 'STAR 보완',
+  'github.intro': 'GitHub 소개',
+  'matching.analyze': '공고 매칭',
+  'style.adjust': '문체 조정',
+  'share.view': '멘토 공유 열람',
+}
+const featureLabel = (f) => FEATURE[f] ?? f
+// 평가 트래픽 포함 여부. 지금은 팀이 쓰는 시드 계정(test-user1 등)이 전부 Cognito test 그룹(is_test)이라
+// 빼면 거의 아무것도 안 보인다 → 기본 포함. 선택은 브라우저에 기억한다.
+const INCLUDE_TEST_KEY = 'ops.includeTest'
+const readIncludeTest = () => {
+  try {
+    const v = localStorage.getItem(INCLUDE_TEST_KEY)
+    return v === null ? true : v === '1'
+  } catch {
+    return true
+  }
+}
 
 const fmtTime = (iso) => new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 const fmtDateTime = (iso) => new Date(iso).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -70,7 +94,7 @@ function Panel({ title, caption, children, className = '', action }) {
 
 export default function AdminDashboardPage() {
   const [hours, setHours] = useState(24)
-  const [includeTest, setIncludeTest] = useState(false)
+  const [includeTest, setIncludeTest] = useState(readIncludeTest)
   const [auto, setAuto] = useState(true)
   const [summary, setSummary] = useState(null)
   const [traffic, setTraffic] = useState(null)
@@ -116,6 +140,14 @@ export default function AdminDashboardPage() {
   }, [load])
 
   useEffect(() => {
+    try {
+      localStorage.setItem(INCLUDE_TEST_KEY, includeTest ? '1' : '0')
+    } catch {
+      /* 저장 못 해도 동작에는 지장 없음 */
+    }
+  }, [includeTest])
+
+  useEffect(() => {
     if (!auto) return undefined
     const id = setInterval(() => {
       if (document.visibilityState === 'visible') load()
@@ -150,7 +182,10 @@ export default function AdminDashboardPage() {
         <div>
           <h1>운영 대시보드</h1>
           <p className="muted">
-            AI 가드레일 판정과 서비스 트래픽을 한눈에. 평가 러너(is_test) 트래픽은 기본으로 뺍니다.
+            AI 가드레일 판정과 서비스 트래픽을 한눈에.
+            {includeTest
+              ? ' Cognito test 그룹 계정(시드 test-user1 등)과 평가 러너의 요청도 포함한 수치입니다.'
+              : ' test 그룹 계정(시드 계정 전부)과 평가 러너의 요청은 빠져 있습니다. 비어 보이면 포함을 켜세요.'}
             {summary && (
               <>
                 {' '}
@@ -168,7 +203,7 @@ export default function AdminDashboardPage() {
             ))}
           </div>
           <label className="ops-check">
-            <input type="checkbox" checked={includeTest} onChange={(e) => setIncludeTest(e.target.checked)} /> 평가 트래픽 포함
+            <input type="checkbox" checked={includeTest} onChange={(e) => setIncludeTest(e.target.checked)} /> 테스트 계정·평가 트래픽 포함
           </label>
           <label className="ops-check">
             <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} /> 30초 자동 갱신
@@ -215,7 +250,7 @@ export default function AdminDashboardPage() {
               <HBars items={bars(summary.by_role, ROLE)} color="var(--ops-c2)" />
             </Panel>
             <Panel title="기능별" caption="요청이 많은 순 12개">
-              <HBars items={bars(summary.by_feature)} color="var(--ops-c3)" />
+              <HBars items={bars(summary.by_feature, FEATURE)} color="var(--ops-c3)" />
             </Panel>
             <Panel title="차단 단계" caption="어느 레일에서 걸렸는가">
               <HBars items={bars(summary.by_stage, STAGE)} color="var(--ops-c4)" />
@@ -278,7 +313,7 @@ export default function AdminDashboardPage() {
                       <span className={`ops-tag ${e.canary_hit ? 'block' : e.decision}`}>{e.canary_hit ? '카나리' : DECISION[e.decision]?.label ?? e.decision}</span>
                       <span className="ops-event-body">
                         <span className="ops-who" title={e.user_id}>{who(e.user_id)}</span>
-                        <span className="muted"> · {e.feature}{e.query_type ? ` · ${QUERY_TYPE[e.query_type] ?? e.query_type}` : ''}{e.decision_stage ? ` · ${STAGE[e.decision_stage] ?? e.decision_stage}` : ''}</span>
+                        <span className="muted"> · {featureLabel(e.feature)}{e.query_type ? ` · ${QUERY_TYPE[e.query_type] ?? e.query_type}` : ''}{e.decision_stage ? ` · ${STAGE[e.decision_stage] ?? e.decision_stage}` : ''}</span>
                         {(e.flags.length > 0 || e.rule_id) && (
                           <span className="ops-flags">{[...e.flags, e.rule_id].filter(Boolean).map((f) => <code key={f}>{f}</code>)}</span>
                         )}
