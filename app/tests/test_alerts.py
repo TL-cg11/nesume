@@ -169,7 +169,7 @@ def test_webhook_payload_by_host():
     slack = "https://hooks.slack.com/services/x"
     assert webhook_kind(discord) == "discord" and webhook_kind(slack) == "slack"
     d = webhook_payload(discord, e)
-    assert set(d) == {"username", "embeds"} and d["username"] == "네슘 파수꾼"
+    assert set(d) == {"username", "embeds"} and d["username"] == "NESUME RADAR"
     embed = d["embeds"][0]
     assert embed["title"].endswith("알람") and embed["color"] == 0xF59E0B and embed["description"] == "x"
     rich = webhook_payload(discord, AlertEvent(type="canary_hit", severity="critical", summary="s",

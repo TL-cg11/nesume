@@ -17,7 +17,7 @@ import boto3
 SECRET_ARN = os.environ["SECRET_ARN"]
 SECRET_KEY = os.environ.get("WEBHOOK_SECRET_KEY", "ALERTS_WEBHOOK_URL")
 ENV = os.environ.get("ENV", "")
-USERNAME = os.environ.get("WEBHOOK_USERNAME", "네슘 파수꾼")
+USERNAME = os.environ.get("WEBHOOK_USERNAME", "NESUME RADAR")
 _cache = {}
 
 COLORS = {"critical": 0xE53935, "warn": 0xF59E0B, "info": 0x3B82F6, "ok": 0x22C55E}
