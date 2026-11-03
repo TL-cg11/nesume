@@ -30,9 +30,10 @@ config:
   # 11-03: 대역 모델(Llama 3.1 8B)이 보안 직무 자소서 문장을 unsafe 로 찍어 5건 오차단 → 기록 전용(판정·표식·로그는 남고
   # 응답은 통과). 정식 Llama Guard 로 바꾸거나 B16 러너로 과차단율을 확인한 뒤 "true" 로. docs/ops/output-rail.md 5장
   LLAMA_GUARD_ENFORCE: "false"
-  # C16: 질의·검색 조각 모두 관찰(shadow — 판정·지연 그대로, 로그만). 끄려면 "off"
-  NEMO_QUERY_MODE: "shadow"
-  NEMO_CHUNK_MODE: "shadow"
+  # C16: 11-04 끔. 첫 색인이 30초 상한에 취소되면 그 파드에서 NeMo 가 영구 오류(Index is not built yet)이고,
+  # 색인 임베딩이 CPU 임베더를 점유해 개인 검색이 5초 초과로 빠졌다. 색인 수정 뒤 "shadow" 로. docs/C16.md
+  NEMO_QUERY_MODE: "off"
+  NEMO_CHUNK_MODE: "off"
 
 externalSecrets:
   enabled: true
