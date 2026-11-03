@@ -6,8 +6,10 @@ LLM 을 쓰는 **모든** 기능이 지나는 단 하나의 경로다. A·B·C �
     1. validate_input  (A1)  거절 대상이면 LLM 호출 없이 끝
     2. classify        (A3)  탈취 시도면 LLM 호출 없이 끝
        multiturn       (A12) 이력을 함께 본다 — 턴마다는 정상인 공격을 잡는다
+       input_rail      (C16) 선택. NeMo 의도 레일. shadow 면 기다리지 않고 로그만
     3. tokenize        (A1)  여기부터 원문은 사라진다
     4. search          (C6)  역할 기반 사전 필터는 C6 가 강제한다
+       input_rail      (C16) 선택. 지시문이 든 조각을 뺀다
     5. 프롬프트 조립          외부 텍스트는 데이터로 감싼다
     6. LLM 호출        (A2)  모델은 토큰만 본다
     7. check_output    (A5)  ★ 복원 전에 검사한다
@@ -31,6 +33,7 @@ C6 검색 함수와 B11 로그 기록 함수가 아직 없다. 그래서 둘 다
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import time
 import uuid
@@ -147,6 +150,37 @@ class OutputRail(Protocol):
     """
 
     async def check(self, text: str) -> Verdict: ...
+
+
+class InputRail(Protocol):
+    """C16 NeMo 의도 레일(guardrails_nemo/rail.py). 질의(2단계 뒤)와 검색 조각(4단계 뒤)을 본다.
+
+    모드는 각각 ``off``·``shadow``·``enforce``. shadow 는 파이프라인이 **기다리지 않고** 띄워 두기만 한다 —
+    판정도 지연도 바뀌지 않고 레일이 로그만 남긴다. 레일 오류는 레일 안에서 fail-open 으로 끝낸다.
+    """
+
+    query_mode: str
+    chunk_mode: str
+
+    async def check_query(self, text: str, request_id: str = "") -> Verdict: ...
+
+    async def check_chunks(
+        self, chunks: Sequence[Chunk], request_id: str = ""
+    ) -> tuple[Sequence[Chunk], Verdict]: ...
+
+
+#: shadow 로 띄운 레일 작업. 참조를 들고 있지 않으면 끝나기 전에 GC 될 수 있다
+_SHADOW_TASKS: set[asyncio.Task] = set()
+
+
+def _spawn_shadow(coro) -> None:
+    try:
+        task = asyncio.get_running_loop().create_task(coro)
+    except Exception:  # noqa: BLE001 - 관찰이 요청을 깨면 안 된다
+        coro.close()
+        return
+    _SHADOW_TASKS.add(task)
+    task.add_done_callback(_SHADOW_TASKS.discard)
 
 
 # --------------------------------------------------------------------------
@@ -287,6 +321,8 @@ class Guardrail:
     top_k: int = DEFAULT_TOP_K
     #: D19 출력 레일. 주지 않으면 A5 만으로 끝난다(기존 동작). 설정 플래그로 fastapi.py 가 주입한다
     output_rail: OutputRail | None = None
+    #: C16 NeMo 의도 레일. 주지 않으면 건너뛴다(기존 동작). NEMO_*_MODE 로 fastapi.py 가 주입한다
+    input_rail: InputRail | None = None
 
     async def run(
         self,
@@ -399,6 +435,35 @@ class Guardrail:
 
     # ------------------------------------------------------------------ 내부
 
+    async def _rail_query(self, query: str, ctx: RequestContext, verdict: Verdict) -> Verdict:
+        rail = self.input_rail
+        if rail is None or rail.query_mode == "off":
+            return verdict
+        text, rid = mask(query), str(ctx.request_id)
+        try:
+            if rail.query_mode == "enforce":
+                return verdict.merge(await rail.check_query(text, rid))
+            _spawn_shadow(rail.check_query(text, rid))
+        except Exception:  # noqa: BLE001 - 2차 보강이 요청을 깨면 안 된다(레일도 fail-open 이지만 한 번 더)
+            pass
+        return verdict
+
+    async def _rail_chunks(
+        self, chunks: Sequence[Chunk], ctx: RequestContext, verdict: Verdict
+    ) -> tuple[Sequence[Chunk], Verdict]:
+        rail = self.input_rail
+        if rail is None or rail.chunk_mode == "off" or not chunks:
+            return chunks, verdict
+        rid = str(ctx.request_id)
+        try:
+            if rail.chunk_mode == "enforce":
+                kept, rail_verdict = await rail.check_chunks(chunks, rid)
+                return kept, verdict.merge(rail_verdict)
+            _spawn_shadow(rail.check_chunks(chunks, rid))
+        except Exception:  # noqa: BLE001 - 위와 같다
+            pass
+        return chunks, verdict
+
     async def _before_llm(self, query: str, ctx: RequestContext):
         """모델을 부르기 전의 1·2·3단계. 막혔으면 돌려주는 판정이 block 이고
         둘째 값이 ``None`` 이다.
@@ -420,6 +485,11 @@ class Guardrail:
         verdict = verdict.merge(self._multiturn(query, ctx, verdict))
         if verdict.decision == "block":
             # 탈취 시도다. LLM 을 부르지 않는다 — 부르면 그 자체가 비용이고 로그다
+            return verdict, None
+
+        # 2+. NeMo 의도 레일 (C16). 올리기만 한다 — A3 가 막은 것은 위에서 이미 끝났다
+        verdict = await self._rail_query(query, ctx, verdict)
+        if verdict.decision == "block":
             return verdict, None
 
         # 3. 치환 (A1). 여기부터 원문은 사라진다
@@ -463,6 +533,8 @@ class Guardrail:
                     doc_ids=tuple(c.doc_id for c in chunks),
                     doc_grades=tuple(c.grade for c in chunks),
                 )
+            # 4+. 지시문이 든 조각을 뺀다 (C16). 빼고 남은 것으로 계속 답한다
+            chunks, verdict = await self._rail_chunks(chunks, ctx, verdict)
 
         # 5·6. 프롬프트 조립과 호출 (A2).
         #    ★ 조립은 **여기서** 한다. 호출자가 조립해 넘기면 A3·A12 가 템플릿까지

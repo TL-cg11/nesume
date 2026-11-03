@@ -27,6 +27,9 @@ config:
   # D16: compute 출력 alerts_topic_arn(토픽 이름 고정). D19: dev 는 레일 켬(끄려면 "false" 한 줄)
   ALERTS_SNS_TOPIC_ARN: arn:aws:sns:ap-northeast-2:852138520969:nesume-dev-alerts
   LLAMA_GUARD_ENABLED: "true"
+  # C16: 질의·검색 조각 모두 관찰(shadow — 판정·지연 그대로, 로그만). 끄려면 "off"
+  NEMO_QUERY_MODE: "shadow"
+  NEMO_CHUNK_MODE: "shadow"
 
 externalSecrets:
   enabled: true

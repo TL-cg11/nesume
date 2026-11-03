@@ -1,0 +1,29 @@
+# C16 NeMo Guardrails 설정 (spec 12.2). LLM 없이 예시 문장 임베딩 유사도로만 의도를 고른다.
+# 임베딩은 우리 bge-m3(TEI) — provider.py 의 nesume_bge_m3. 기본 FastEmbed 를 쓰는 자리가 없어야 한다
+# (기본값을 쓰면 기동 때 인터넷에서 모델을 내려받는다 — tests/test_guardrails_nemo.py 가 막는다).
+models:
+  - type: embeddings
+    engine: nesume_bge_m3
+    model: bge-m3
+
+core:
+  embedding_search_provider:
+    name: default
+    parameters:
+      embedding_engine: nesume_bge_m3
+      embedding_model: bge-m3
+
+knowledge_base:
+  embedding_search_provider:
+    name: default
+    parameters:
+      embedding_engine: nesume_bge_m3
+      embedding_model: bge-m3
+
+rails:
+  dialog:
+    user_messages:
+      embeddings_only: True
+      # intent.py 가 실행 때 덮어쓴다(DEFAULT_THRESHOLD). 여기 값은 문서용
+      embeddings_only_similarity_threshold: 0.6
+      embeddings_only_fallback_intent: "other"  # "user " 접두어 없이(의도 이름만)
