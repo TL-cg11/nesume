@@ -205,6 +205,22 @@ async def test_doc_ids_are_recorded() -> None:
 
 
 @pytest.mark.anyio
+async def test_retrieve_false_skips_search_for_that_call() -> None:
+    """기능이 자료를 직접 고른 호출(B13 면접)은 검색을 건너뛴다. 다른 호출은 그대로 검색한다."""
+    retriever = FakeRetriever(chunks=[Chunk("d1", "personal", "본문")])
+    guard = _guard(retriever=retriever)
+
+    skipped = await guard.run("면접 질문을 만들어 주세요", CTX, retrieve=False)
+    assert retriever.queries == []
+    assert skipped.doc_ids == ()
+    assert skipped.verdict.decision == "allow"
+
+    searched = await guard.run("경험 정리", CTX)
+    assert len(retriever.queries) == 1
+    assert searched.doc_ids == ("d1",)
+
+
+@pytest.mark.anyio
 async def test_no_retriever_skips_search() -> None:
     """검색이 없는 기능(맞춤법 교정 등)도 있다."""
     result = await _guard().run("맞춤법을 봐주세요", CTX)
