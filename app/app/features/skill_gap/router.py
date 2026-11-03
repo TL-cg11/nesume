@@ -5,7 +5,9 @@
   → 기술 역량 갭·직무 역량 갭(missing만, 필수·우대) + 지원 조건(참고) + 이미 갖춘 것.
   `gaps`·`domain_gaps`는 C14 `POST /roadmaps`의 `gaps`에 그대로 넣을 수 있는 모양이다.
 - 공고는 C4 창구(`get_posting_fields`, 권한 포함), A11과 같은 손질(`prepare_posting`: A1 mask → C5 전처리).
-- 자소서 원문은 서버 안에서만 쓰고 응답에 싣지 않는다(근거 필드는 **공고 쪽** 필드명만).
+- 자소서 원문은 서버 안에서만 쓰고 응답에 싣지 않는다(근거는 **공고 쪽** 필드명과 공고 원문 줄만).
+- 근거 "원문 위치"(`evidence_line`): A11이 주지 않아 C가 추출기가 본 글(A1 mask → C5 전처리본)에서
+  그 조각이 나온 줄을 찾는다.
 - 본인 자소서·볼 수 있는 공고만 — 아니면 404(없음과 구분 안 함).
 """
 from __future__ import annotations
@@ -24,7 +26,7 @@ from app.features.matching.coverage import compare
 from app.features.matching.keywords import PostingFields, extract
 from app.features.matching.service import prepare_posting
 from app.features.matching.vocab import squash
-from app.features.skill_gap.classify import CONDITION, DOMAIN, SKILL, kind_of, tidy
+from app.features.skill_gap.classify import CONDITION, DOMAIN, SKILL, kind_of, source_line, tidy
 from app.features.skill_gap.evidence import gather_evidence
 from app.features.skill_gap.gap import from_coverage, learning_gaps
 from app.postings.read import get_posting_fields, get_recruit_fields, narrow_to_field
@@ -47,6 +49,8 @@ class GapOut(BaseModel):
     label: str
     importance: str
     evidence_fields: list[str]
+    #: 그 요건이 나온 공고 원문 줄(공백 정리, 최대 120자). 못 찾으면 None — 화면은 필드 이름만 보인다
+    evidence_line: str | None = None
 
 
 class ConditionOut(BaseModel):
@@ -100,6 +104,9 @@ def learning_gaps_for(payload: LearningGapsRequest, user: AuthenticatedUser, db:
     kinds = [kind_of(m.keyword.text, m.keyword.category, fields) for m in report.matches]
     by_kind = {SKILL: [], DOMAIN: []}
     conditions, covered = [], []
+    # 근거 원문 줄은 추출기가 본 글에서 찾는다(분야를 골랐으면 좁힌 글, 연락처는 A1이 가린 글)
+    posting_texts = dict(prepared.fields.texts())
+    lines: dict[str, str | None] = {}
     for m, f, (kind, cond) in zip(report.matches, flat, kinds, strict=True):
         if kind == CONDITION:
             conditions.append(ConditionOut(label=f.label, kind=cond, importance=f.importance))
@@ -108,6 +115,13 @@ def learning_gaps_for(payload: LearningGapsRequest, user: AuthenticatedUser, db:
                 label = tidy(f.label)
                 f = replace(f, label=label, key=squash(label))
             by_kind[kind].append(f)
+            # 다듬기 전 원래 조각으로 찾는다(직무 역량은 화면용으로 다듬어 원문과 글자가 다르다)
+            if lines.get(f.key) is None:
+                term = m.keyword.term
+                lines[f.key] = source_line(
+                    m.keyword.text, posting_texts, prefer=f.evidence_fields,
+                    forms=term.all_forms if term else (),
+                )
             if f.status != "missing":
                 covered.append(
                     CoveredOut(label=f.label, kind=kind, status=f.status, experiences=list(m.experiences))
@@ -117,7 +131,13 @@ def learning_gaps_for(payload: LearningGapsRequest, user: AuthenticatedUser, db:
         # 같은 키는 한 번만(중요도순 정렬이라 첫 것이 가장 중요한 것)
         seen: set[str] = set()
         return [
-            GapOut(key=g.key, label=g.label, importance=g.importance, evidence_fields=list(g.evidence_fields))
+            GapOut(
+                key=g.key,
+                label=g.label,
+                importance=g.importance,
+                evidence_fields=list(g.evidence_fields),
+                evidence_line=lines.get(g.key),
+            )
             for g in gaps
             if not (g.key in seen or seen.add(g.key))
         ]

@@ -122,6 +122,8 @@
 .lp-gap-table th:first-child, .lp-gap-table td:first-child { width: 22px; padding-right: 0; }
 .lp-gap-table input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
 .lp-gap-why { color: var(--muted) !important; font-size: 11px; }
+/* C10 근거 원문 줄 — 필드 이름 아래 한 줄 */
+.lp-gap-line { display: block; margin-top: 2px; word-break: keep-all; overflow-wrap: anywhere; }
 .lp-gap-imp { display: inline-block; margin-left: 2px; border-radius: 999px; padding: 1px 6px; font-size: 10px; font-weight: 700; background: var(--bg); color: var(--muted); white-space: nowrap; }
 .lp-gap-imp.req { background: var(--danger-soft); color: var(--danger); }
 .lp-gap-st { display: inline-block; border-radius: 999px; padding: 3px 8px; font-size: 10px; font-weight: 700; white-space: nowrap; }
