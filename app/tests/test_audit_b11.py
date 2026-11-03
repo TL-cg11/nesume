@@ -33,6 +33,7 @@ def _fields(**kw):
     base = dict(
         request_id=uuid.uuid4(), session_id="sess-1", user_id=f"u-{uuid.uuid4().hex[:8]}", role="user",
         feature="rewrite", query_masked="연락처 ***-****-****", query_hash=hashlib.sha256(b"q").hexdigest(),
+        response_masked="연락은 [[PHONE_1]] 로 주세요",
         doc_ids=["d1", "d2"], doc_grades=["personal", "public"], is_test=False, latency_ms=120,
         decision="allow", decision_stage="classifier", query_type="normal", flags=[], rule_id=None,
         canary_hit=False,
@@ -113,6 +114,7 @@ def stored(db_session):
 @pytest.mark.parametrize("values", [
     pytest.param({"decision": "block"}, id="decision"),
     pytest.param({"query_masked": "변조"}, id="query_masked"),
+    pytest.param({"response_masked": "변조"}, id="response_masked"),
     pytest.param({"is_test": True, "session_id": "test-x"}, id="is_test"),
 ])
 def test_update_other_columns_rejected(db_session, stored, values):
@@ -288,3 +290,13 @@ def test_emails_and_lookup_for_operator(monkeypatch):
 @pytest.mark.parametrize("path", ["/audit-logs/emails?user_id=x", "/audit-logs/lookup?email=a@x.com"])
 def test_email_helpers_operator_only(path):
     assert _client(Role.USER).get(path).status_code == 403
+
+
+def test_response_masked_optional_and_returned_by_api():
+    """4.74: 답변은 가린 형태로 저장·조회. 차단·이전 기록은 None."""
+    with_answer = _fields()
+    blocked = _fields(decision="block", response_masked=None)
+    write(**with_answer)
+    write(**blocked)
+    assert _get(with_answer["request_id"]).response_masked == "연락은 [[PHONE_1]] 로 주세요"
+    assert _get(blocked["request_id"]).response_masked is None
