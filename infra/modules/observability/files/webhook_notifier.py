@@ -32,7 +32,8 @@ TYPE_LABELS = {
 def webhook_url():
     if "url" not in _cache:
         raw = boto3.client("secretsmanager").get_secret_value(SecretId=SECRET_ARN)["SecretString"]
-        _cache["url"] = (json.loads(raw).get(SECRET_KEY) or "").strip()
+        # PowerShell 의 Set-Content -Encoding utf8 이 붙이는 BOM 을 견딘다(11-03 실제 발생)
+        _cache["url"] = (json.loads(raw.lstrip("﻿")).get(SECRET_KEY) or "").strip()
     return _cache["url"]
 
 
