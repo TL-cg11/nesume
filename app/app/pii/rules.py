@@ -112,6 +112,24 @@ ACCOUNT = Rule(
     validator=_plausible_account,
 )
 
+#: 구분자 없이 붙여 쓴 계좌·카드번호(11/3). ``ACCOUNT`` 는 구분자가 있어야 잡아서
+#: "계좌번호 1234567890123" 이 그대로 모델에 갔다.
+#:
+#: ★ **앞에 라벨이 있을 때만** 잡는다. 계좌번호는 거절 대상(``REJECTED_KINDS``)이라
+#:   붙은 숫자 10~16자리를 모두 잡으면 학번·주문번호·타임스탬프가 든 정상 문장이
+#:   전부 막힌다(과차단). 라벨과 숫자 사이에는 숫자가 아닌 글자 15자까지 허용한다
+#:   ("국민은행 계좌는 …", "카드번호: …").
+ACCOUNT_LABELED = Rule(
+    kind="ACCOUNT",
+    rule_id="PII_ACCOUNT",
+    pattern=re.compile(
+        r"(?:계좌|통장|입금|송금|은행|뱅크|카드)[^\d\n]{0,15}?(?<!\d)(\d{10,16})(?!\d)"
+    ),
+    priority=84,
+    validator=_plausible_account,
+    group=1,
+)
+
 # --------------------------------------------------------------------------
 # 미정 — 킥오프(10/20)에서 정해야 구현할 수 있는 규칙들
 # --------------------------------------------------------------------------
@@ -153,6 +171,7 @@ PERSON_LABELED = Rule(
 ACTIVE_RULES: tuple[Rule, ...] = (
     RRN,
     ACCOUNT,
+    ACCOUNT_LABELED,
     EMAIL,
     PHONE,
     PERSON_LABELED,
