@@ -32,7 +32,7 @@ from app.features.roadmap.schemas import (
 )
 from app.models.learning import LearningContent, LearningRoadmap, LearningRoadmapItem
 from app.postings.read import get_posting_fields, get_posting_link
-from app.retrieval.embedder import get_embedder
+from app.retrieval.embedder import get_query_embedder
 
 router = APIRouter(prefix="/roadmaps", tags=["roadmaps"])
 Db = Annotated[Session, Depends(get_db)]
@@ -101,7 +101,7 @@ def create_roadmap(payload: RoadmapCreate, user: AuthenticatedUser, db: Db):
         weekly_hours=payload.weekly_hours,
         mode=payload.mode.value if payload.mode else None,
         max_weeks=payload.max_weeks,
-        embedder=get_embedder(),
+        embedder=get_query_embedder(),  # 요청 경로 — 짧은 정책(docs/C6.md 11-03)
     )
     roadmap = service.save_roadmap(
         db,
@@ -234,7 +234,7 @@ def list_candidates(
             mode=mode.value if mode else None,
             page=page,
             size=size,
-            embedder=get_embedder(),
+            embedder=get_query_embedder(),  # 요청 경로 — 짧은 정책(docs/C6.md 11-03)
         )
     except service.RoadmapNotFound:
         raise _NOT_FOUND from None

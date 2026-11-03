@@ -55,6 +55,16 @@ def _no_background_personal_index(monkeypatch):
     monkeypatch.setattr(personal_index, "submit", lambda items: None)
 
 
+@pytest.fixture(autouse=True)
+def _no_real_embedder(monkeypatch):
+    """로컬 .env의 EMBEDDING_URL을 시험이 읽어 실제 임베더를 부르지 않게 한다(11-03, docs/C6.md).
+    임베더가 꺼져 있으면 배치 재시도(최악 ~8분)를 기다리며 시험이 멈췄다.
+    임베더가 필요한 시험은 대역을 넘기거나 `get_settings().embedding_url`을 바꾼다(test_embedder_http)."""
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "embedding_url", "")
+
+
 @pytest.fixture
 def db_session():
     """테스트마다 트랜잭션을 열고 끝나면 롤백한다. 테스트 안의 commit은 SAVEPOINT로 처리된다."""
