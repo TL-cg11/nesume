@@ -44,7 +44,13 @@ from app.features.style import tone as tone_mod
 from app.features.style.counter import CharCount, count
 from app.features.style.length import Trim
 from app.features.style.tone import DEFAULT_TONE, TONE_NAMES, Tone, ToneAnalysis
-from app.guardrail import Guardrail, LlmUnavailable, RequestContext
+from app.guardrail import (
+    DEFAULT_SYSTEM_PROMPT,
+    Guardrail,
+    LlmRequest,
+    LlmUnavailable,
+    RequestContext,
+)
 
 FEATURE = "style.adjust"
 
@@ -241,6 +247,25 @@ async def adjust(
     attempts = 0
     reason: str | None = None
 
+    # ★ 가드레일에는 **사용자가 쓴 글**을 넘기고, 템플릿 조립은 A8 안에서 하게 한다.
+    #   조립한 글을 넘기면 A3·A12 가 우리 템플릿까지 검사 대상으로 보고, 문장 전체를
+    #   보는 규칙이 죽는다 (A12 `is_continuation` 이 그래서 A10-MULTI-04 를 놓쳤다).
+    #
+    #   글자 수는 **치환 전** 글에서 센다. 토큰은 원문과 길이가 달라서, 치환된 글을
+    #   세면 모델에게 틀린 현재 길이를 알려 주게 된다.
+    current_total = count(source, allow_tokens=True).total
+
+    def build(query: str, chunks) -> LlmRequest:
+        return LlmRequest(
+            prompt=_PROMPT.format(
+                limit=limit if limit is not None else "제한 없음",
+                current=current_total,
+                tone_name=TONE_NAMES[target_tone],
+                text=query,
+            ),
+            system=DEFAULT_SYSTEM_PROMPT,
+        )
+
     while attempts < MAX_REWRITE_ATTEMPTS:
         attempts += 1
         if attempts > 1:
@@ -248,14 +273,8 @@ async def adjust(
             #   UniqueViolation → AuditWriteFailed 로 요청 전체가 500 이 된다(실모델로 확인).
             #   첫 시도만 HTTP X-Request-ID 와 이어지고, 재시도는 새 ID 를 쓴다
             ctx = replace(ctx, request_id=uuid.uuid4())
-        prompt = _PROMPT.format(
-            limit=limit if limit is not None else "제한 없음",
-            current=count(source, allow_tokens=True).total,
-            tone_name=TONE_NAMES[target_tone],
-            text=source,
-        )
         try:
-            result = await guard.run(prompt, ctx)
+            result = await guard.run(source, ctx, prompt=build)
         except LlmUnavailable:
             # 제공자 미정(2026-10). 규칙 결과만으로도 쓸 수 있어야 한다
             return AdjustResult(**base, llm_unavailable=True, attempts=attempts - 1)
