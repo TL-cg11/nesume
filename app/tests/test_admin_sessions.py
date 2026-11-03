@@ -55,7 +55,28 @@ def test_requires_operator(setup):
     assert client.post("/admin/sessions/s1/block", json={}, headers=user_headers).status_code == 403
 
 
-def test_block_list_release_flow(setup, caplog):
+class _Collect(logging.Handler):
+    def __init__(self) -> None:
+        super().__init__(level=logging.DEBUG)
+        self.messages: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:  # noqa: D102
+        self.messages.append(record.getMessage())
+
+
+@pytest.fixture
+def audit_messages():
+    """`nesume.audit.admin` 로거에 직접 붙인다(앱 setup_logging 이 루트 핸들러를 바꾸므로 caplog 대신)."""
+    handler = _Collect()
+    logger = logging.getLogger("nesume.audit.admin")
+    logger.addHandler(handler)
+    try:
+        yield handler.messages
+    finally:
+        logger.removeHandler(handler)
+
+
+def test_block_list_release_flow(setup, audit_messages):
     client, headers, _, operator_sub, db = setup
     sid = f"sess-{uuid.uuid4().hex[:8]}"
     # 감사 로그에서 세션의 사용자를 찾는다
@@ -66,13 +87,12 @@ def test_block_list_release_flow(setup, caplog):
     ))
     db.flush()
 
-    with caplog.at_level(logging.INFO, logger="nesume.audit.admin"):
-        r = client.post(f"/admin/sessions/{sid}/block", json={"note": "수동", "minutes": 30}, headers=headers)
+    r = client.post(f"/admin/sessions/{sid}/block", json={"note": "수동", "minutes": 30}, headers=headers)
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["session_id"] == sid and body["user_id"] == "u-victim" and body["reason"] == "operator"
     assert body["blocked_by"] == operator_sub and body["active"] is True and body["expires_at"] is not None
-    assert any(rec.getMessage() == "session_blocked" for rec in caplog.records)
+    assert "session_blocked" in audit_messages
 
     listed = client.get("/admin/sessions/blocked", headers=headers).json()
     assert [row["session_id"] for row in listed if row["session_id"] == sid] == [sid]
@@ -82,10 +102,9 @@ def test_block_list_release_flow(setup, caplog):
     r = client.post(f"/admin/sessions/{sid}/block", json={}, headers=headers)
     assert r.status_code == 200 and r.json()["expires_at"] is None  # 만료 없는 차단으로 올라감
 
-    with caplog.at_level(logging.INFO, logger="nesume.audit.admin"):
-        r = client.delete(f"/admin/sessions/{sid}/block", headers=headers)
+    r = client.delete(f"/admin/sessions/{sid}/block", headers=headers)
     assert r.status_code == 200 and r.json()["active"] is False and r.json()["released_by"] == operator_sub
-    assert any(rec.getMessage() == "session_released" for rec in caplog.records)
+    assert "session_released" in audit_messages
     assert session_block.active_block(db, sid) is None
     # 유효한 목록에서 빠지고, 이력(active=false)에는 남는다
     active_ids = [row["session_id"] for row in client.get("/admin/sessions/blocked", headers=headers).json()]

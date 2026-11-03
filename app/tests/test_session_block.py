@@ -242,11 +242,11 @@ def test_wrapper_exposes_inner_attributes(factory):
 
 
 def test_wrapper_wired_in_fastapi_adapter():
-    """`get_guardrail()` 이 돌려주는 바깥 래퍼가 D16 이고 그 안이 C7 인지(라우터를 거치지 않을 길이 없다)."""
+    """`get_guardrail()` 이 돌려주는 바깥 래퍼가 C7 이고 그 안이 D16 인지(라우터를 거치지 않을 길이 없다)."""
     from app.features.ratelimit.guard import RateLimitedGuardrail
     from app.guardrail import fastapi as adapter
 
     outer = adapter._limited()
-    assert isinstance(outer, SessionBlockGuardrail)
-    assert isinstance(outer.inner, RateLimitedGuardrail)
+    assert isinstance(outer, RateLimitedGuardrail)
+    assert isinstance(outer.inner, SessionBlockGuardrail)
 

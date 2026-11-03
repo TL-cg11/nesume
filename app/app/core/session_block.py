@@ -5,7 +5,7 @@
 1. 차단 목록 저장소(`blocked_sessions`, models/blocked_session.py):
 `block()`·`release()`·`active_block()`·`list_blocks()`.
    운영자 API(auth/admin_sessions.py)와 아래 래퍼가 같이 쓴다.
-2. `SessionBlockGuardrail`: C7 `RateLimitedGuardrail` 을 한 겹 더 감싸는 래퍼. `get_guardrail()` 이 이것을
+2. `SessionBlockGuardrail`: C7 `RateLimitedGuardrail` 안쪽에 끼는 래퍼. `get_guardrail()` 이 이것을
 돌려주므로
    LLM 경로 전부가 지나간다(라우터 수정 없음, C7 과 같은 방식).
 
@@ -291,18 +291,22 @@ class SessionBlockGuardrail:
             return None
 
     def _c7_limit_reached(self, session_id: str) -> int | None:
-        """C7 저장소를 읽어 세션이 **지금** 탈취 제한 중인지.
+        """이번 탈취 위반으로 C7 세션 임계치에 **도달하는지**. 도달하면 남은 제한 초, 아니면 None.
 
-        래퍼 순서상 C7 `_record` 가 끝난 뒤라 이번 위반이 반영돼 있다.
+        이 래퍼는 C7 래퍼 **안쪽**이라(fastapi.py `_limited`) C7 `_record` 가 아직 돌기 전이다.
+        그래서 저장소의 현재 창 누적에 이번 위반 1을 더해 본다. 키·창은 C7 `record_violation` 과 같다.
         """
         from app.features.ratelimit.guard import postgres_store
-        from app.features.ratelimit.service import RateLimiter
+        from app.features.ratelimit.policy import load_limits
 
+        lim = load_limits().exfil_per_session
         with postgres_store() as store:
-            decision = RateLimiter(store, getattr(self.inner, "limits", None)).check_session(
-                session_id, now=self._clock()
+            count, elapsed = store.get(
+                f"exfil:{session_id}", window_seconds=lim.window_seconds, now=self._clock()
             )
-        return None if decision.allowed else max(1, decision.retry_after)
+        if count + 1 < lim.max_count:
+            return None
+        return max(1, int(lim.window_seconds - elapsed))
 
 
 __all__ = [

@@ -57,13 +57,14 @@ def _limited() -> Guardrail:
     """C7 레이트리밋 래퍼 + D16 세션 차단 래퍼를 씌운 것. LLM 엔드포인트는 모두 이 의존성으로 받아 둘 다
     피할 수 없다.
 
-    바깥이 D16 이다: 차단 목록 조회 → C7 한도 → 가드레일 → C7 기록(위반 누적) → D16 (카나리·임계치면 자동
-    차단+알림).
+    바깥이 C7 이다(C7 테스트가 바깥 타입을 본다): C7 한도 → D16 차단 목록 조회 → 가드레일 →
+    D16(카나리·임계치면 자동 차단+알림) → C7 기록(위반 누적).
+    D16 은 임계치 판정에 이번 위반을 더해 본다(session_block._c7_limit_reached).
     """
     from app.core.session_block import SessionBlockGuardrail
     from app.features.ratelimit.guard import RateLimitedGuardrail
 
-    return SessionBlockGuardrail(RateLimitedGuardrail(_shared()))  # type: ignore[return-value]  # run·run_split 같은 모양
+    return RateLimitedGuardrail(SessionBlockGuardrail(_shared()))  # type: ignore[arg-type,return-value]
 
 
 def get_guardrail() -> Guardrail:

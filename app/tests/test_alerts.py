@@ -50,24 +50,50 @@ def test_unknown_event_type_rejected():
         AlertEvent(type="nope", severity="warn", summary="x")
 
 
-def test_emit_writes_audit_line_and_delivers(caplog):
+class _Collect(logging.Handler):
+    """로거에 직접 붙여 레코드를 모은다. 앱의 setup_logging 이 루트 핸들러를 갈아 끼워도 영향이 없다."""
+
+    def __init__(self) -> None:
+        super().__init__(level=logging.DEBUG)
+        self.records: list[logging.LogRecord] = []
+
+    def emit(self, record: logging.LogRecord) -> None:  # noqa: D102
+        self.records.append(record)
+
+
+@pytest.fixture
+def collect():
+    def attach(name: str) -> _Collect:
+        handler = _Collect()
+        logger = logging.getLogger(name)
+        logger.addHandler(handler)
+        attached.append((logger, handler))
+        return handler
+
+    attached: list[tuple[logging.Logger, _Collect]] = []
+    yield attach
+    for logger, handler in attached:
+        logger.removeHandler(handler)
+
+
+def test_emit_writes_audit_line_and_delivers(collect):
+    audit = collect("nesume.audit.alerts")
     rec = Recorder()
     pub = Alerts(rec, sync=True)
-    with caplog.at_level(logging.WARNING, logger="nesume.audit.alerts"):
-        event = pub.emit("exfil_threshold", "탈취 임계치", session_id="sess-1", user_id="u-1")
+    event = pub.emit("exfil_threshold", "탈취 임계치", session_id="sess-1", user_id="u-1")
     assert rec.events == [event]
     assert event.severity == "warn"  # 기본 심각도
-    record = next(r for r in caplog.records if r.name == "nesume.audit.alerts")
+    record = next(r for r in audit.records if r.name == "nesume.audit.alerts")
     line = json.loads(JsonFormatter().format(record))
     assert line["log_type"] == "audit" and line["msg"] == "alert"
     assert line["event_type"] == "exfil_threshold" and line["session_id"] == "sess-1"
 
 
-def test_delivery_failure_is_swallowed(caplog):
+def test_delivery_failure_is_swallowed(collect):
+    app_log = collect("nesume.alerts")
     pub = Alerts(Recorder(fail=True), sync=True)
-    with caplog.at_level(logging.WARNING, logger="nesume.alerts"):
-        pub.emit("canary_hit", "x")  # 예외가 올라오지 않는다
-    assert any("alert delivery failed" in r.getMessage() for r in caplog.records)
+    pub.emit("canary_hit", "x")  # 예외가 올라오지 않는다
+    assert any("alert delivery failed" in r.getMessage() for r in app_log.records)
     assert pub.sent[-1].type == "canary_hit"
 
 

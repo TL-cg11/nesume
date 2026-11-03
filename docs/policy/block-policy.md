@@ -178,7 +178,7 @@
 - `system` 역할은 대화형 API 자체가 403이므로 해당 없다.
 - 수치 변경은 환경변수로만 한다. 코드 기본값은 이 표와 같아야 하며, Helm `values*.yaml`에 명시하지 않으면 기본값이 쓰인다.
 
-> **구현 상태(2026-11-03):** C7 래퍼(`RateLimitedGuardrail`)와 D16 래퍼(`SessionBlockGuardrail`)가 `get_guardrail()` 공급 지점에서 모든 LLM 경로를 감싼다. 바깥이 D16: 차단 목록 → C7 한도 → A8 → C7 위반 기록 → D16 자동 차단·알림.
+> **구현 상태(2026-11-03):** C7 래퍼(`RateLimitedGuardrail`)와 D16 래퍼(`SessionBlockGuardrail`)가 `get_guardrail()` 공급 지점에서 모든 LLM 경로를 감싼다. 바깥이 C7: C7 한도 → D16 차단 목록 → A8 → D16 자동 차단·알림(이번 위반을 더해 임계치 판정) → C7 위반 기록.
 >
 > **(2026-10-27 기록)** C7 `RateLimiter.check_session`·`record_violation`은 라이브러리로만 있고 라우터에 연결되지 않았다. **배선 담당은 A8(파이프라인 호출부)이 아니라 라우터 의존성(B)**으로 정한다. 위치는 LLM 경로 앞 `check_session` → A8 호출 → 판정이 탈취 block이면 `record_violation`. A8을 건드리지 않는다(`docs/C7.md` 배선 그림과 같다).
 
